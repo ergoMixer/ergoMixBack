@@ -133,8 +133,16 @@ class TokenContractsSpec extends PropSpec with Matchers
         .contract(mix.tokenEmissionContract)
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
+
+      val tokenBox2 = ctx.newTxBuilder.outBoxBuilder
+        .tokens(new ErgoToken(tokenId, 200))
+        .registers(ErgoValue.of(g), ErgoValue.of(g), ErgoValue.of(g), ErgoValue.of(Array[Byte]()), ErgoValue.of(batchPrices), ErgoValue.of(20))
+        .value(1000000)
+        .contract(mix.tokenEmissionContract)
+        .build()
+        .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
       val spendableBox = ctx.newTxBuilder.outBoxBuilder
-        .value(5000000)
+        .value(500000000)
         .contract(ctx.compileContract(
           ConstantsBuilder.empty(),
           "{sigmaProp(1 < 2)}"

@@ -130,7 +130,7 @@ class TokenErgoMix(ctx:BlockchainContext) {
       |  val noToken = {(b: Box) => b.tokens.size == 0}
       |  val aliceBuying = (isHalf(OUTPUTS(0)) && isCopy(OUTPUTS(1)) && OUTPUTS.slice(2, OUTPUTS.size).forall(noToken))
       |  val bobBuying = (isFull(OUTPUTS(0)) && isFull(OUTPUTS(1)) && isCopy(OUTPUTS(2)) && OUTPUTS.slice(3, OUTPUTS.size).forall(noToken))
-      |  val asBuyer = (aliceBuying || bobBuying)
+      |  val asBuyer = (aliceBuying || bobBuying) && INPUTS.filter({(b: Box) => b.propositionBytes == SELF.propositionBytes}).size == 1
       |
       |  sigmaProp(asBuyer) || mixerOwner
       |}
