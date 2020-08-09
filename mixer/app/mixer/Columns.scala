@@ -15,9 +15,14 @@ object Columns {
   val createdTimeCol = Col("created_time", ULONG) // unsigned long, epoch time millis
 
   val boxIdCol = Col("box_id", STR)
+  val inputsCol = Col("inputs", BIGSTR)
+  val tokenId = Col("token_id", STR)
   val amountCol = Col("amount", ULONG)
   val depositCol = Col("deposit_done", ULONG)
+  val tokenDepositCol = Col("deposit_done_token", ULONG)
   val mixingAmount = Col("mixing_amount", ULONG)
+  val mixingTokenAmount = Col("mixing_token_amount", ULONG)
+  val mixingTokenNeeded = Col("mixing_token_needed", ULONG)
   val neededCol = Col("needed_amount", ULONG)
   val numTokenCol = Col("num_token", UINT)
 

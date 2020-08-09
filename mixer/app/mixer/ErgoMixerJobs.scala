@@ -1,6 +1,7 @@
 package mixer
 
 class ErgoMixerJobs(tables:Tables) {
+  val covertMixer = new CovertMixer(tables)
   val groupMixer = new GroupMixer(tables)
   val ergoMixer = new ErgoMixer(tables)
   val rescan = new Rescan(tables)
@@ -11,5 +12,5 @@ class ErgoMixerJobs(tables:Tables) {
   val deposits = new Deposits(tables)
 
   // stats
-  val statScanner = new StatScanner(tables)
+  val statScanner = new ChainScanner(tables)
 }

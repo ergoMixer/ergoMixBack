@@ -2,7 +2,7 @@ package mixer
 
 import play.api.libs.json._
 
-case class MixBoxList(items: Iterable[MixBox])
+case class  MixBoxList(items: Iterable[MixBox])
 
 object MixBoxList {
   implicit val ReadsMixBoxList: Reads[MixBoxList] = new Reads[MixBoxList] {
@@ -11,7 +11,9 @@ object MixBoxList {
         val withdraw = (item \ "withdraw").as[String]
         val amount = (item \ "amount").as[Long]
         val token = (item \ "token").as[Int]
-        MixBox(withdraw, amount, token)
+        val mixingTokenId = (item \ "mixingTokenId").as[String]
+        val mixingTokenAmount = (item \ "mixingTokenAmount").as[Long]
+        MixBox(withdraw, amount, token, mixingTokenAmount, mixingTokenId)
       })))
     }
   }

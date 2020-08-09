@@ -1,11 +1,9 @@
 package cli
 
-import org.ergoplatform.appkit.{Address, BlockchainContext, ErgoClient, ErgoId, InputBox}
+import app.{AliceImpl, BobImpl, Configs, TokenErgoMix}
 import mixer.Models.OutBox
 import mixer.{BlockExplorer, Models}
-import app.{AliceImpl, BobImpl, Configs, ErgoMix, TokenErgoMix, Util => EUtil}
-
-import scala.jdk.CollectionConverters._
+import org.ergoplatform.appkit.{BlockchainContext, ErgoClient, InputBox}
 
 object ErgoMixCLIUtil {
 
@@ -24,12 +22,6 @@ object ErgoMixCLIUtil {
     }
   }
 
-  def handleMixObject(ctx: BlockchainContext) = {
-    if (tokenErgoMix.isEmpty) {
-      tokenErgoMix = Some(new TokenErgoMix(ctx))
-    }
-  }
-
   def getUnspentBoxes(address:String) = {
     usingClient{implicit ctx =>
       val explorer = new BlockExplorer()
@@ -44,32 +36,30 @@ object ErgoMixCLIUtil {
     }
   }
 
-  def getHalfMixBoxes(poolAmount: Long = -1, considerPool: Boolean = false): List[InputBox] = {
+  def getHalfMixBoxes(considerPool: Boolean = false): List[OutBox] = {
     usingClient{implicit ctx =>
-      handleMixObject(ctx)
       val explorer = new BlockExplorer()
       var txPool = ""
       if (considerPool) txPool = explorer.getPoolTransactionsStr
-      val halfAddress = Address.create(tokenErgoMix.get.halfMixAddress.toString)
-      val unspentBoxes = ctx.getUnspentBoxesFor(halfAddress)
-      if (poolAmount != -1)
-        unspentBoxes.asScala.filter(box => box.getValue == poolAmount &&
-          (!considerPool || !txPool.contains(s""""${box.getId.toString}","txId""""))).toList
-      else
-        unspentBoxes.asScala.toList
+      val unspentBoxes = getUnspentBoxes(tokenErgoMix.get.halfMixAddress.toString)
+      unspentBoxes.filter(box => !considerPool || !txPool.contains(s""""${box.id.toString}","txId"""")).toList
     }
   }
 
-  def getTokenEmissionBoxes(numToken: Int, considerPool: Boolean = false): List[InputBox] = {
+  def getAllHalfBoxes: List[OutBox] = {
+    usingClient{implicit ctx =>
+      getUnspentBoxes(tokenErgoMix.get.halfMixAddress.toString).toList
+    }
+  }
+
+  def getTokenEmissionBoxes(numToken: Int, considerPool: Boolean = false): List[OutBox] = {
     usingClient{implicit ctx =>
       val explorer = new BlockExplorer()
       var txPool = ""
       if (considerPool) txPool = explorer.getPoolTransactionsStr
-      handleMixObject(ctx)
-      val tokenAddress = Address.create(tokenErgoMix.get.tokenEmissionAddress.toString)
-      ctx.getUnspentBoxesFor(tokenAddress).asScala.filter(box => {
-        box.getTokens.size() > 0 && box.getTokens.get(0).getId == ErgoId.create(TokenErgoMix.tokenId) &&
-          box.getTokens.get(0).getValue >= numToken && (!considerPool || !txPool.contains(s""""${box.getId.toString}","txId""""))
+      getUnspentBoxes(tokenErgoMix.get.tokenEmissionAddress.toString).filter(box => {
+        box.getToken(TokenErgoMix.tokenId) >= numToken &&
+          (!considerPool || !txPool.contains(s""""${box.id}","txId""""))
       }).toList
     }
   }
@@ -84,9 +74,16 @@ object ErgoMixCLIUtil {
     }
   }
 
-  def getUnspentBoxById(boxId:String) = {
+  def getUnspentBoxById(boxId:String): InputBox = {
     usingClient{implicit ctx =>
       ctx.getBoxesById(boxId).headOption.getOrElse(throw new Exception("No box found"))
+    }
+  }
+
+  def getOutBoxById(boxId:String): OutBox = {
+    usingClient{implicit ctx =>
+      val explorer = new BlockExplorer()
+      explorer.getBoxById(boxId)
     }
   }
 
@@ -113,9 +110,8 @@ object ErgoMixCLIUtil {
       val explorer = new BlockExplorer()
       var txPool = ""
       if (considerPool) txPool = explorer.getPoolTransactionsStr
-      handleMixObject(ctx)
       getUnspentBoxes(tokenErgoMix.get.feeEmissionAddress.toString).filter(box => box.spendingTxId.isEmpty
-        && box.amount >= 2 * TokenErgoMix.feeAmount && (!considerPool || !txPool.contains(s""""${box.id}","txId""""))) // not an input
+        && box.amount >= Configs.defaultFullTokenFee && (!considerPool || !txPool.contains(s""""${box.id}","txId""""))) // not an input
     }
   }
 
@@ -126,8 +122,9 @@ object ErgoMixCLIUtil {
       case Array(key, value) => Arg(key, value)
     }
     val url = try getArg("url") catch {case a:Throwable => defaultUrl}
+    val explorer = try getArg("explorer") catch {case a:Throwable => explorerUrl}
     val mainNet: Boolean = (try getArg("mainNet") catch {case a:Throwable => "true"}).toBoolean
-    Client.setClient(url, mainNet, None)
+    Client.setClient(url, mainNet, None, explorer)
     l
   }
 
@@ -136,9 +133,10 @@ object ErgoMixCLIUtil {
       case Array(key, value) => Arg(key, value)
     }
     val url = try getArg("url") catch {case a:Throwable => defaultUrl}
+    val explorer = try getArg("explorer") catch {case a:Throwable => explorerUrl}
     val mainNet: Boolean = (try getArg("mainNet") catch {case a:Throwable => "true"}).toBoolean
     val secret = BigInt(getArg("secret"), 10)
-    Client.setClient(url, mainNet, None)
+    Client.setClient(url, mainNet, None, explorer)
     (l, secret)
   }
 
@@ -152,6 +150,7 @@ object ErgoMixCLIUtil {
   }
 
   val defaultUrl = Configs.nodeUrl
+  val explorerUrl = Configs.explorerUrl
   def getProver(secret:BigInt, isAlice:Boolean)(implicit ctx:BlockchainContext) = if (isAlice) new AliceImpl(secret.bigInteger) else new BobImpl(secret.bigInteger)
   def isAlice(implicit args:Seq[Arg]) = getArg("mode") match{
     case "alice" => true

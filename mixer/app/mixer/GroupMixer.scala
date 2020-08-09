@@ -1,16 +1,20 @@
 package mixer
 
-import org.ergoplatform.appkit.BlockchainContext
+import org.ergoplatform.appkit.{Address, BlockchainContext, ErgoToken}
 import app.Configs
+import app.ergomix.EndBox
 import cli.{AliceOrBob, ErgoMixCLIUtil}
 import db.ScalaDB._
 import db.core.DataStructures.anyToAny
 import mixer.Columns._
-import mixer.ErgoMixerUtil._
+import mixer.ErgoMixerUtils._
 import mixer.Models.GroupMixStatus._
 import mixer.Models.{DistributeTx, MixGroupRequest}
+import org.ergoplatform.appkit.impl.ScalaBridge
+import play.api.Logger
 
 class GroupMixer(tables: Tables) {
+  private val logger: Logger = Logger(this.getClass)
 
   import tables._
 
@@ -22,20 +26,26 @@ class GroupMixer(tables: Tables) {
       ).as(arr =>
         MixGroupRequest(arr)
       ).foreach(req => {
-        println(s"[MixGroup: ${req.id}] processing deposits...")
+        logger.info(s"[MixGroup: ${req.id}] processing deposits...")
         val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
-        val confirmedDepositSum = allBoxes.map(box => {
+        var confirmedErgDeposits = 0L
+        var confirmedTokenDeposits = 0L
+        allBoxes.foreach(box => {
           val conf = ErgoMixCLIUtil.getConfirmationsForBoxId(box.id)
-          if (conf >= minConfirmations) box.amount
+          if (conf >= minConfirmations) {
+            confirmedErgDeposits += box.amount
+            confirmedTokenDeposits += box.getToken(req.tokenId)
+          }
           else 0
-        }).sum
-        if (confirmedDepositSum > 0) {
-          mixRequestsGroupTable.update(depositCol <-- confirmedDepositSum).where(mixGroupIdCol === req.id)
-          println(s"  processed confirmed deposits $confirmedDepositSum")
+        })
+        if (confirmedErgDeposits > 0 || confirmedTokenDeposits > 0) {
+          mixRequestsGroupTable.update(depositCol <-- confirmedErgDeposits, tokenDepositCol <-- confirmedTokenDeposits).where(mixGroupIdCol === req.id)
+          if (req.tokenId.isEmpty) logger.info(s"  processed confirmed deposits $confirmedErgDeposits")
+          else logger.info(s"  processed confirmed deposits, erg: $confirmedErgDeposits, ${req.tokenId}: $confirmedTokenDeposits")
         }
 
-        if (confirmedDepositSum >= req.neededAmount) {
-          println(s"  sufficient deposit, starting...")
+        if (confirmedErgDeposits >= req.neededAmount && confirmedTokenDeposits >= req.neededTokenAmount) {
+          logger.info(s"  sufficient deposit, starting...")
           mixRequestsGroupTable.update(mixStatusCol <-- Starting.value).where(mixGroupIdCol === req.id)
         }
       })
@@ -49,8 +59,8 @@ class GroupMixer(tables: Tables) {
           processStartingGroup(req)
         } catch {
           case a: Throwable =>
-            println(s" [MixGroup: ${req.id}] An error occurred. Stacktrace below")
-            a.printStackTrace()
+            logger.error(s" [MixGroup: ${req.id}] An error occurred. Stacktrace below")
+            logger.error(getStackTraceStr(a))
         }
       })
     }
@@ -58,7 +68,7 @@ class GroupMixer(tables: Tables) {
 
   def processStartingGroup(req: MixGroupRequest) = ErgoMixCLIUtil.usingClient { implicit ctx =>
     val explorer = new BlockExplorer()
-    println(s"[MixGroup: ${req.id}] processing...")
+    logger.info(s"[MixGroup: ${req.id}] processing...")
     val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
     if (distributeTxsTable.exists(mixGroupIdCol === req.id)) { // txs already created, just w8 for enough confirmation
       var allTxsConfirmed = true
@@ -68,40 +78,49 @@ class GroupMixer(tables: Tables) {
           val confNum = explorer.getTxNumConfirmations(tx.txId)
           allTxsConfirmed &= confNum >= Configs.numConfirmation
           if (confNum == -1) { // not mined yet, broadcast tx again!
-            println(s"  broadcasting tx ${tx.txId}...")
+            logger.info(s"  broadcasting tx ${tx.txId}...")
             ctx.sendTransaction(ctx.signedTxFromJson(tx.toString))
           }
         })
 
       if (allTxsConfirmed) {
-        println("  all distribute transactions are confirmed...")
+        logger.info("  all distribute transactions are confirmed...")
         mixRequestsGroupTable.update(mixStatusCol <-- Running.value).where(mixGroupIdCol === req.id)
       }
 
     } else { // create and send chain of transactions
-      println("  distributing deposits to start mixing...")
+      logger.info("  distributing deposits to start mixing...")
       val wallet = new Wallet(req.masterKey)
       val secret = wallet.getSecret(-1).bigInteger
-      val requests = mixRequestsTable.select(depositAddressCol, neededCol)
+      val requests = mixRequestsTable.select(depositAddressCol, neededCol, mixingTokenNeeded)
         .where(mixGroupIdCol === req.id)
         .as { arr =>
           val i = arr.toIterator
           (
             i.next.as[String],
-            i.next.as[Long]
+            i.next.as[Long], // erg
+            i.next.as[Long] // token
           )
         }.toArray
 
-      val excess = req.doneDeposit - req.neededAmount
-      requests(0) = (requests(0)._1, requests(0)._2 + excess)
-      if (excess > 0) {
-        println(s"  excess deposit: $excess...")
-      }
+      val excessErg = req.doneDeposit - req.neededAmount
+      val excessToken = req.tokenDoneDeposit - req.neededTokenAmount
+      requests(0) = (requests(0)._1, requests(0)._2 + excessErg, requests(0)._3 + excessToken)
+      val reqEndBoxes = requests.map(cur => {
+        var token: Seq[ErgoToken] = Seq()
+        if (!req.tokenId.isEmpty) token = Seq(new ErgoToken(req.tokenId, cur._3))
+        EndBox(Address.create(cur._1).getErgoAddress.script, Seq(), cur._2, token)
+      })
+      if (excessErg > 0) logger.info(s"  excess deposit: $excessErg...")
+      if (excessToken > 0) logger.info(s"  excess token deposit: $excessToken...")
 
-      val transactions = AliceOrBob.distribute(allBoxes.map(_.id).toArray, requests, Array(secret), Configs.feeInStartTransaction, req.depositAddress, Configs.numOutputsInStartTransaction)
+      val transactions = AliceOrBob.distribute(allBoxes.map(_.id).toArray, reqEndBoxes, Array(secret), Configs.distributeFee, req.depositAddress, Configs.maxOuts, req.tokenId)
       for (i <- transactions.indices) {
         val tx = transactions(i)
-        distributeTxsTable.insert(req.id, tx.getId, i, Util.now, tx.toJson(false).getBytes("utf-16"))
+        val inputs = tx.getInputBoxes.map(ScalaBridge.isoErgoTransactionInput.from(_).getBoxId).mkString(",")
+        distributeTxsTable.insert(req.id, tx.getId, i + 1, Util.now, tx.toJson(false).getBytes("utf-16"), inputs)
+        val sendRes = ctx.sendTransaction(tx)
+        if (sendRes == null) logger.error(s"  transaction got refused by the node! maybe it doesn't support chained transactions, waiting... consider updating your node for a faster mixing experience.")
       }
     }
 

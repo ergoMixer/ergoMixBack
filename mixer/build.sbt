@@ -10,11 +10,11 @@ libraryDependencies += filters
 
 lazy val commonSettings = Seq(
   organization := "ergoMixer",
-  version := "1.0.1",
+  version := "2.0.0",
   scalaVersion := "2.12.10",
   resolvers ++= Seq(sonatypeReleases,
     "SonaType" at "https://oss.sonatype.org/content/groups/public",
-    "Typesafe maven releases" at "http://repo.typesafe.com/typesafe/maven-releases/",
+    "Typesafe maven releases" at "https://dl.bintray.com/typesafe/maven-releases/",
     sonatypeSnapshots,
     Resolver.mavenCentral),
   libraryDependencies += "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.3",
@@ -77,35 +77,19 @@ assemblyMergeStrategy in assembly := {
 assemblyJarName in assembly := s"${name.value}-${version.value}.jar"
 
 lazy val allConfigDependency = "compile->compile;test->test"
-
-val sigmaStateVersion = "i609-formal-verification-346717a7-SNAPSHOT"
-
-lazy val sigmaState = ("org.scorexfoundation" %% "sigma-state" % sigmaStateVersion).force()
-  .exclude("ch.qos.logback", "logback-classic")
-  .exclude("org.scorexfoundation", "scrypto")
-  .exclude("org.typelevel", "machinist")
-  .exclude("org.typelevel", "cats-kernel")
-
-
 lazy val mockWebServer = "com.squareup.okhttp3" % "mockwebserver" % "3.12.0" % "test"
 
 libraryDependencies ++= Seq(
-  sigmaState,
   mockWebServer,
   "org.scalaj" %% "scalaj-http" % "2.4.2",
   "org.scalatest" %% "scalatest" % "3.0.8" % "test",
-  "org.scalacheck" %% "scalacheck" % "1.14.+" % "test",
-  "com.squareup.retrofit2" % "retrofit" % "2.6.2",
-  "com.squareup.retrofit2" % "converter-scalars" % "2.6.2",
-  "com.squareup.retrofit2" % "converter-gson" % "2.6.2",
-  "org.webjars" %% "webjars-play" % "2.8.0",
-  "com.typesafe.play" %% "play-json" % "2.4.2",
-  "org.webjars" % "swagger-ui" % "3.25.1",
-  "org.xerial" % "sqlite-jdbc" % "3.30.1",
-  "org.ergoplatform" %% "ergo-appkit" % "mixer-appkit-SNAPSHOT"
+  "org.ergoplatform" %% "ergo-appkit" % "mixer-appkit-SNAPSHOT",
 )
 
 libraryDependencies += guice
+
+enablePlugins(JDKPackagerPlugin)
+(antPackagerTasks in JDKPackager) := Some(file(sys.env.getOrElse("ANT_PATH", "/usr/lib/jvm/java-8-oracle/lib/ant-javafx.jar")))
 
 lazy val root = (project in file("."))
   .enablePlugins(PlayScala, BuildInfoPlugin)
@@ -116,3 +100,5 @@ lazy val root = (project in file("."))
     buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
     buildInfoPackage := "info"
   )
+
+Compile / unmanagedResourceDirectories += baseDirectory.value / "resources"

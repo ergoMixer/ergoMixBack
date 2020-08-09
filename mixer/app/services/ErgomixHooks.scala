@@ -1,17 +1,16 @@
 package services
 
-import play.api.inject.ApplicationLifecycle
-
-import scala.concurrent.Future
-import play.api.mvc._
 import akka.actor._
-import javax.inject._
-
-import scala.concurrent.ExecutionContext
-import scala.concurrent.duration._
-import ScheduledJobs.{RefreshMixingStats, RefreshPoolStats}
-import ErgoMixingSystem.ergoMixerJobs
 import app.Configs
+import javax.inject._
+import play.api.Logger
+import play.api.inject.ApplicationLifecycle
+import play.api.mvc._
+import services.ErgoMixingSystem.ergoMixerJobs
+import services.ScheduledJobs.{RefreshMixingStats, RefreshPoolStats}
+
+import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.duration._
 
 trait ErgoMixHooks {
 
@@ -29,13 +28,15 @@ class ErgomixHooksImpl @Inject()(appLifecycle: ApplicationLifecycle,
                                  cc: ControllerComponents)
                             (implicit executionContext: ExecutionContext) extends ErgoMixHooks {
 
+  private val logger: Logger = Logger(this.getClass)
   implicit val actorSystem = system
 
   lazy val jobsActor = system.actorOf(ScheduledJobs.props(ergoMixerJobs), "scheduling-jobs-actor")
 
   override def onStart(): Unit = {
+    TrayUtils.showNotification("Starting ErgoMixer...", "Everything will be ready in a few seconds!")
     system.scheduler.scheduleAtFixedRate(
-      initialDelay = 30.seconds,
+      initialDelay = 60.seconds,
       interval = Configs.jobInterval.seconds,
       receiver = jobsActor,
       message = RefreshMixingStats
@@ -48,12 +49,12 @@ class ErgomixHooksImpl @Inject()(appLifecycle: ApplicationLifecycle,
       message = RefreshPoolStats
     )
 
-    println("Initialization done")
+    logger.info("Initialization done")
   }
 
   override def onShutdown(): Unit = {
     system.stop(jobsActor)
-    println("Shutdown preparation done")
+    logger.info("Shutdown preparation done")
   }
 
   // When the application starts, register a stop hook with the

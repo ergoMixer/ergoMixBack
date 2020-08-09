@@ -1,10 +1,11 @@
 package helpers
 
 import com.typesafe.config.ConfigFactory
-import play.api.Configuration
+import play.api.{Configuration, Logger}
 
 trait ConfigHelper {
   val config: Configuration = Configuration(ConfigFactory.load())
+  private val logger: Logger = Logger(this.getClass)
 
   /**
    * Read the config and return the value of the key
@@ -20,7 +21,7 @@ trait ConfigHelper {
     } catch
       {
         case ex: Throwable =>
-          println(ex.getMessage)
+          logger.error(ex.getMessage)
           sys.exit()
       }
   }

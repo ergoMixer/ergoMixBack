@@ -13,7 +13,7 @@ lazy val commonSettings = Seq(
   scalaVersion := "2.12.10",
   resolvers ++= Seq(sonatypeReleases,
     "SonaType" at "https://oss.sonatype.org/content/groups/public",
-    "Typesafe maven releases" at "http://repo.typesafe.com/typesafe/maven-releases/",
+    "Typesafe maven releases" at "https://dl.bintray.com/typesafe/maven-releases/",
     sonatypeSnapshots,
     Resolver.mavenCentral),
   libraryDependencies += "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.3",

@@ -5,15 +5,17 @@ import java.util.UUID
 import mixer.Columns._
 import mixer.Models.MixStatus.{Complete, Queued, Running}
 import mixer.Models.MixWithdrawStatus.NoWithdrawYet
-import mixer.Models.{Deposit, FullMix, GroupMixStatus, HalfMix, Mix, MixGroupRequest, MixRequest, MixState, MixStatus, MixWithdrawStatus, Withdraw}
+import mixer.Models.{Deposit, FullMix, GroupMixStatus, HalfMix, Mix, MixCovertRequest, MixGroupRequest, MixRequest, MixState, MixStatus, MixWithdrawStatus, Withdraw}
 import cli._
 import db.ScalaDB._
 import mixer.Util._
-import app.{Configs, Util => EUtil}
+import app.{Configs, TokenErgoMix, Util => EUtil}
+import play.api.Logger
 
 /* Utility methods used in other jobs or for debugging */
 
 class ErgoMixer(tables: Tables) {
+  private val logger: Logger = Logger(this.getClass)
 
   import tables._
 
@@ -28,15 +30,34 @@ class ErgoMixer(tables: Tables) {
     mixRequestsTable.update(mixStatusCol <-- Queued.value).where(mixIdCol === mixId)
   }
 
-  def newMixRequest(numRounds: Int, withdrawAddress: String, numToken: Int, poolAmount: Long, needed: Long, mixGroupId: String) = {
+  def newCovertRequest(ergRing: Long, tokenRing: Long, tokenId: String, numRounds: Int): String = {
     ErgoMixCLIUtil.usingClient { implicit ctx =>
-      val util = new EUtil()
       val masterSecret = randBigInt
       val wallet = new Wallet(masterSecret)
       val depositSecret = wallet.getSecret(-1)
-      val depositAddress = Carol.getProveDlogAddress(depositSecret)
+      val depositAddress = TokenErgoMix.getProveDlogAddress(depositSecret)
       val mixId = UUID.randomUUID().toString
-      mixRequestsTable.insert(mixId, mixGroupId, poolAmount, numRounds, Queued.value, now, withdrawAddress, depositAddress, false, needed, numToken, NoWithdrawYet.value, masterSecret)
+      mixCovertTable.insert(mixId, now, depositAddress, numRounds, 0L, 0L, ergRing, tokenRing, tokenId, masterSecret)
+
+      val need = mixCovertTable.selectStar.where(mixGroupIdCol === mixId).as(MixCovertRequest(_)).head.getMinNeeded
+      if (tokenId.isEmpty) {
+        logger.info(s"Needs at least ${need._1} nanoErgs, address: $depositAddress")
+      } else {
+        logger.info(s"Needs at least ${need._1} nanoErgs and ${need._2} of $tokenId, address: $depositAddress")
+      }
+      depositAddress
+    }
+  }
+
+  def newMixRequest(numRounds: Int, withdrawAddress: String, numToken: Int, poolAmount: Long, needed: Long, mixingTokenAmount: Long, mixingTokenNeeded: Long, mixingTokenId: String, mixGroupId: String): String = {
+    ErgoMixCLIUtil.usingClient { implicit ctx =>
+      val masterSecret = randBigInt
+      val wallet = new Wallet(masterSecret)
+      val depositSecret = wallet.getSecret(-1)
+      val depositAddress = TokenErgoMix.getProveDlogAddress(depositSecret)
+      val mixId = UUID.randomUUID().toString
+      mixRequestsTable.insert(mixId, mixGroupId, poolAmount, numRounds, Queued.value, now, withdrawAddress, depositAddress, false, needed, numToken, NoWithdrawYet.value, mixingTokenAmount, mixingTokenNeeded, mixingTokenId, masterSecret)
+      depositAddress
     }
   }
 
@@ -53,21 +74,31 @@ class ErgoMixer(tables: Tables) {
       // if here then addresses are valid
       val masterSecret = randBigInt
       val wallet = new Wallet(masterSecret)
-      val numOut = Configs.numOutputsInStartTransaction
+      val numOut = Configs.maxOuts
       val numTxToDistribute = (mixRequests.size + numOut - 1) / numOut
-      var total: Long = numTxToDistribute * Configs.feeInStartTransaction
-      val depositSecret = wallet.getSecret(-1)
+      var totalNeededErg: Long = numTxToDistribute * Configs.distributeFee
+      var totalNeededToken: Long = 0
       var mixingAmount: Long = 0
-      val depositAddress = Carol.getProveDlogAddress(depositSecret)
+      var mixingTokenAmount: Long = 0
+      var mixingTokenId: String = ""
+      val depositSecret = wallet.getSecret(-1)
+      val depositAddress = TokenErgoMix.getProveDlogAddress(depositSecret)
       val mixId = UUID.randomUUID().toString
       mixRequests.foreach(mixBox => {
         val price = mixBox.price
-        total += price
+        totalNeededErg += price._1
+        totalNeededToken += price._2
         mixingAmount += mixBox.amount
-        this.newMixRequest(mixBox.token, mixBox.withdraw, mixBox.token, mixBox.amount, price, mixId)
+        mixingTokenAmount += mixBox.mixingTokenAmount
+        mixingTokenId = mixBox.mixingTokenId
+        this.newMixRequest(mixBox.token, mixBox.withdraw, mixBox.token, mixBox.amount, price._1, mixBox.mixingTokenAmount, price._2, mixBox.mixingTokenId, mixId)
       })
-      mixRequestsGroupTable.insert(mixId, total, GroupMixStatus.Queued.value, now, depositAddress, 0L, mixingAmount, masterSecret)
-      println(s"Please deposit $total nanoErgs to $depositAddress")
+      mixRequestsGroupTable.insert(mixId, totalNeededErg, GroupMixStatus.Queued.value, now, depositAddress, 0L, 0L, mixingAmount, mixingTokenAmount, totalNeededToken, mixingTokenId, masterSecret)
+      if (mixingTokenId.isEmpty) {
+        logger.info(s"Please deposit $totalNeededErg nanoErgs to $depositAddress")
+      } else {
+        logger.info(s"Please deposit $totalNeededErg nanoErgs and $totalNeededToken of $mixingTokenId to $depositAddress")
+      }
       return mixId
     }
   }
@@ -99,13 +130,11 @@ class ErgoMixer(tables: Tables) {
   }
 
   def getProgressForGroup(mix: MixGroupRequest): (Long, Long) = {
-    var mixDesired = 0;
+    var mixDesired = 0
     val done = mixRequestsTable.select(mixReqCols: _*).where(mixGroupIdCol === mix.id, mixStatusCol === MixStatus.Running.value).as(MixRequest(_)).map { req =>
       val mixState = mixStateTable.selectStar.where(mixIdCol === req.id).as(MixState(_)).head
-      if (mixState.round <= req.numRounds) {
-        mixDesired += req.numRounds
-        mixState.round
-      } else 0
+      mixDesired += req.numRounds
+      Math.min(mixState.round, req.numRounds)
     }.sum
     (mixDesired, done)
   }

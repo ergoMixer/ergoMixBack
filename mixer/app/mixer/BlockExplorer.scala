@@ -6,7 +6,7 @@ import java.net.HttpURLConnection
 import io.circe.Json
 import mixer.Models.{InBox, OutBox, SpendTx}
 import app.Configs
-import org.ergoplatform.appkit.BlockchainContext
+import org.ergoplatform.appkit.{BlockchainContext, ErgoToken}
 
 import scala.util.{Failure, Success, Try}
 
@@ -22,15 +22,23 @@ class BlockExplorer(implicit ctx:BlockchainContext) extends UTXOReader {
 
   private def getOutBoxFromJson(j: Json) = {
     val id = getId(j)
-    val value = (j \\ "value").map(v => v.asNumber.get).apply(0)
-    val registers = (j \\ "additionalRegisters").flatMap { r =>
-      r.asObject.get.toList.map {
+    val value = (j \\ "value").map(v => v.asNumber.get).head
+    val creationHeight = (j \\ "creationHeight").map(v => v.asNumber.get).head
+    val assets: Seq[Json] = (j \\ "assets").map(v => v.asArray.get).head
+    val tokens: Seq[ErgoToken] = assets.map{ asset =>
+      val tokenID = (asset \\ "tokenId").map(v => v.asString.get).head
+      val value = (asset \\ "amount").map(v => v.asNumber.get).head.toLong.get
+      new ErgoToken(tokenID, value)
+    }
+    val registers = (j \\ "additionalRegisters").flatMap{r =>
+      r.asObject.get.toList.map{
         case (key, value) => (key, value.asString.get)
       }
     }.toMap
     val ergoTree = (j \\ "ergoTree").map(v => v.asString.get).apply(0)
+    val address = (j \\ "address").map(v => v.asString.get).apply(0)
     val spendingTxId = (j \\ "spentTransactionId").map(v => v.asString).apply(0)
-    OutBox(id, value.toLong.get, registers, ergoTree, spendingTxId)
+    OutBox(id, value.toLong.get, registers, ergoTree, tokens, creationHeight.toInt.get, address, spendingTxId)
   }
 
   private def getId(j: Json) = (j \\ "id").map(v => v.asString.get).apply(0)
@@ -84,8 +92,6 @@ class BlockExplorer(implicit ctx:BlockchainContext) extends UTXOReader {
 
   def getConfirmationsForBoxId(boxId: String): Int = try {
     val json = (GetURL.get(boxUrl + boxId))
-    val isOnMainChain = (json \\ "mainChain").head.asBoolean.getOrElse(false)
-    if (!isOnMainChain) return 0
     (json \\ "creationHeight").headOption.map { creationHeight =>
       val height = getHeight
       height - creationHeight.asNumber.get.toInt.get

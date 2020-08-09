@@ -4,23 +4,10 @@ import java.math.BigInteger
 
 import app.BobImpl
 import org.ergoplatform.appkit.InputBox
-import app.ErgoMix.feeAmount
 import cli.ErgoMixCLIUtil.usingClient
 import app.ergomix.{DHT, HalfMixBox}
 
 object Bob {
-  /*
-Play Bob's role in creating a full-mix box with secret y.
-halfMixBoxId is the boxId of the half-mix box created by an instance of Alice.
-inputBoxIds are boxIds of additional input boxes funding the transaction.
-Signing may require an additional dLog which is supplied as proveDlogSecret.
-The method attempts to create a transaction outputting two full-mix box at index 0 and 1
-   */
-  def spendHalfMixBox(y:BigInt, halfMixBoxId:String, otherInputBoxIds:Array[String], changeAddress:String, otherDlogSecret:String):Array[String] = {
-    val (fullMixTx, bit) = spendHalfMixBox(y, halfMixBoxId, otherInputBoxIds, feeAmount, changeAddress, Array(otherDlogSecret), true)
-    Array(fullMixTx.tx.toJson(false), bit.toString)
-  }
-
   /*
 Play Bob's role in creating a full-mix box with secret y.
 halfMixBoxId is the boxId of the half-mix box created by an instance of Alice.

@@ -1,7 +1,8 @@
 package mixer
+import scala.collection.mutable
 
 object Stats {
   var tokenPrices: Option[Map[Int, Long]] = None
   var entranceFee: Option[Int] = None
-  var ringStats = collection.mutable.Map.empty[Long, collection.mutable.Map[String, Long]]
+  var ringStats = mutable.Map.empty[String, mutable.Map[Long, mutable.Map[String, Long]]]
 }

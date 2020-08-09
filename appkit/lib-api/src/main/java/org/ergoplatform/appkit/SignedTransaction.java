@@ -1,5 +1,8 @@
 package org.ergoplatform.appkit;
 
+import org.ergoplatform.Input;
+import scala.collection.Seq;
+
 import java.util.List;
 
 /**
@@ -14,6 +17,7 @@ import java.util.List;
 public interface SignedTransaction {
     String getId();
     String toJson(boolean prettyPrint);
+    Seq<Input> getInputBoxes();
     List<InputBox> getOutputsToSpend();
 }
 

@@ -1,17 +1,19 @@
 package mixer
 
-import mixer.Columns._
-import mixer.ErgoMixerUtil._
+import mixer.ErgoMixerUtils._
 import mixer.Models.MixStatus.Complete
 import mixer.Models.MixWithdrawStatus.{WithdrawRequested, Withdrawn}
 import mixer.Models.{GroupMixStatus, MixRequest, WithdrawTx}
 import cli.ErgoMixCLIUtil
 import db.ScalaDB._
+import mixer.Columns._
+import play.api.Logger
 
 class WithdrawMixer(tables: Tables) {
+  private val logger: Logger = Logger(this.getClass)
   import tables._
 
-  def processWtithraws(): Unit = {
+  def processWitthraws(): Unit = {
     val withdraws = withdrawTable.selectStar
       .where(
         (mixIdCol of withdrawTable) === (mixIdCol of mixRequestsTable),
@@ -24,14 +26,14 @@ class WithdrawMixer(tables: Tables) {
           processWithdraw(tx)
         } catch {
           case a: Throwable =>
-            println(s" [WITHDRAW: ${tx.mixId}] txId: ${tx.txId} An error occurred. Stacktrace below")
-            a.printStackTrace()
+            logger.info(s" [WITHDRAW: ${tx.mixId}] txId: ${tx.txId} An error occurred. Stacktrace below")
+            logger.error(getStackTraceStr(a))
         }
     }
   }
 
   private def processWithdraw(tx: WithdrawTx) = ErgoMixCLIUtil.usingClient { implicit ctx =>
-    println(s" [WITHDRAW: ${tx.mixId}] txId: ${tx.txId} processing.")
+    logger.info(s" [WITHDRAW: ${tx.mixId}] txId: ${tx.txId} processing.")
     val explorer = new BlockExplorer()
     val numConf = explorer.getTxNumConfirmations(tx.txId)
     if (numConf == -1) { // not mined yet!
@@ -42,13 +44,19 @@ class WithdrawMixer(tables: Tables) {
       //   * inputs are not available due to fork --> will be handled in other jobs (HalfMixer, FullMixer, NewMixer)
       if (!ErgoMixCLIUtil.isTxInPool(tx.txId)) { // however, we broadcast anyway if tx is not in the pool
         val result = ctx.sendTransaction(ctx.signedTxFromJson(tx.toString))
-        println(s"  broadcasting transaction: $result.")
+        logger.info(s"  broadcasting transaction: $result.")
       } else {
-        println(s"  transaction is in pool, waiting to be mined.")
+        logger.info(s"  transaction is in pool, waiting to be mined.")
+      }
+
+      // if fee box is used, check to see if it is double spent
+      if (tx.getFeeBox.nonEmpty && isDoubleSpent(tx.getFeeBox.get, tx.getFirstInput)) {
+        logger.info(s"  fee ${tx.getFeeBox.get} is double spent, will try in next round...")
+        deleteWithdraw(tx.mixId)
       }
 
     } else if (numConf >= minConfirmations) { // tx is confirmed enough, mix is done!
-      println(s"  transaction is confirmed enough. Mix is done.")
+      logger.info(s"  transaction is confirmed enough. Mix is done.")
       mixRequestsTable.update(mixStatusCol <-- Complete.value, mixWithdrawStatusCol <-- Withdrawn.value)
         .where(mixIdCol === tx.mixId)
       val mix: MixRequest = mixRequestsTable.selectStar.where(mixIdCol === tx.mixId).as(MixRequest(_)).head
@@ -58,6 +66,6 @@ class WithdrawMixer(tables: Tables) {
       }
 
     } else
-      println(s"  not enough confirmations yet: $numConf.")
+      logger.info(s"  not enough confirmations yet: $numConf.")
   }
 }

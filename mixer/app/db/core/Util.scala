@@ -4,8 +4,10 @@ import java.sql.SQLException
 
 import org.bouncycastle.util.encoders.Base64
 import db.core.DataStructures._
+import play.api.Logger
 
 object Util {
+  private val logger: Logger = Logger(this.getClass)
 
   import java.sql.{PreparedStatement, ResultSet}
   protected [db] def getWheresData(cWheres:Wheres):Array[(Any, DataType)] = cWheres.flatMap(_.compositeWheresData)
@@ -175,7 +177,7 @@ object Util {
       case CONST(_, constType) => 
         set(ctr, st, data, constType)
       case _ =>
-        println("[DB] (Set) Ignoring data (ctr = "+ctr+", data: "+data + ", type: "+ dataType)
+        logger.error("[DB] (Set) Ignoring data (ctr = "+ctr+", data: "+data + ", type: "+ dataType)
         
     }
   }

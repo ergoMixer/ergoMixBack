@@ -77,7 +77,7 @@ Also to run the ErgoMixer with a custom config file use:
 ```shell
 $ java -jar -D"config.file"=<path-your-config>/customConfig.conf ergoMixer-<version>.jar
 ```
-You can use this [config file](mixer/reference.conf) and change it as you want.
+You can use this [config file](mixer/sample.conf) and change it as you want.
 
 The database will be saved in your home directory. This database contains all the information and secrets being used by the mixer, So, take good care of it.
 
@@ -86,18 +86,18 @@ The database will be saved in your home directory. This database contains all th
   ```shell
     $ docker run -p 127.0.0.1:9000:9000 \
       --restart=always \
-      -v /path/on/host/to/ergo/database:/home/ergo/h2db \
+      -v /path/on/host/to/ergo/database_and_logfile:/home/ergo/h2db \
       -d ergomixer/mixer:latest 
   ```
   Also to run the ErgoMixer with a custom config file use:
   ```shell
     $ docker run -p 127.0.0.1:9000:9000 \
       --restart=always \
-      -v /path/on/host/to/ergo/database:/home/ergo/h2db \
+      -v /path/on/host/to/ergo/database_and_logfile:/home/ergo/h2db \
       -v <path-your-config-file>/yourConfig.conf:/home/ergo/mixer/application.conf \
       -d ergomixer/mixer:latest 
   ```
 
-  The database will be in your host directory `/path/on/host/to/ergo/database`; you can use `9000` port locally to load the mixer.
+  The database ans log file will be in your host directory `/path/on/host/to/ergo/database_and_logfile`; you can use `9000` port locally to load the mixer.
   
-  NOTE: The `/path/on/host/to/ergo/database` directory must have `777` permission or have owner/group numeric id equal to `9052` to be writable by the container.
+  NOTE: The `/path/on/host/to/ergo/database_and_logfile` directory must have `777` permission or have owner/group numeric id equal to `9052` to be writable by the container.

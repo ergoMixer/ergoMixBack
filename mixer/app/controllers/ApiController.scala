@@ -1,25 +1,21 @@
 package controllers
 
+import app.{Configs, Util => EUtil}
+import info.BuildInfo
+import cli.ErgoMixCLIUtil
+import db.ScalaDB._
 import io.circe.Json
 import io.circe.syntax._
 import javax.inject._
-
-import cli.ErgoMixCLIUtil
-import db.ScalaDB._
-import mixer.{BlockExplorer, MixBoxList, Stats}
 import mixer.Columns._
 import mixer.Models.MixWithdrawStatus.WithdrawRequested
-import app.{Configs, ErgoMix, TokenErgoMix, Util => EUtil}
-
+import mixer.{ErgoMixerUtils, MixBoxList, Stats}
 import play.api.libs.json._
 import play.api.mvc._
 import scalaj.http.{Http, HttpResponse}
 import services.ErgoMixingSystem
-import special.collection.Coll
 
-import scala.compat.Platform
 import scala.io.Source
-import info.{BuildInfo => info}
 
 /**
  * A controller inside of Mixer controller.
@@ -122,20 +118,31 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
     ).as("application/json")
   }
 
+  def exit: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    System.exit(0)
+    Ok(
+      s"""
+         |{
+         |  "success": true
+         |}
+         |""".stripMargin
+    ).as("application/json")
+  }
+
   /**
    * A Get controller for return information of Mixer
    *
    * @return {
-   *            "versionMixer": ${info.version},
-   *            "ergoExplorer": ${ErgoMixingSystem.explorerUrl},
-   *            "ergoNode": ${ErgoMixingSystem.nodeUrl}
+   *         "versionMixer": ${info.version},
+   *         "ergoExplorer": ${ErgoMixingSystem.explorerUrl},
+   *         "ergoNode": ${ErgoMixingSystem.nodeUrl}
    *         }
    */
   def getInfo: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     Ok(
       s"""
          |{
-         |  "versionMixer": "${info.version}",
+         |  "versionMixer": "${BuildInfo.version}",
          |  "ergoExplorer": "${Configs.explorerUrl}",
          |  "ergoExplorerFront": "${Configs.explorerFrontend}",
          |  "ergoNode": "${Configs.nodeUrl}"
@@ -145,16 +152,46 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
   }
 
   /**
+   * A post controller to create covert address.
+   */
+  def covertRequest: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
+    val numRounds: Int = js.hcursor.downField("numRounds").as[Int].getOrElse(-1)
+    val ergRing: Long = js.hcursor.downField("ergRing").as[Long].getOrElse(-1)
+    val tokenRing: Long = js.hcursor.downField("tokenRing").as[Long].getOrElse(-1)
+    val tokenId: String = js.hcursor.downField("tokenId").as[String].getOrElse(null)
+    if (numRounds == -1 || ergRing == -1 || tokenRing == -1 || tokenId == null) {
+      BadRequest(
+        s"""
+           |{
+           |  "success": false,
+           |  "message": "all required fields must be present."
+           |}
+           |""".stripMargin
+      ).as("application/json")
+    } else {
+      val id = ergoMixer.newCovertRequest(ergRing, tokenRing, tokenId, numRounds)
+      Ok(
+        s"""{
+           |  "status": "success",
+           |  "mixId": "$id"
+           |}""".stripMargin
+      ).as("application/json")
+    }
+  }
+
+  /**
    * A post controller to store mix requests with tokens.
    */
   def mixRequest = Action(parse.json) { request =>
     request.body.validate[MixBoxList] match {
       case JsSuccess(value, _) => {
         val id = ergoMixer.newMixGroupRequest(value.items)
-        Ok(s"""{
-          |  "status": "success",
-          |  "mixId": "$id"
-          |}""".stripMargin) .as("application/json")
+        Ok(
+          s"""{
+             |  "status": "success",
+             |  "mixId": "$id"
+             |}""".stripMargin).as("application/json")
       }
       case _ => BadRequest("{\"status\": \"error\"}")
     }
@@ -172,12 +209,12 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
       val progress = ergoMixer.getProgressForGroup(mix)
       val stat =
         s"""{
-          |    "numBoxes": ${doneMixes._1},
-          |    "numComplete": ${doneMixes._2},
-          |    "numWithdrawn": ${doneMixes._3},
-          |    "totalMixRound": ${progress._1},
-          |    "doneMixRound": ${progress._2}
-          |  }""".stripMargin
+           |    "numBoxes": ${doneMixes._1},
+           |    "numComplete": ${doneMixes._2},
+           |    "numWithdrawn": ${doneMixes._3},
+           |    "totalMixRound": ${progress._1},
+           |    "doneMixRound": ${progress._2}
+           |  }""".stripMargin
       mix.toJson(stat)
     }).mkString(", ") + "]"
     Ok(res).as("application/json")
@@ -194,6 +231,11 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
       if (mix.withdraw.isDefined) {
         withdrawTxId = mix.withdraw.get.txId
       }
+      val lastMixTime = {
+        if (mix.fullMix.isDefined) ErgoMixerUtils.prettyDate(mix.fullMix.get.createdTime)
+        else if (mix.halfMix.isDefined) ErgoMixerUtils.prettyDate(mix.halfMix.get.createdTime)
+        else "None"
+      }
 
       s"""
          |{
@@ -206,19 +248,41 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
          |  "withdraw": "${mix.mixRequest.withdrawAddress}",
          |  "boxType": "${if (mix.fullMix.isDefined) "Full" else {if (mix.halfMix.isDefined) "Half" else "None"}}",
          |  "withdrawStatus": "${mix.mixRequest.withdrawStatus}",
-         |  "withdrawTxId": "$withdrawTxId"
-         |
+         |  "withdrawTxId": "$withdrawTxId",
+         |  "lastMixTime": "$lastMixTime",
+         |  "mixingTokenId": "${mix.mixRequest.tokenId}",
+         |  "mixingTokenAmount": ${mix.mixRequest.mixingTokenAmount}
          |}""".stripMargin
     }).mkString(",") + "]"
     Ok(res).as("application/json")
+  }
+
+  def supported() = Action {
+    var params = Configs.params
+    if (params.isEmpty) {
+      BadRequest(
+        s"""
+           |{
+           |  "success": false,
+           |  "message": "params are not ready yet."
+           |}
+           |""".stripMargin
+      ).as("application/json")
+    } else {
+      val supported = params.values.toList.sortBy(f => f.id)
+      Ok(s"""
+          |[${supported.map(_.toJson()).mkString(",")}]
+          |""".stripMargin).as("application/json")
+    }
   }
 
   def mixingFee() = Action {
     var res =
       s"""
          |{
-         |  "boxInTransaction": ${Configs.numOutputsInStartTransaction},
-         |  "fee": ${ErgoMix.feeAmount},""".stripMargin
+         |  "boxInTransaction": ${Configs.maxOuts},
+         |  "distributeFee": ${Configs.distributeFee},
+         |  "startFee": ${Configs.startFee},""".stripMargin
     val tokenPrices = Stats.tokenPrices.orNull
     if (tokenPrices == null) {
       BadRequest(
@@ -285,7 +349,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
     /**
      * Function for return response for this request
      *
-     * @param status  status of response
+     * @param status status of response
      * @param message message of response
      * @return response of request
      */

@@ -8,8 +8,10 @@ import cli.ErgoMixCLIUtil
 import db.DBManager
 import db.ScalaDB._
 import db.config.DBConfig
+import play.api.Logger
 
 class Tables(config: DBConfig) {
+  private val logger: Logger = Logger(this.getClass)
 
   import Columns._
 
@@ -45,50 +47,54 @@ class Tables(config: DBConfig) {
     6. withdraw (done)
   */
 
+  // covert mix
+  val mixCovertCols = Seq(mixGroupIdCol, createdTimeCol, depositAddressCol, numTokenCol, depositCol, tokenDepositCol, mixingAmount, mixingTokenAmount, tokenId)
+  val mixCovertTable = Tab.withName("mixing_covert_request").withCols(mixCovertCols :+ masterSecretGroupCol:_*).withPriKey(mixGroupIdCol)
+
   // mix requests
-  val mixGroupReqCols = Seq(mixGroupIdCol, amountCol, mixStatusCol, createdTimeCol, depositAddressCol, depositCol, mixingAmount)
+  val mixGroupReqCols = Seq(mixGroupIdCol, amountCol, mixStatusCol, createdTimeCol, depositAddressCol, depositCol, tokenDepositCol, mixingAmount, mixingTokenAmount, mixingTokenNeeded, tokenId)
   val mixRequestsGroupTable = Tab.withName("mixing_group_request").withCols(mixGroupReqCols :+ masterSecretGroupCol:_*).withPriKey(mixGroupIdCol)
 
-  val distributeTxsTable = Tab.withName("distribute_transactions").withCols(mixGroupIdCol, txIdCol, chainOrderCol, createdTimeCol, txCol).withPriKey(txIdCol)
+  val distributeTxsTable = Tab.withName("distribute_transactions").withCols(mixGroupIdCol, txIdCol, chainOrderCol, createdTimeCol, txCol, inputsCol).withPriKey(txIdCol)
 
-  val mixReqCols = Seq(mixIdCol, mixGroupIdCol, amountCol, numRoundsCol, mixStatusCol, createdTimeCol, withdrawAddressCol, depositAddressCol, depositCompletedCol, neededCol, numTokenCol, mixWithdrawStatusCol)
+  val mixReqCols = Seq(mixIdCol, mixGroupIdCol, amountCol, numRoundsCol, mixStatusCol, createdTimeCol, withdrawAddressCol, depositAddressCol, depositCompletedCol, neededCol, numTokenCol, mixWithdrawStatusCol, mixingTokenAmount, mixingTokenNeeded, tokenId)
   val mixRequestsTable = Tab.withName("mixing_requests").withCols(mixReqCols :+ masterSecretCol: _*).withPriKey(mixIdCol)
 
   // stores unspent deposits
-  val unspentDepositsTable = Tab.withName("unspent_deposits").withCols(addressCol, boxIdCol, amountCol, createdTimeCol).withPriKey(boxIdCol)
-  private val unspentDepositsArchiveTable = Tab.withName("unspent_deposits_archived").withCols(addressCol, boxIdCol, amountCol, createdTimeCol, insertReasonCol).withPriKey()
+  val unspentDepositsTable = Tab.withName("unspent_deposits").withCols(addressCol, boxIdCol, amountCol, createdTimeCol, mixingTokenAmount).withPriKey(boxIdCol)
+  private val unspentDepositsArchiveTable = Tab.withName("unspent_deposits_archived").withCols(addressCol, boxIdCol, amountCol, createdTimeCol, mixingTokenAmount, insertReasonCol).withPriKey()
 
 
-  def insertUnspentDeposit(address: String, boxId: String, amount: Long, time: Long)(implicit insertReason: String) = {
-    unspentDepositsTable.insert(address, boxId, amount, time)
-    unspentDepositsArchiveTable.insert(address, boxId, amount, time, insertReason)
+  def insertUnspentDeposit(address: String, boxId: String, amount: Long, tokenAmount: Long, time: Long)(implicit insertReason: String) = {
+    unspentDepositsTable.insert(address, boxId, amount, time, tokenAmount)
+    unspentDepositsArchiveTable.insert(address, boxId, amount, time, tokenAmount, insertReason)
   }
 
   // stores spent deposits
-  val spentDepositsTable = Tab.withName("spent_deposits").withCols(addressCol, boxIdCol, amountCol, createdTimeCol, txIdCol, spentTimeCol, purposeCol).withPriKey(boxIdCol)
-  private val spentDepositsArchiveTable = Tab.withName("spent_deposits_archived").withCols(addressCol, boxIdCol, amountCol, createdTimeCol, txIdCol, spentTimeCol, purposeCol, insertReasonCol).withPriKey()
+  val spentDepositsTable = Tab.withName("spent_deposits").withCols(addressCol, boxIdCol, amountCol, createdTimeCol, mixingTokenAmount, txIdCol, spentTimeCol, purposeCol).withPriKey(boxIdCol)
+  private val spentDepositsArchiveTable = Tab.withName("spent_deposits_archived").withCols(addressCol, boxIdCol, amountCol, createdTimeCol, mixingTokenAmount, txIdCol, spentTimeCol, purposeCol, insertReasonCol).withPriKey()
 
-  def insertSpentDeposit(address: String, boxId: String, amount: Long, createdTime: Long, txId: String, spentTime: Long, purpose: String)(implicit insertReason: String) = {
-    spentDepositsTable.insert(address, boxId, amount, createdTime, txId, spentTime, purpose)
-    spentDepositsArchiveTable.insert(address, boxId, amount, createdTime, txId, spentTime, purpose, insertReason)
+  def insertSpentDeposit(address: String, boxId: String, amount: Long, tokenAmount: Long, createdTime: Long, txId: String, spentTime: Long, purpose: String)(implicit insertReason: String) = {
+    spentDepositsTable.insert(address, boxId, amount, createdTime, tokenAmount, txId, spentTime, purpose)
+    spentDepositsArchiveTable.insert(address, boxId, amount, createdTime, tokenAmount, txId, spentTime, purpose, insertReason)
   }
 
   private def undoSpend(deposit: Deposit) = ErgoMixCLIUtil.usingClient { implicit ctx =>
     if (unspentDepositsTable.exists(boxIdCol === deposit.boxId)) throw new Exception(s"Unspent deposit already exists ${deposit.boxId}")
     val explorer = new BlockExplorer()
     if (explorer.getBoxById(deposit.boxId).spendingTxId.isDefined) throw new Exception(s"Cannot undo spend for already spend box ${deposit.boxId}")
-    unspentDepositsTable.insert(deposit.address, deposit.boxId, deposit.amount, deposit.createdTime)
+    unspentDepositsTable.insert(deposit.address, deposit.boxId, deposit.amount, deposit.tokenAmount, deposit.createdTime)
     spentDepositsTable.deleteWhere(boxIdCol === deposit.boxId)
   }
 
   def undoSpends(depositAddress: String) = {
     spentDepositsTable.selectStar.where(addressCol === depositAddress).as(Deposit(_)).map { deposit =>
-      println(s"[UndoDeposit ${deposit.address}]")
+      logger.info(s"[UndoDeposit ${deposit.address}]")
       try {
         undoSpend(deposit)
       } catch {
         case a: Throwable =>
-          println(s" [UndoDeposit ${deposit.address}] Error " + a.getMessage)
+          logger.error(s" [UndoDeposit ${deposit.address}] Error " + a.getMessage)
       }
     }
   }
@@ -218,6 +224,10 @@ class Tables(config: DBConfig) {
     withdrawTable.insert(mixId, txId, time, boxId, txBytes)
     withdrawArchiveTable.insert(mixId, txId, time, boxId, txBytes, insertReason)
     mixRequestsTable.update(mixWithdrawStatusCol <-- WithdrawRequested.value).where(mixIdCol === mixId)
+  }
+
+  def deleteWithdraw(mixId: String): Unit = {
+    withdrawTable.deleteWhere(mixIdCol === mixId)
   }
 
   val mixTransactionsTable = Tab.withName("mix_transactions").withCols(boxIdCol, txIdCol, txCol).withPriKey(boxIdCol) // saves the transaction in which boxIdCol is created

@@ -26,6 +26,7 @@ POST        /mix/withdraw                      controllers.ApiController.withdra
 
 # New mixing backend with tokens
 POST        /mix/request                       controllers.ApiController.mixRequest
+POST        /mix/request/covert                controllers.ApiController.covertRequest
 
 GET         /mix/request/list                  controllers.ApiController.mixGroupRequestList
 GET         /mix/request/activeList            controllers.ApiController.mixGroupRequestActiveList
@@ -34,9 +35,11 @@ GET         /mix/request/completeList          controllers.ApiController.mixGrou
 GET         /mix/request/:groupId/list         controllers.ApiController.mixRequestList(groupId: String)
 
 GET         /mix/fee                           controllers.ApiController.mixingFee
+GET         /mix/supported                     controllers.ApiController.supported
 
 GET         /dashboard                         controllers.MixerController.dashboard
 GET         /dashboard/*file                   controllers.MixerController.assetOrDefault(file)
 
 # Return Info of Mixer
 GET         /info                              controllers.ApiController.getInfo
+GET        /exit                              controllers.ApiController.exit

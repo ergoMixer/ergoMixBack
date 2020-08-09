@@ -20,11 +20,12 @@ If broadCast is false it just outputs the transaction but does not broadcast it.
 feeAmount is the amount in fee in nanoErgs
    */
   def createHalfMixBox(x: BigInt, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String,
-                       proverDlogSecrets: Array[String], broadCast: Boolean, poolAmount: Long, numToken: Int = 0) = {
+                       proverDlogSecrets: Array[String], broadCast: Boolean, poolAmount: Long, numToken: Int = 0,
+                       mixingTokenId: String, mixingTokenAmount: Long) = {
     usingClient{implicit ctx =>
       val alice = new AliceImpl(x.bigInteger)
       val dlogs: Array[BigInteger] = proverDlogSecrets.map(BigInt(_).bigInteger)
-      val tx = alice.createHalfMixBox(inputBoxIds, feeAmount, changeAddress, dlogs, Array[DHT](), poolAmount, numToken)
+      val tx = alice.createHalfMixBox(inputBoxIds, feeAmount, changeAddress, dlogs, Array[DHT](), poolAmount, numToken, mixingTokenId, mixingTokenAmount)
       if (broadCast) ctx.sendTransaction(tx.tx)
       tx
     }

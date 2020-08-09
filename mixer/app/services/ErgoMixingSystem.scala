@@ -13,7 +13,7 @@ object ErgoMixingSystem {
     override val dbpass: String = Configs.dbPass
   }
 
-  Client.setClient(Configs.nodeUrl, isMainnet = Configs.networkType.toLowerCase().equals("mainnet"), None)
+  Client.setClient(Configs.nodeUrl, isMainnet = Configs.networkType.toLowerCase().equals("mainnet"), None, Configs.explorerUrl)
   val tables = new Tables(Config)
   val ergoMixer = new ErgoMixer(tables)
   val ergoMixerJobs = new ErgoMixerJobs(tables)

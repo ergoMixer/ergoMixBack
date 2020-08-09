@@ -3,11 +3,14 @@ package org.ergoplatform.appkit.impl;
 import com.google.gson.Gson;
 import org.ergoplatform.ErgoBox;
 import org.ergoplatform.ErgoLikeTransaction;
+import org.ergoplatform.Input;
 import org.ergoplatform.appkit.InputBox;
 import org.ergoplatform.appkit.Iso;
 import org.ergoplatform.appkit.SignedTransaction;
 import org.ergoplatform.restapi.client.ErgoTransaction;
 import org.ergoplatform.restapi.client.JSON;
+import org.ergoplatform.settings.ErgoAlgos;
+import scala.collection.Seq;
 import sigmastate.Values;
 
 import java.util.List;
@@ -26,8 +29,13 @@ public class SignedTransactionImpl implements SignedTransaction {
     /**
      * Returns underlying {@link ErgoLikeTransaction}
      */
-    ErgoLikeTransaction getTx() {
+    public ErgoLikeTransaction getTx() {
         return _tx;
+    }
+
+    @Override
+    public Seq<Input> getInputBoxes() {
+        return _tx.inputs();
     }
 
     @Override

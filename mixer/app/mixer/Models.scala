@@ -9,25 +9,31 @@ import io.circe.syntax._
 import io.circe.{Encoder, Json, parser}
 import db.core.DataStructures.anyToAny
 import cli.ErgoMixCLIUtil
-import app.{ErgoMix, TokenErgoMix}
+import app.{Configs, TokenErgoMix}
+import org.ergoplatform.appkit.{ErgoToken, InputBox}
 import scorex.util.encode.Base16
+import special.collection.Coll
 import special.sigma.GroupElement
 
 object Models {
 
-  case class SpendTx(inboxes:Seq[InBox], outboxes:Seq[OutBox], id:String, address:String, timestamp:Long)
+  case class SpendTx(inboxes: Seq[InBox], outboxes: Seq[OutBox], id: String, address: String, timestamp: Long)
 
   case class InBox(id: String, address: String, createdTxId: String, value: Long) {
     def isHalfMixBox: Boolean = ErgoMixCLIUtil.usingClient { implicit ctx =>
-      address == new TokenErgoMix(ctx).halfMixAddress.toString
+      address == ErgoMixCLIUtil.tokenErgoMix.get.halfMixAddress.toString
     }
   }
 
-  case class OutBox(id: String, amount: Long, registers: Map[String, String], ergoTree: String, spendingTxId: Option[String]) {
-    def ge(regId: String): GroupElement = ErgoMix.hexToGroupElement(registers(regId).drop(2))
+  case class OutBox(id: String, amount: Long, registers: Map[String, String], ergoTree: String, tokens: Seq[ErgoToken], creationHeight: Int, address: String, spendingTxId: Option[String]) {
+    def ge(regId: String): GroupElement = TokenErgoMix.hexToGroupElement(registers(regId).drop(2))
+
+    def getToken(tokenId: String): Long = {
+      tokens.filter(_.getId.toString.equals(tokenId)).map(_.getValue.longValue()).sum
+    }
 
     def mixBox: Option[Either[HBox, FBox]] = try ErgoMixCLIUtil.usingClient { implicit ctx =>
-      val ergoMix = new TokenErgoMix(ctx)
+      val ergoMix = ErgoMixCLIUtil.tokenErgoMix.get
       val fullMixBoxErgoTree = Base16.encode(ergoMix.fullMixScriptErgoTree.bytes).trim
       val halfMixBoxErgoTree = Base16.encode(ergoMix.halfMixContract.getErgoTree.bytes).trim
       ergoTree match {
@@ -40,7 +46,6 @@ object Models {
       }
     } catch {
       case a: Throwable =>
-        a.printStackTrace()
         None
     }
 
@@ -53,8 +58,6 @@ object Models {
       case Left(hBox) => Some(hBox)
       case _ => None
     }
-
-    override def toString: String = this.asJson.toString
   }
 
   sealed abstract class MixStatus(val value: String)
@@ -106,7 +109,7 @@ object Models {
     def fromString(s: String): MixWithdrawStatus = all.find(_.value == s).getOrElse(throw new Exception(s"Invalid status $s"))
   }
 
-  case class MixRequest(id: String, groupId: String, amount: Long, numRounds: Int, mixStatus: MixStatus, createdTime: Long, withdrawAddress: String, depositAddress: String, depositCompleted: Boolean, neededAmount: Long, numToken: Int, withdrawStatus: String) {
+  case class MixRequest(id: String, groupId: String, amount: Long, numRounds: Int, mixStatus: MixStatus, createdTime: Long, withdrawAddress: String, depositAddress: String, depositCompleted: Boolean, neededAmount: Long, numToken: Int, withdrawStatus: String, mixingTokenAmount: Long, neededTokenAmount: Long, tokenId: String) {
     def creationTimePrettyPrinted: String = {
       import java.text.SimpleDateFormat
 
@@ -133,13 +136,49 @@ object Models {
         i.next().as[Boolean],
         i.next().as[Long], // needed
         i.next().as[Int], // token
-        i.next().as[String] // withdraw status
+        i.next().as[String], // withdraw status
+        i.next().as[Long], // mixing token amount
+        i.next().as[Long], // needed tokens
+        i.next().as[String] // token id
+      )
+    }
+  }
+
+  case class MixCovertRequest(id: String, createdTime: Long, depositAddress: String, numRounds: Int, doneErgDeposit: Long, doneTokenDeposit: Long, ergRing: Long, tokenRing: Long, tokenId: String, masterKey: BigInt) {
+    def creationTimePrettyPrinted: String = {
+      new SimpleDateFormat("YYYY-MM-dd HH:mm:ss").format(new Date(createdTime))
+    }
+
+    def getMinNeeded: (Long, Long) = { // returns what is needed to distribute
+      val needed = MixBox.getPrice(ergRing, tokenRing, numRounds)
+      (needed._1 + Configs.distributeFee, needed._2)
+    }
+
+    def getMixingNeed: (Long, Long) = { // returns what is needed for a single mix box
+      MixBox.getPrice(ergRing, tokenRing, numRounds)
+    }
+  }
+
+  object MixCovertRequest {
+    def apply(a: Array[Any]): MixCovertRequest = {
+      val iterator = a.toIterator
+      new MixCovertRequest(
+        iterator.next().as[String], // id
+        iterator.next().as[Long], // created time
+        iterator.next().as[String], // deposit address
+        iterator.next().as[Int], // num rounds
+        iterator.next().as[Long], // done deposit
+        iterator.next().as[Long], // token done deposit
+        iterator.next().as[Long], // mixing amount
+        iterator.next().as[Long], // mixing token amount
+        iterator.next().as[String], // token id
+        iterator.next.as[BigDecimal].toBigInt() // master secret
       )
     }
   }
 
   //ixGroupIdCol, amountCol, mixStatusCol, createdTimeCol, depositAddressCol, depositCompletedCol
-  case class MixGroupRequest(id: String, neededAmount: Long, status: String, createdTime: Long, depositAddress: String, doneDeposit: Long, mixingAmount: Long, masterKey: BigInt) {
+  case class MixGroupRequest(id: String, neededAmount: Long, status: String, createdTime: Long, depositAddress: String, doneDeposit: Long, tokenDoneDeposit: Long, mixingAmount: Long, mixingTokenAmount: Long, neededTokenAmount: Long, tokenId: String, masterKey: BigInt) {
     def creationTimePrettyPrinted: String = {
       new SimpleDateFormat("YYYY-MM-dd HH:mm:ss").format(new Date(createdTime))
     }
@@ -149,11 +188,15 @@ object Models {
          |{
          |  "id": "${id}",
          |  "amount": ${neededAmount},
+         |  "tokenAmount": ${neededTokenAmount},
          |  "createdDate": "${creationTimePrettyPrinted}",
          |  "deposit": "${depositAddress}",
          |  "status": "${status}",
          |  "mixingAmount": $mixingAmount,
+         |  "mixingTokenId": "$tokenId",
+         |  "mixingTokenAmount": $mixingTokenAmount,
          |  "doneDeposit": ${doneDeposit},
+         |  "doneTokenDeposit": ${tokenDoneDeposit},
          |  "groupStat": $statJson
          |}
          |""".stripMargin
@@ -170,7 +213,11 @@ object Models {
         iterator.next().as[Long], // created time
         iterator.next().as[String], // deposit address
         iterator.next().as[Long], // done deposit
+        iterator.next().as[Long], // token done deposit
         iterator.next().as[Long], // mixing amount
+        iterator.next().as[Long], // mixing token amount
+        iterator.next().as[Long], // needed tokens
+        iterator.next().as[String], // token id
         iterator.next.as[BigDecimal].toBigInt() // master secret
       )
     }
@@ -216,7 +263,16 @@ object Models {
 
   case class WithdrawTx(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte]) {
     override def toString: String = new String(txBytes, StandardCharsets.UTF_16)
+    def getFeeBox: Option[String] = { // returns fee box used in this tx if available
+      val inputs = boxId.split(",")
+      if (inputs.size > 1) return Some(inputs(inputs.size - 1))
+      Option.empty
+    }
+    def getFirstInput: String = {
+      boxId.split(",").head
+    }
   }
+
   object WithdrawTx {
     def apply(a: Array[Any]): WithdrawTx = {
       val i = a.toIterator
@@ -233,6 +289,7 @@ object Models {
   case class MixTransaction(boxId: String, txId: String, txBytes: Array[Byte]) {
     override def toString: String = new String(txBytes, StandardCharsets.UTF_16)
   }
+
   object MixTransaction {
     def apply(a: Array[Any]): MixTransaction = {
       val i = a.toIterator
@@ -244,9 +301,10 @@ object Models {
     }
   }
 
-  case class DistributeTx(mixGroupId: String, txId: String, order: Int, time: Long, txBytes: Array[Byte]) {
+  case class DistributeTx(mixGroupId: String, txId: String, order: Int, time: Long, txBytes: Array[Byte], inputs: String) {
     override def toString: String = new String(txBytes, StandardCharsets.UTF_16)
   }
+
   object DistributeTx {
     def apply(a: Array[Any]): DistributeTx = {
       val i = a.toIterator
@@ -255,12 +313,13 @@ object Models {
         i.next().as[String],
         i.next().as[Int],
         i.next().as[Long],
-        i.next().as[Array[Byte]]
+        i.next().as[Array[Byte]],
+        i.next().as[String],
       )
     }
   }
 
-  case class Deposit(address: String, boxId: String, amount: Long, createdTime: Long) {
+  case class Deposit(address: String, boxId: String, amount: Long, createdTime: Long, tokenAmount: Long) {
     override def toString: String = this.asJson.toString
   }
 
@@ -270,6 +329,7 @@ object Models {
       new Deposit(
         i.next().as[String],
         i.next().as[String],
+        i.next().as[Long],
         i.next().as[Long],
         i.next().as[Long]
       )
@@ -383,6 +443,27 @@ object Models {
         i.next().as[Boolean],
         i.next().as[String]
       )
+    }
+  }
+
+  case class EntityInfo(name: String, id: String, rings: Seq[Long], decimals: Int) {
+    def toJson(): String = {
+      s"""{
+        |  "name": "$name",
+        |  "id": "$id",
+        |  "rings": [${rings.mkString(",")}],
+        |  "decimals": $decimals
+        |}""".stripMargin
+    }
+  }
+
+  object EntityInfo {
+    def apply(box: InputBox): EntityInfo = {
+      val name = new String(box.getRegisters.get(0).getValue.asInstanceOf[Coll[Byte]].toArray, StandardCharsets.UTF_8)
+      val id = new String(box.getRegisters.get(1).getValue.asInstanceOf[Coll[Byte]].toArray, StandardCharsets.UTF_8)
+      val rings = box.getRegisters.get(2).getValue.asInstanceOf[Coll[Long]]
+      val decimals = if (box.getRegisters.size() == 4) box.getRegisters.get(3).getValue.asInstanceOf[Int] else 0
+      new EntityInfo(name, id, rings.toArray, decimals)
     }
   }
 
