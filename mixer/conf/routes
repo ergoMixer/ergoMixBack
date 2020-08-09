@@ -1,0 +1,42 @@
+# Routes
+# This file defines all application routes (Higher priority routes first)
+# ~~~~
+
+# Home page
+GET         /                                  controllers.MixerController.index
+
+# Route for swagger
+GET         /swagger.conf                      controllers.ApiController.swagger
+GET         /swagger                           controllers.ApiController.redirectDocs
+GET         /docs/*file                        controllers.Assets.at(path:String="/public/lib/swagger-ui", file: String)
+
+
+# Map static resources from the /public folder to the /assets URL path
+GET         /assets/*file                      controllers.Assets.versioned(path="/public", file: Asset)
+
+# Get addresses from node
++nocsrf
+POST        /address/generate/from_node        controllers.ApiController.generateAddress
+
+GET         /rings                             controllers.ApiController.rings
+
+# Add withdraw to database
++nocsrf
+POST        /mix/withdraw                      controllers.ApiController.withdraw
+
+# New mixing backend with tokens
+POST        /mix/request                       controllers.ApiController.mixRequest
+
+GET         /mix/request/list                  controllers.ApiController.mixGroupRequestList
+GET         /mix/request/activeList            controllers.ApiController.mixGroupRequestActiveList
+GET         /mix/request/completeList          controllers.ApiController.mixGroupRequestCompleteList
+
+GET         /mix/request/:groupId/list         controllers.ApiController.mixRequestList(groupId: String)
+
+GET         /mix/fee                           controllers.ApiController.mixingFee
+
+GET         /dashboard                         controllers.MixerController.dashboard
+GET         /dashboard/*file                   controllers.MixerController.assetOrDefault(file)
+
+# Return Info of Mixer
+GET         /info                              controllers.ApiController.getInfo

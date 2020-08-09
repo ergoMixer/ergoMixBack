@@ -1,0 +1,3 @@
+[submodule "ergoMixFront"]
+	path = ergoMixFront
+	url = https://github.com/ergoMixer/ergoMixFront

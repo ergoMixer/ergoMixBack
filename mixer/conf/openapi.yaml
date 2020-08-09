@@ -1,0 +1,122 @@
+openapi: "3.0.2"
+
+info:
+  version: "3.1.2"
+  title: Ergo Mixer API
+  description: API docs for Ergo mixer.
+
+components:
+
+  schemas:
+    # Objects
+    Node:
+      type: object
+      required:
+        - nodeAddress
+        - apiKey
+        - countAddress
+      example: {
+        "apiKey": "623f4e8e440007f45020afabbf56d8ba43144778757ea88497c794ad529a0422",
+        "nodeAddress": "http://10.10.10.4:9052",
+        "countAddress": 3
+      }
+    GenerateAddress:
+      description: List of wallet address
+      type: array
+      format: string
+      example: [
+        "3WwpvNSXu6r8bpjUmV9913mXTMQBd2WiLMvW1QcztHYvQ74FBzQT",
+        "3WxGbEh5NFdSCRaTm5MF9HnzEz2MiR1eWa8PmhdEXv12nTfPoha1",
+        "3Wx19pH67VzTvAEDAUfQShk4meCQmUPnTmJ3pkgxLdE1do3yLvfS"
+      ]
+    MixBoxRequest:
+      description: Request to mix a single box
+      type: object
+      required:
+        - amount
+        - mix
+    MixRequest:
+      description: Request to mix a chunk of boxes
+      type: array
+      format: MixBoxRequest
+      example: [
+        {
+          "amount": 12,
+          "withdraw": "3WwpvNSXu6r8bpjUmV9913mXTMQBd2WiLMvW1QcztHYvQ74FBzQT",
+          "mix": "extreme"
+        }
+      ]
+    StatusResponse:
+      description: Status of operation
+      type: object
+      required:
+        - status
+      example: {
+         "status": "success"
+      }
+    ApiError:
+      type: object
+      required:
+      - success
+      - message
+      properties:
+        error:
+          type: boolean
+          description: status
+          example: false
+        message:
+          type: string
+          nullable: true
+          description: Detailed error description
+
+paths:
+  /address/generate/from_node:
+    post:
+      summary: Generate wallet address for your node
+      operationId: generateAddress
+      tags:
+      - address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Node'
+      responses:
+        '200':
+          description: List of addresses
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateAddress'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /mix/request:
+    post:
+      summary: request a chunk of boxes to be mixed
+      operationId: generateAddress
+      tags:
+        - mix
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+                $ref: '#/components/schemas/MixRequest'
+      responses:
+        '200':
+          description: Status of operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
