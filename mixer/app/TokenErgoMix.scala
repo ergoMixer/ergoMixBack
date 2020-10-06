@@ -1,6 +1,6 @@
 package app
 
-import cli.ErgoMixCLIUtil
+import cli.MixUtils
 import org.ergoplatform.appkit._
 import org.ergoplatform.appkit.impl.ErgoTreeContract
 import org.ergoplatform.{ErgoAddress, ErgoAddressEncoder}
@@ -25,6 +25,7 @@ object TokenErgoMix {
   def getHash(bytes: Array[Byte]) = scorex.crypto.hash.Blake2b256(bytes)
 
   val g: GroupElement = CryptoConstants.dlogGroup.generator
+  val poisonousHalfs: Seq[GroupElement] = Seq(g.exp(BigInt(1).bigInteger), g.exp(BigInt(-1).bigInteger))
 
   def hexToGroupElement(hex: String): GroupElement = {
     JavaHelpers.decodeStringToGE(hex)
@@ -32,7 +33,7 @@ object TokenErgoMix {
 
   def getProveDlogAddress(z: BigInt): String = {
     val gZ: GroupElement = g.exp(z.bigInteger)
-    ErgoMixCLIUtil.usingClient { implicit ctx =>
+    MixUtils.usingClient { implicit ctx =>
       val contract = ctx.compileContract(
         ConstantsBuilder.create().item(
           "gZ", gZ
@@ -44,7 +45,6 @@ object TokenErgoMix {
 }
 
 class TokenErgoMix(ctx: BlockchainContext) {
-  // TODO No need to have scripts here, better to replace them with ergoTree before release
   // at the very least having ergo trees instead of actual scripts will have the safety that one can not easily
   // interfere with logic and cause problems (for himself at least)!
   // also cleaner and more efficient.

@@ -1,29 +1,33 @@
 package mixer
 
-import java.nio.charset.StandardCharsets
-
 import app.{Configs, TokenErgoMix}
-import cli.ErgoMixCLIUtil
+import cli.MixUtils
+import db.Tables
 import mixer.Models.EntityInfo
 import special.collection.Coll
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.compat.Platform
-import scala.collection.JavaConverters._
 
 class ChainScanner(tables: Tables) {
+  /**
+   * scans blockchain to extract ring statistics, # of half-boxes, # of mixes in the last 24 h
+   *
+   * @return a map which maps asset id to its spent half-boxes (# of mixes) and current available half-boxes
+   */
   def ringStats(): mutable.Map[String, mutable.Map[Long, mutable.Map[String, Long]]] = {
     val result = mutable.Map.empty[String, mutable.Map[Long, mutable.Map[String, Long]]]
     // Limit for get transaction from explorer
     val limitGetTransaction = Configs.limitGetTransaction
     val periodTime: Long = Platform.currentTime - Configs.periodTimeRings
-    ErgoMixCLIUtil.usingClient { implicit ctx =>
+    MixUtils.usingClient { implicit ctx =>
       // Get full Box address
-      val ergoMix = ErgoMixCLIUtil.tokenErgoMix.get
+      val ergoMix = MixUtils.tokenErgoMix.get
       val fullBoxAddress = ergoMix.fullMixAddress.toString
       val halfBoxAddress = ergoMix.halfMixAddress.toString
       // Get unspent halfMixBox boxes
-      val halfMixBoxes = ErgoMixCLIUtil.getAllHalfBoxes
+      val halfMixBoxes = MixUtils.getAllHalfBoxes
       // Add value of halfMixBoxes to result
       for (halfMixBox <- halfMixBoxes) {
         var coin = "erg"
@@ -49,7 +53,7 @@ class ChainScanner(tables: Tables) {
       while (timeFlag) {
         // get transactions for calculate number of spent halfBox in `periodTime`
         val transactions = explorer.getTransactionsByAddress(fullBoxAddress, limitGetTransaction, i * limitGetTransaction)
-        if (transactions.isEmpty) timeFlag = false
+        if (transactions.isEmpty || transactions.length < limitGetTransaction) timeFlag = false
         // Check time stamp of transactions that there is in periodTime also check address of boxes that equals to halfBoxAddress so add value of boxes to result
         for (transaction <- transactions.reverse) {
           val inputs = transaction.inboxes
@@ -82,11 +86,16 @@ class ChainScanner(tables: Tables) {
     result
   }
 
+  /**
+   * scans blockchain to extract token info, i.e. token price, fee
+   *
+   * @return tuple containing a map (level -> price) and entering fee
+   */
   def scanTokens: (Map[Int, Long], Int) = {
-    val tokenBoxes = ErgoMixCLIUtil.getTokenEmissionBoxes(0)
+    val tokenBoxes = MixUtils.getTokenEmissionBoxes(0)
     if (tokenBoxes.nonEmpty) {
       val token = tokenBoxes.head
-      val tokenBox = ErgoMixCLIUtil.getUnspentBoxById(token.id)
+      val tokenBox = MixUtils.getUnspentBoxById(token.id)
       var rate = 1000000
       if (tokenBox.getRegisters.size == 2) {
         rate = tokenBox.getRegisters.get(1).getValue.asInstanceOf[Int]
@@ -96,8 +105,13 @@ class ChainScanner(tables: Tables) {
     (Map.empty, 1000000)
   }
 
+  /**
+   * scans blockchain to extract parameters like supported assets (erg, usdt, ...)
+   *
+   * @return list of supported entities
+   */
   def scanParams: Seq[EntityInfo] = {
-    ErgoMixCLIUtil.usingClient { implicit ctx =>
+    MixUtils.usingClient { implicit ctx =>
       return ctx.getUnspentBoxesFor(TokenErgoMix.paramAddress).asScala
         .filter(box => box.getTokens.size() > 0 && box.getTokens.get(0).getId.toString.equals(TokenErgoMix.tokenId))
         .map(box => EntityInfo(box))

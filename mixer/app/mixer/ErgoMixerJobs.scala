@@ -1,5 +1,7 @@
 package mixer
 
+import db.{PruneDB, Tables}
+
 class ErgoMixerJobs(tables:Tables) {
   val covertMixer = new CovertMixer(tables)
   val groupMixer = new GroupMixer(tables)
@@ -10,6 +12,7 @@ class ErgoMixerJobs(tables:Tables) {
   val newMixer = new NewMixer(tables)
   val withdrawMixer = new WithdrawMixer(tables)
   val deposits = new Deposits(tables)
+  val pruneDb = new PruneDB(tables)
 
   // stats
   val statScanner = new ChainScanner(tables)

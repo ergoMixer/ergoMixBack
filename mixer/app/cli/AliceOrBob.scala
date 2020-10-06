@@ -4,16 +4,27 @@ package cli
 import java.math.BigInteger
 
 import app.ergomix._
-import org.ergoplatform.appkit.impl.ErgoTreeContract
-import org.ergoplatform.appkit._
 import app.{AliceImpl, BobImpl, TokenErgoMix, Util}
-import cli.ErgoMixCLIUtil.{getProver, usingClient}
+import cli.MixUtils.{getProver, usingClient}
+import org.ergoplatform.appkit._
+import org.ergoplatform.appkit.impl.ErgoTreeContract
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 object AliceOrBob {
 
-  // spends boxes with providing secret. used for withdrawing half-box or deposits
+  /**
+   * Withdraws boxes, used for half-box and deposits.
+   *
+   * @param inputBox          input to spend
+   * @param feeBox            fee box to use as fee
+   * @param withdrawAddress   withdraw address
+   * @param proverDlogSecrets secrets for spending input
+   * @param feeAmount         fee amount
+   * @param broadCast         broadcast the tx or just return
+   * @return
+   */
   def spendBox(inputBox: String, feeBox: Option[String], withdrawAddress: String, proverDlogSecrets: Array[BigInteger], feeAmount: Long, broadCast: Boolean): SignedTransaction = {
     usingClient { implicit ctx =>
       val prover: ErgoProver = proverDlogSecrets.foldLeft(ctx.newProverBuilder())(
@@ -56,20 +67,38 @@ object AliceOrBob {
     }
   }
 
-  def distribute(inputBoxes: Array[String], outputs: Array[EndBox], proverDlogSecrets: Array[BigInteger], feeAmount: Long, changeAddress: String, outLimit: Int, tokenId: String): List[SignedTransaction] = {
+  /**
+   * distributes ergs or tokens to initiate mixing
+   *
+   * @param inputBoxes        input boxes
+   * @param outputs           outputs (each will enter mixing)
+   * @param proverDlogSecrets secrets to sepend inputs
+   * @param feeAmount         fee amount
+   * @param changeAddress     change address
+   * @param outLimit          max number of outputs, will break into multiple txs if reaches this limit)
+   * @return txs that contain outputs
+   */
+  def distribute(inputBoxes: Array[String], outputs: Array[EndBox], proverDlogSecrets: Array[BigInteger], feeAmount: Long, changeAddress: String, outLimit: Int): List[SignedTransaction] = {
     val transactions = new java.util.ArrayList[SignedTransaction]()
     usingClient { implicit ctx =>
       val prover: ErgoProver = proverDlogSecrets.foldLeft(ctx.newProverBuilder())(
         (proverBuilder, bigInteger) => proverBuilder.withDLogSecret(bigInteger)
       ).build()
       var boxesToSpend = ctx.getBoxesById(inputBoxes: _*)
-      val numTokenInInputs = boxesToSpend.map(_.getTokens.asScala.filter(_.getId.toString.equals(tokenId)).map(_.getValue).sum).sum
-      var numTokenInOuts = 0L
       val numTxs = (outputs.length + outLimit - 1) / outLimit
       for (i <- 0 until numTxs) {
         val txB = ctx.newTxBuilder()
+        val inTokens = mutable.Map.empty[String, Long]
+        boxesToSpend.foreach(box => {
+          box.getTokens.asScala.foreach(tok => {
+            inTokens(tok.getId.toString) = inTokens.getOrElse(tok.getId.toString, 0L) + tok.getValue
+          })
+        })
+        val outTokens = mutable.Map.empty[String, Long]
         var outBoxes = outputs.slice(i * outLimit, i * outLimit + outLimit).map(out => {
-          numTokenInOuts += out.tokens.filter(_.getId.toString.equals(tokenId)).map(_.getValue).sum
+          out.tokens.foreach(tok => {
+            outTokens(tok.getId.toString) = outTokens.getOrElse(tok.getId.toString, 0L) + tok.getValue
+          })
           val outB = txB.outBoxBuilder()
             .contract(new ErgoTreeContract(out.receiverBoxScript))
             .value(out.value)
@@ -78,11 +107,12 @@ object AliceOrBob {
         })
         val remErg = boxesToSpend.map(_.getValue.toLong).sum - outBoxes.map(_.getValue).sum - feeAmount
         if (remErg > 0) {
+          val tokens = inTokens.filter(tok => tok._2 - outTokens.getOrElse(tok._1, 0L) > 0)
+            .map(tok => new ErgoToken(tok._1, tok._2 - outTokens.getOrElse(tok._1, 0L)))
           var changeBox = txB.outBoxBuilder()
             .value(remErg)
             .contract(new ErgoTreeContract(Address.create(changeAddress).getErgoAddress.script))
-          if (numTokenInInputs - numTokenInOuts > 0)
-            changeBox = changeBox.tokens(new ErgoToken(tokenId, numTokenInInputs - numTokenInOuts))
+          if (tokens.nonEmpty) changeBox = changeBox.tokens(tokens.toSeq: _*)
           outBoxes = outBoxes :+ changeBox.build()
         }
         val tx = txB.boxesToSpend(boxesToSpend.toList.asJava)
@@ -99,6 +129,17 @@ object AliceOrBob {
     transactions.asScala.toList
   }
 
+  /**
+   * merges boxes. is used in covert mixing when there are a lot of inputs
+   *
+   * @param inputBoxes    boxes to be merged
+   * @param outBox        merged box
+   * @param secret        secret to spend inputs
+   * @param feeAmount     fee amount
+   * @param changeAddress change address
+   * @param sendTx        whether to broadcast or not
+   * @return
+   */
   def mergeBoxes(inputBoxes: Array[String], outBox: EndBox, secret: BigInteger, feeAmount: Long, changeAddress: String, sendTx: Boolean = true): SignedTransaction = {
     usingClient { implicit ctx =>
       val prover = ctx.newProverBuilder()
@@ -124,22 +165,21 @@ object AliceOrBob {
     }
   }
 
-  /*
-Play Alice's or Bob's role in spending a full-mix box with secret.
-fullMixBoxId is the boxId of the full-mix box to spend.
-withdrawAddress is the address where the funds are to be sent.
-inputBoxIds are boxIds of input boxes funding the transaction.
-Signing may require several secrets for proveDLog which are supplied in the array proveDlogSecrets.
-Signing may also require several tuples of type (g, h, u, v, x) for proveDHTuple.
-The arrays proverDHT_g, proverDHT_h, proverDHT_u, proverDHT_v, proverDHT_x must have equal number of elements, one for each such tuple.
-
-The method attempts to create a transaction outputting a half-mix box at index 0.
-If broadCast is false it just outputs the transaction but does not broadcast it.
-
-feeAmount is the amount in fee in nanoErgs
+  /**
+   * spends a full-box, used in withdrawing in full-box mode
+   *
+   * @param isAlice         whether full-box is of type alice or bob
+   * @param secret          secret associated with this round of mixing
+   * @param fullMixBoxId    full-box id
+   * @param withdrawAddress address to withdraw to
+   * @param inputBoxIds     other inputs (like fee box)
+   * @param feeAmount       fee amount
+   * @param changeAddress   change address
+   * @param broadCast       whether to broadcast or just return
+   * @return tx withdrawing the full-box
    */
   def spendFullMixBox(isAlice: Boolean, secret: BigInt, fullMixBoxId: String, withdrawAddress: String, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String, broadCast: Boolean) = {
-    val ergoMix = ErgoMixCLIUtil.tokenErgoMix.get
+    val ergoMix = MixUtils.tokenErgoMix.get
     usingClient { implicit ctx =>
       val alice_or_bob = getProver(secret, isAlice)
       val fullMixBox: InputBox = ctx.getBoxesById(fullMixBoxId)(0)
@@ -161,13 +201,16 @@ feeAmount is the amount in fee in nanoErgs
     }
   }
 
-  /*
-Play Alice's or Bob's role in spending a full-mix box with secret to generate a new half-mix box for remixing.
-That is, perform the first step of the next round by behaving like Alice (by creating a new half-mix box)
-
-fullMixBoxId is the boxId of the full-mix box to spend.
-feeEmissionBoxId is the boxId of input boxes funding the transaction
-The method attempts to create a transaction outputting a half-mix box at index 0.
+  /**
+   * remixes as alice, basically converts a full-box to a half box
+   *
+   * @param isAlice          whether the input full-box is of type alice or bob
+   * @param secret           secret associated with this round of mixing
+   * @param fullMixBoxId     full-box id
+   * @param nextSecret       next round's secret
+   * @param feeEmissionBoxId fee box
+   * @param feeAmount        fee amount
+   * @return tx converting full-box to a half-box
    */
   def spendFullMixBox_RemixAsAlice(isAlice: Boolean, secret: BigInt, fullMixBoxId: String, nextSecret: BigInt, feeEmissionBoxId: String, feeAmount: Long): HalfMixTx = {
     usingClient { implicit ctx =>
@@ -177,22 +220,9 @@ The method attempts to create a transaction outputting a half-mix box at index 0
     }
   }
 
-  /*
-Play Alice's or Bob's role in spending a full-mix box with secret to generate a new half-mix box for remixing.
-That is, perform the first step of the next round by behaving like Alice (by creating a new half-mix box)
-
-fullMixBoxId is the boxId of the full-mix box to spend.
-inputBoxIds are boxIds of input boxes funding the transaction.
-Signing may require several secrets for proveDLog which are supplied in the array proveDlogSecrets.
-Signing may also require several tuples of type (g, h, u, v, x) for proveDHTuple.
-The arrays proverDHT_g, proverDHT_h, proverDHT_u, proverDHT_v, proverDHT_x must have equal number of elements, one for each such tuple.
-
-The method attempts to create a transaction outputting a half-mix box at index 0.
-If broadCast is false it just outputs the transaction but does not broadcast it.
-
-feeAmount is the amount in fee in nanoErgs
+  /**
+   * is basically used by spendFullMixBox_RemixAsAlice
    */
-
   private def spendFullMixBox_RemixAsAlice(isAlice: Boolean, secret: BigInt, fullMixBoxId: String, nextSecret: BigInt, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], broadCast: Boolean): HalfMixTx = {
     usingClient { implicit ctx =>
       val alice_or_bob = getProver(secret, isAlice)
@@ -203,37 +233,29 @@ feeAmount is the amount in fee in nanoErgs
     }
   }
 
-  /*
-Play Alice's or Bob's role in spending a full-mix box with secret in another full-mix transaction that spends some half-mix box with this full-mix box.
-That is, perform the first step of the next round by behaving like Bob (by creating a two new full-mix boxes)
-
-fullMixBoxId is the boxId of the full-mix box to spend.
-feeEmissionBoxId is the boxId of input boxes funding the transaction
-The method attempts to create a transaction outputting a half-mix box at index 0.
+  /**
+   * remixes as alice, basically converts a full-box to a half box
+   *
+   * @param isAlice          whether the input full-box is of type alice or bob
+   * @param secret           secret associated with this round of mixing
+   * @param fullMixBoxId     full-box id
+   * @param nextSecret       next round's secret
+   * @param halfBoxId        a random half-box used for mixing
+   * @param feeEmissionBoxId fee box
+   * @param feeAmount        fee amount
+   * @return tx spending the half-box and the full-box and generate two full-boxes
    */
   def spendFullMixBox_RemixAsBob(isAlice: Boolean, secret: BigInt, fullMixBoxId: String, nextSecret: BigInt,
-                                 nextHalfMixBoxId: String, feeEmissionBoxId: String, feeAmount: Long): (FullMixTx, Boolean) = {
+                                 halfBoxId: String, feeEmissionBoxId: String, feeAmount: Long): (FullMixTx, Boolean) = {
     usingClient { implicit ctx =>
       val feeEmissionBox = ctx.getBoxesById(feeEmissionBoxId)(0)
       val feeEmissionBoxAddress = new Util().addressEncoder.fromProposition(feeEmissionBox.getErgoTree).get.toString
-      spendFullMixBox_RemixAsBob(isAlice, secret, fullMixBoxId, nextSecret, nextHalfMixBoxId, Array(feeEmissionBoxId), feeAmount, feeEmissionBoxAddress, Seq(), broadCast = false)
+      spendFullMixBox_RemixAsBob(isAlice, secret, fullMixBoxId, nextSecret, halfBoxId, Array(feeEmissionBoxId), feeAmount, feeEmissionBoxAddress, Seq(), broadCast = false)
     }
   }
 
-  /*
-Play Alice's or Bob's role in spending a full-mix box with secret in another full-mix transaction that spends some half-mix box with this full-mix box.
-That is, perform the first step of the next round by behaving like Bob (by creating a two new full-mix boxes)
-
-fullMixBoxId is the boxId of the full-mix box to spend.
-inputBoxIds are boxIds of input boxes funding the transaction.
-Signing may require several secrets for proveDLog which are supplied in the array proveDlogSecrets.
-Signing may also require several tuples of type (g, h, u, v, x) for proveDHTuple.
-The arrays proverDHT_g, proverDHT_h, proverDHT_u, proverDHT_v, proverDHT_x must have equal number of elements, one for each such tuple.
-
-The method attempts to create a transaction outputting a half-mix box at index 0.
-If broadCast is false it just outputs the transaction but does not broadcast it.
-
-feeAmount is the amount in fee in nanoErgs
+  /**
+   * is basically used by spendFullMixBox_RemixAsBob
    */
   private def spendFullMixBox_RemixAsBob(isAlice: Boolean, secret: BigInt, fullMixBoxId: String, nextSecret: BigInt, nextHalfMixBoxId: String, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], broadCast: Boolean): (FullMixTx, Boolean) = {
     usingClient { implicit ctx =>

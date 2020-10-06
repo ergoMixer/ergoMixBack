@@ -1,16 +1,18 @@
 package mixer
 
-import org.ergoplatform.appkit.{Address, BlockchainContext, ErgoToken}
 import app.Configs
 import app.ergomix.EndBox
-import cli.{AliceOrBob, ErgoMixCLIUtil}
+import cli.{AliceOrBob, MixUtils}
+import db.Columns._
 import db.ScalaDB._
+import db.Tables
 import db.core.DataStructures.anyToAny
-import mixer.Columns._
-import mixer.ErgoMixerUtils._
+import helpers.ErgoMixerUtils._
+import helpers.Util
 import mixer.Models.GroupMixStatus._
 import mixer.Models.{DistributeTx, MixGroupRequest}
 import org.ergoplatform.appkit.impl.ScalaBridge
+import org.ergoplatform.appkit.{Address, ErgoToken}
 import play.api.Logger
 
 class GroupMixer(tables: Tables) {
@@ -18,8 +20,11 @@ class GroupMixer(tables: Tables) {
 
   import tables._
 
+  /**
+   * processes group mixes one by one
+   */
   def processGroupMixes(): Unit = {
-    ErgoMixCLIUtil.usingClient { implicit ctx =>
+    MixUtils.usingClient { implicit ctx =>
       val explorer = new BlockExplorer
       mixRequestsGroupTable.selectStar.where(
         mixStatusCol === Queued.value
@@ -31,7 +36,7 @@ class GroupMixer(tables: Tables) {
         var confirmedErgDeposits = 0L
         var confirmedTokenDeposits = 0L
         allBoxes.foreach(box => {
-          val conf = ErgoMixCLIUtil.getConfirmationsForBoxId(box.id)
+          val conf = MixUtils.getConfirmationsForBoxId(box.id)
           if (conf >= minConfirmations) {
             confirmedErgDeposits += box.amount
             confirmedTokenDeposits += box.getToken(req.tokenId)
@@ -66,7 +71,11 @@ class GroupMixer(tables: Tables) {
     }
   }
 
-  def processStartingGroup(req: MixGroupRequest) = ErgoMixCLIUtil.usingClient { implicit ctx =>
+  /**
+   * processes a specific group mix (enters mixing if all ok)
+   * @param req group request
+   */
+  def processStartingGroup(req: MixGroupRequest) = MixUtils.usingClient { implicit ctx =>
     val explorer = new BlockExplorer()
     logger.info(s"[MixGroup: ${req.id}] processing...")
     val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
@@ -114,7 +123,7 @@ class GroupMixer(tables: Tables) {
       if (excessErg > 0) logger.info(s"  excess deposit: $excessErg...")
       if (excessToken > 0) logger.info(s"  excess token deposit: $excessToken...")
 
-      val transactions = AliceOrBob.distribute(allBoxes.map(_.id).toArray, reqEndBoxes, Array(secret), Configs.distributeFee, req.depositAddress, Configs.maxOuts, req.tokenId)
+      val transactions = AliceOrBob.distribute(allBoxes.map(_.id).toArray, reqEndBoxes, Array(secret), Configs.distributeFee, req.depositAddress, Configs.maxOuts)
       for (i <- transactions.indices) {
         val tx = transactions(i)
         val inputs = tx.getInputBoxes.map(ScalaBridge.isoErgoTransactionInput.from(_).getBoxId).mkString(",")

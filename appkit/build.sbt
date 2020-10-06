@@ -65,7 +65,7 @@ assemblyMergeStrategy in assembly := {
 
 lazy val allConfigDependency = "compile->compile;test->test"
 
-val sigmaStateVersion = "i609-formal-verification-346717a7-SNAPSHOT"
+val sigmaStateVersion = "3.3.1"
 val ergoWalletVersion = "appkit-wallet-f7f7d673-SNAPSHOT"
 
 lazy val sigmaState = ("org.scorexfoundation" %% "sigma-state" % sigmaStateVersion).force()
@@ -150,23 +150,11 @@ lazy val appkit = (project in file("appkit"))
     libApi % allConfigDependency,
     libImpl % allConfigDependency)
   .settings(commonSettings ++ testSettings,
-    libraryDependencies ++= Seq(mockWebServer))
-  .settings(
-    libraryDependencies += "net.snaq" % "dbpool" % "7.0.1",
-    libraryDependencies += "org.bouncycastle" % "bcprov-jdk15on" % "1.61",
-    libraryDependencies += "com.h2database" % "h2" % "1.4.199",
-    libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.6.3"
-  )
-  .settings(
-    libraryDependencies ++= (if (scalaBinaryVersion.value == "2.12")
-      Seq(("org.scorexfoundation" %% "verified-contracts" % sigmaStateVersion).force()
-        .exclude("ch.qos.logback", "logback-classic")
-        .exclude("org.scorexfoundation", "scrypto")
-        .exclude("org.typelevel", "machinist")
-        .exclude("org.typelevel", "cats-kernel"))
-    else
-      Seq.empty)
-  )
+    libraryDependencies ++= Seq(
+      mockWebServer//,
+      //        "org.mockito" %% "mockito-scala" % mockitoScalaVerstion % "test",
+      //        "org.mockito" %% "mockito-scala-scalatest" % mockitoScalaVerstion % "test"
+    ))
   .settings(publish / skip := true)
 
 lazy val aggregateCompile = ScopeFilter(

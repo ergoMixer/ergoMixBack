@@ -1,38 +1,46 @@
 package controllers
 
+import java.nio.file.Paths
+
 import app.{Configs, Util => EUtil}
-import info.BuildInfo
-import cli.ErgoMixCLIUtil
+import cli.MixUtils
+import db.Columns._
 import db.ScalaDB._
+import helpers.ErgoMixerUtils.getStackTraceStr
+import helpers.{ErgoMixerUtils, Stats}
+import info.BuildInfo
 import io.circe.Json
 import io.circe.syntax._
 import javax.inject._
-import mixer.Columns._
+import mixer.Models.MixBoxList
 import mixer.Models.MixWithdrawStatus.WithdrawRequested
-import mixer.{ErgoMixerUtils, MixBoxList, Stats}
+import org.ergoplatform.appkit.RestApiErgoClient
+import play.api.Logger
 import play.api.libs.json._
 import play.api.mvc._
-import scalaj.http.{Http, HttpResponse}
 import services.ErgoMixingSystem
-
+import ErgoMixerUtils.getStackTraceStr
+import com.zaxxer.hikari.HikariDataSource
+import org.apache.commons.lang3._
+import play.api.db.Database
+import helpers.TrayUtils.showNotification
+import scala.concurrent.{ExecutionContext, Future}
 import scala.io.Source
 
 /**
  * A controller inside of Mixer controller.
  */
-class ApiController @Inject()(val controllerComponents: ControllerComponents) extends BaseController {
+class ApiController @Inject()(val controllerComponents: ControllerComponents, db: Database)(implicit ec: ExecutionContext) extends BaseController {
 
-  //  Define type for response of http request
-  type Response = HttpResponse[Array[Byte]]
   private lazy val ergoMixer = ErgoMixingSystem.ergoMixer
-  private val tables = ErgoMixingSystem.tables
+  private val logger: Logger = Logger(this.getClass)
 
   /**
    * A Get controller for redirect route /swagger
    *
    * @return route /swagger with query params {"url": "/swagger.conf"}
    */
-  def redirectDocs = Action {
+  def redirectDocs: Action[AnyContent] = Action {
     Redirect(url = "/docs/index.html", queryStringParams = Map("url" -> Seq("/swagger.conf")))
   }
 
@@ -67,16 +75,11 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
            |""".stripMargin
       ).as("application/json")
     } else {
-      val authHeader: Seq[(String, String)] = Seq[(String, String)](("api_key", apiKey), ("Content-Type", "application/json"))
       var addresses: Array[String] = Array()
       try {
-        for (i <- 1 to countAddress) {
-          // Send request to nodeAddress for get new wallet address
-          val responseNode: Response = Http(s"$nodeAddress/wallet/deriveNextKey").headers(authHeader).asBytes
-          val resJson: Json = io.circe.parser.parse(responseNode.body.map(_.toChar).mkString).getOrElse(Json.Null)
-          if (!(200 <= responseNode.code && responseNode.code <= 209)) {
-            throw new Exception(resJson.hcursor.downField("detail").as[String].getOrElse(null))
-          }
+        for (_ <- 1 to countAddress) {
+          val res = MixUtils.deriveNextAddress(nodeAddress, apiKey)
+          val resJson: Json = io.circe.parser.parse(res).getOrElse(Json.Null)
           addresses :+= resJson.hcursor.downField("address").as[String].getOrElse(null)
         }
         // Return a list of address in the amount of countAddress
@@ -87,7 +90,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
         ).as("application/json")
       } catch {
         case ex: Throwable =>
-          ex.getStackTrace
+          logger.error(s"error in controller ${getStackTraceStr(ex)}")
           BadRequest(
             s"""
                |{
@@ -118,7 +121,11 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
     ).as("application/json")
   }
 
+  /**
+   * A post get endpoint to exit the app
+   */
   def exit: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    showNotification("Shutdown", "Please wait, may take a few seconds for ErgoMixer to peacefully shutdown...")
     System.exit(0)
     Ok(
       s"""
@@ -127,6 +134,48 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
          |}
          |""".stripMargin
     ).as("application/json")
+  }
+
+  /**
+   * A GET endpoint to download the backup of database
+   */
+  def backup: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      if (SystemUtils.IS_OS_WINDOWS) db.shutdown()
+      val res = ErgoMixerUtils.backup()
+      Ok.sendFile(new java.io.File(res))
+
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
+   * A post endpoint to upload a backup and restore it
+   */
+  def restore = Action(parse.multipartFormData) { request =>
+    try {
+      val path = System.getProperty("user.home")
+      request.body
+        .file("myFile")
+        .map { backup =>
+          db.shutdown()
+          backup.ref.copyTo(Paths.get(s"$path/ergoMixer/ergoMixerRestore.zip"), replace = true)
+          ErgoMixerUtils.restore()
+          System.exit(0)
+          Ok("Backup restored")
+        }
+        .getOrElse {
+          BadRequest(s"""{"success": false, "message": "No uploaded backup found."}""").as("application/json")
+        }
+
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
   }
 
   /**
@@ -139,13 +188,19 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
    *         }
    */
   def getInfo: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    val nodes = Configs.nodes.map(url =>
+      s"""{
+         |  "url": "$url",
+         |  "canConnect": ${MixUtils.prunedClients.map(_.asInstanceOf[RestApiErgoClient].getNodeUrl).contains(url)}
+         |}""".stripMargin)
     Ok(
       s"""
          |{
+         |  "isWindows": ${SystemUtils.IS_OS_WINDOWS},
          |  "versionMixer": "${BuildInfo.version}",
          |  "ergoExplorer": "${Configs.explorerUrl}",
          |  "ergoExplorerFront": "${Configs.explorerFrontend}",
-         |  "ergoNode": "${Configs.nodeUrl}"
+         |  "ergoNode": [${nodes.mkString(",")}]
          |}
          |""".stripMargin
     ).as("application/json")
@@ -157,10 +212,8 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
   def covertRequest: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
     val numRounds: Int = js.hcursor.downField("numRounds").as[Int].getOrElse(-1)
-    val ergRing: Long = js.hcursor.downField("ergRing").as[Long].getOrElse(-1)
-    val tokenRing: Long = js.hcursor.downField("tokenRing").as[Long].getOrElse(-1)
-    val tokenId: String = js.hcursor.downField("tokenId").as[String].getOrElse(null)
-    if (numRounds == -1 || ergRing == -1 || tokenRing == -1 || tokenId == null) {
+    val addresses: Seq[String] = js.hcursor.downField("addresses").as[Seq[String]].getOrElse(Nil).map(_.trim)
+    if (numRounds == -1) {
       BadRequest(
         s"""
            |{
@@ -170,139 +223,323 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
            |""".stripMargin
       ).as("application/json")
     } else {
-      val id = ergoMixer.newCovertRequest(ergRing, tokenRing, tokenId, numRounds)
-      Ok(
-        s"""{
-           |  "status": "success",
-           |  "mixId": "$id"
-           |}""".stripMargin
-      ).as("application/json")
+      try {
+        val addr = ergoMixer.newCovertRequest(numRounds, addresses)
+        Ok(
+          s"""{
+             |  "success": true,
+             |  "depositAddress": "$addr"
+             |}""".stripMargin
+        ).as("application/json")
+      } catch {
+        case e: Throwable =>
+          logger.error(s"error in controller ${getStackTraceStr(e)}")
+          BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+      }
+
     }
   }
 
   /**
-   * A post controller to store mix requests with tokens.
+   * A post endpoint to add or update a covert's assets
+   * example input:
+   * {
+   * "tokenId": "",
+   * "ring": 1000000000
+   * }
+   *
+   * @param covertId covert id
+   */
+  def covertAddOrUpdate(covertId: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
+    val tokenId: String = js.hcursor.downField("tokenId").as[String].getOrElse(null)
+    val ring: Long = js.hcursor.downField("ring").as[Long].getOrElse(-1)
+    if (tokenId == null || ring == -1) {
+      BadRequest(
+        s"""
+           |{
+           |  "success": false,
+           |  "message": "all required fields must be present."
+           |}
+           |""".stripMargin
+      ).as("application/json")
+    } else {
+      try {
+        ergoMixer.handleCovertSupport(covertId, tokenId, ring)
+        Ok(
+          s"""{
+             |  "success": true
+             |}""".stripMargin
+        ).as("application/json")
+      } catch {
+        case e: Throwable =>
+          logger.error(s"error in controller ${getStackTraceStr(e)}")
+          BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+      }
+    }
+  }
+
+  /**
+   * adds a list of addresses to withdraw addresses of a covert request
+   *
+   * @param covertId covert id
+   * @return whether the processs was successful or not
+   */
+  def setCovertAddresses(covertId: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
+    val addresses: Seq[String] = js.hcursor.downField("addresses").as[Seq[String]].getOrElse(Nil).map(_.trim)
+    try {
+      ergoMixer.addCovertWithdrawAddress(covertId, addresses)
+      Ok(
+        s"""{
+           |  "success": true
+           |}""".stripMargin).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+
+  }
+
+  /**
+   * adds a list of addresses to withdraw addresses of a covert request
+   *
+   * @param covertId covert id
+   * @return whether the processs was successful or not
+   */
+  def getCovertAddresses(covertId: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      val addresses = ergoMixer.getCovertAddresses(covertId).map(add => s""""$add"""")
+      Ok(s"[${addresses.mkString(",")}]".stripMargin).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+
+  }
+
+  /**
+   * A post controller to create a mix request with/without tokens.
    */
   def mixRequest = Action(parse.json) { request =>
     request.body.validate[MixBoxList] match {
-      case JsSuccess(value, _) => {
-        val id = ergoMixer.newMixGroupRequest(value.items)
-        Ok(
-          s"""{
-             |  "status": "success",
-             |  "mixId": "$id"
-             |}""".stripMargin).as("application/json")
-      }
-      case _ => BadRequest("{\"status\": \"error\"}")
+      case JsSuccess(value, _) =>
+        try {
+          val id = ergoMixer.newMixGroupRequest(value.items)
+          Ok(
+            s"""{
+               |  "success": true,
+               |  "mixId": "$id"
+               |}""".stripMargin).as("application/json")
+        } catch {
+          case e: Throwable =>
+            logger.error(s"error in controller ${getStackTraceStr(e)}")
+            BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+        }
+      case _ => BadRequest("{\"status\": \"error\"}").as("application/json")
     }
   }
 
-  def mixGroupRequestList = Action {
-    val res = "[" + (ergoMixer.getMixRequestGroups.map(_.toJson())).mkString(", ") + "]"
-    Ok(res).as("application/json")
-  }
-
-  def mixGroupRequestActiveList = Action {
-    val mixes = ergoMixer.getMixRequestGroupsActive
-    val res = "[" + mixes.map(mix => {
-      val doneMixes = ergoMixer.getFinishedForGroup(mix)
-      val progress = ergoMixer.getProgressForGroup(mix)
-      val stat =
-        s"""{
-           |    "numBoxes": ${doneMixes._1},
-           |    "numComplete": ${doneMixes._2},
-           |    "numWithdrawn": ${doneMixes._3},
-           |    "totalMixRound": ${progress._1},
-           |    "doneMixRound": ${progress._2}
-           |  }""".stripMargin
-      mix.toJson(stat)
-    }).mkString(", ") + "]"
-    Ok(res).as("application/json")
-  }
-
-  def mixGroupRequestCompleteList = Action {
-    val res = "[" + (ergoMixer.getMixRequestGroupsComplete.map(_.toJson())).mkString(", ") + "]"
-    Ok(res).as("application/json")
-  }
-
-  def mixRequestList(groupId: String) = Action {
-    val res = "[" + ergoMixer.getMixes(groupId).map(mix => {
-      var withdrawTxId = ""
-      if (mix.withdraw.isDefined) {
-        withdrawTxId = mix.withdraw.get.txId
-      }
-      val lastMixTime = {
-        if (mix.fullMix.isDefined) ErgoMixerUtils.prettyDate(mix.fullMix.get.createdTime)
-        else if (mix.halfMix.isDefined) ErgoMixerUtils.prettyDate(mix.halfMix.get.createdTime)
-        else "None"
-      }
-
-      s"""
-         |{
-         |  "id": "${mix.mixRequest.id}",
-         |  "createdDate": "${mix.mixRequest.creationTimePrettyPrinted}",
-         |  "amount": ${mix.mixRequest.amount},
-         |  "rounds": ${mix.mixState.map(s => s.round).getOrElse(0)},
-         |  "status": "${mix.mixRequest.mixStatus.value}",
-         |  "deposit": "${mix.mixRequest.depositAddress}",
-         |  "withdraw": "${mix.mixRequest.withdrawAddress}",
-         |  "boxType": "${if (mix.fullMix.isDefined) "Full" else {if (mix.halfMix.isDefined) "Half" else "None"}}",
-         |  "withdrawStatus": "${mix.mixRequest.withdrawStatus}",
-         |  "withdrawTxId": "$withdrawTxId",
-         |  "lastMixTime": "$lastMixTime",
-         |  "mixingTokenId": "${mix.mixRequest.tokenId}",
-         |  "mixingTokenAmount": ${mix.mixRequest.mixingTokenAmount}
-         |}""".stripMargin
-    }).mkString(",") + "]"
-    Ok(res).as("application/json")
-  }
-
-  def supported() = Action {
-    var params = Configs.params
-    if (params.isEmpty) {
-      BadRequest(
+  /**
+   * A get endpoint which returns list of a covert's assets
+   */
+  def covertAssetList(covertId: String) = Action {
+    try {
+      val assets = ergoMixer.getCovertAssets(covertId)
+      val curMixing = ergoMixer.getCovertCurrentMixing(covertId)
+      Ok(
         s"""
-           |{
-           |  "success": false,
-           |  "message": "params are not ready yet."
-           |}
+           |${ergoMixer.getCovertById(covertId).toJson(assets, currentMixing = curMixing)}
            |""".stripMargin
       ).as("application/json")
-    } else {
-      val supported = params.values.toList.sortBy(f => f.id)
-      Ok(s"""
-          |[${supported.map(_.toJson()).mkString(",")}]
-          |""".stripMargin).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"status": "error", "message": "${e.getMessage}"}""").as("application/json")
     }
   }
 
-  def mixingFee() = Action {
-    var res =
-      s"""
-         |{
-         |  "boxInTransaction": ${Configs.maxOuts},
-         |  "distributeFee": ${Configs.distributeFee},
-         |  "startFee": ${Configs.startFee},""".stripMargin
-    val tokenPrices = Stats.tokenPrices.orNull
-    if (tokenPrices == null) {
-      BadRequest(
+  /**
+   * A get endpoint which returns list covet info to be shown, includes covert's supported assets sorted based on latest activity
+   */
+  def covertList: Action[AnyContent] = Action {
+    try {
+      Ok(
         s"""
-           |{
-           |  "success": false,
-           |  "message": "token stats are not ready."
-           |}
+           |[${ergoMixer.getCovertList.map(covert => covert.toJson(ergoMixer.getCovertAssets(covert.id))).mkString(",")}]
            |""".stripMargin
       ).as("application/json")
-    } else {
-      val rate = Stats.entranceFee.getOrElse(1000000)
-      tokenPrices.foreach {
-        element => res += s"""  "${element._1}": ${element._2},""".stripMargin
-      }
-      res +=
-        s"""  "rate": $rate
-           |}
-           |""".stripMargin
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
+   * A get endpoint which returns list of group mixes
+   */
+  def mixGroupRequestList: Action[AnyContent] = Action {
+    try {
+      val res = "[" + (ergoMixer.getMixRequestGroups.map(_.toJson())).mkString(", ") + "]"
       Ok(res).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
+   * A get endpoint which returns active group mixes. contains more info to be shown about deposits and ...
+   */
+  def mixGroupRequestActiveList = Action {
+    try {
+      val mixes = ergoMixer.getMixRequestGroupsActive
+      val res = "[" + mixes.map(mix => {
+        val doneMixes = ergoMixer.getFinishedForGroup(mix.id)
+        val progress = ergoMixer.getProgressForGroup(mix.id)
+        val stat =
+          s"""{
+             |    "numBoxes": ${doneMixes._1},
+             |    "numComplete": ${doneMixes._2},
+             |    "numWithdrawn": ${doneMixes._3},
+             |    "totalMixRound": ${progress._1},
+             |    "doneMixRound": ${progress._2}
+             |  }""".stripMargin
+        mix.toJson(stat)
+      }).mkString(", ") + "]"
+      Ok(res).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
+   * A get endpoint which returns complete list of group mixes
+   */
+  def mixGroupRequestCompleteList: Action[AnyContent] = Action {
+    try {
+      val res = "[" + (ergoMixer.getMixRequestGroupsComplete.reverse.map(_.toJson())).mkString(", ") + "]"
+      Ok(res).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
+   * A get endpoint which returns mix boxes of a specific group or covert request
+   */
+  def mixRequestList(id: String, status: String): Action[AnyContent] = Action {
+    try {
+      val res = "[" + ergoMixer.getMixes(id, status).map(mix => {
+        var withdrawTxId = ""
+        if (mix.withdraw.isDefined) {
+          withdrawTxId = mix.withdraw.get.txId
+        }
+        val lastMixTime = {
+          if (mix.fullMix.isDefined) ErgoMixerUtils.prettyDate(mix.fullMix.get.createdTime)
+          else if (mix.halfMix.isDefined) ErgoMixerUtils.prettyDate(mix.halfMix.get.createdTime)
+          else "None"
+        }
+
+        s"""
+           |{
+           |  "id": "${mix.mixRequest.id}",
+           |  "createdDate": "${mix.mixRequest.creationTimePrettyPrinted}",
+           |  "amount": ${mix.mixRequest.amount},
+           |  "rounds": ${mix.mixState.map(s => s.round).getOrElse(0)},
+           |  "status": "${mix.mixRequest.mixStatus.value}",
+           |  "deposit": "${mix.mixRequest.depositAddress}",
+           |  "withdraw": "${mix.mixRequest.withdrawAddress}",
+           |  "boxType": "${
+          if (mix.fullMix.isDefined) "Full" else {
+            if (mix.halfMix.isDefined) "Half" else "None"
+          }
+        }",
+           |  "withdrawStatus": "${mix.mixRequest.withdrawStatus}",
+           |  "withdrawTxId": "$withdrawTxId",
+           |  "lastMixTime": "$lastMixTime",
+           |  "mixingTokenId": "${mix.mixRequest.tokenId}",
+           |  "mixingTokenAmount": ${mix.mixRequest.mixingTokenAmount}
+           |}""".stripMargin
+      }).mkString(",") + "]"
+      Ok(res).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  def supported(): Action[AnyContent] = Action {
+    try {
+      val params = Configs.params
+      if (params.isEmpty) {
+        BadRequest(
+          s"""
+             |{
+             |  "success": false,
+             |  "message": "params are not ready yet."
+             |}
+             |""".stripMargin
+        ).as("application/json")
+      } else {
+        val supported = params.values.toList.sortBy(f => f.id)
+        Ok(
+          s"""
+             |[${supported.map(_.toJson()).mkString(",")}]
+             |""".stripMargin).as("application/json")
+      }
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
+   * A get endpoint which returns info about current fee parameters
+   */
+  def mixingFee(): Action[AnyContent] = Action {
+    try {
+      var res =
+        s"""
+           |{
+           |  "boxInTransaction": ${Configs.maxOuts},
+           |  "distributeFee": ${Configs.distributeFee},
+           |  "startFee": ${Configs.startFee},""".stripMargin
+      val tokenPrices = Stats.tokenPrices.orNull
+      if (tokenPrices == null) {
+        BadRequest(
+          s"""
+             |{
+             |  "success": false,
+             |  "message": "token stats are not ready."
+             |}
+             |""".stripMargin
+        ).as("application/json")
+      } else {
+        val rate = Stats.entranceFee.getOrElse(1000000)
+        tokenPrices.foreach {
+          element => res += s"""  "${element._1}": ${element._2},""".stripMargin
+        }
+        res +=
+          s"""  "rate": $rate
+             |}
+             |""".stripMargin
+        Ok(res).as("application/json")
+      }
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
 
@@ -320,103 +557,20 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents) ex
    * }
    */
   def withdraw: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
-    // Get Inputs
     val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
-    val nonStayAtMix = js.hcursor.downField("nonStayAtMix").as[Boolean].getOrElse(null)
-    val withdrawAddress = js.hcursor.downField("withdrawAddress").as[String].getOrElse(null)
-    val mixId = js.hcursor.downField("mixId").as[String].getOrElse(null)
-
-    /**
-     * Validate input address
-     *
-     * @param address withdraw address
-     * @return return a Boolean if address valid true else false
-     */
-    def checkAddress(address: String): Boolean = {
-      ErgoMixCLIUtil.usingClient { implicit ctx =>
-        val util = new EUtil()
-        try {
-          util.getAddress(withdrawAddress).script
-          true
-        }
-        catch {
-          case e: Throwable =>
-            false
-        }
-      }
-    }
-
-    /**
-     * Function for return response for this request
-     *
-     * @param status status of response
-     * @param message message of response
-     * @return response of request
-     */
-    def sendResponse(status: Boolean, message: String): Result = {
-      if (status)
-        Ok(
-          s"""
-             |{
-             | "success": true,
-             | "message": "$message"
-             |}
-             |""".stripMargin
-        ).as("application/json")
-      else
-        BadRequest(
-          s"""
-             |{
-             |  "success": false,
-             |  "message": "$message"
-             |}
-             |""".stripMargin
-        ).as("application/json")
-    }
+    val withdrawNow = js.hcursor.downField("nonStayAtMix").as[Boolean].getOrElse(false)
+    val withdrawAddress = js.hcursor.downField("withdrawAddress").as[String].getOrElse("")
+    val mixId = js.hcursor.downField("mixId").as[String].getOrElse("")
 
     try {
-      // Validate input
-      if (nonStayAtMix == null || mixId == null || withdrawAddress == null) {
-        sendResponse(status = false, "specify all parameters!.")
-      }
-      else {
-        if (withdrawAddress == "") {
-          //  In-state that there is not withdrawAddress if nonStayAtMix was false must be entered withdrawAddress
-          //  for an update or add withdraw address else if nonStayAtMix was true if mixId have withdrawAddress
-          //  must be updated withdraw status.
-          if (nonStayAtMix == true) {
-            val withdrawAddress = tables.mixRequestsTable.select(withdrawAddressCol).where(mixIdCol === mixId).firstAsT[String].head
-            if (checkAddress(withdrawAddress)) {
-              tables.mixRequestsTable.update(mixWithdrawStatusCol <-- WithdrawRequested.value).where(mixIdCol === mixId)
-              sendResponse(status = true, "will withdraw the requested mix.")
-            } else {
-              sendResponse(status = false, "No valid withdraw address for this mix! provide one to withdraw the mix.")
-            }
-          }
-          else
-            sendResponse(status = false, "provide a withdraw address.")
-        }
-        else {
-          //  In-state that there is withdrawAddress if nonStayAtMix was false must be updated withdrawAddress
-          //  else if nonStayAtMix was true must be updated withdraw status and withdrawAddress.
-          if (checkAddress(withdrawAddress)) {
-            if (nonStayAtMix == true) {
-              tables.mixRequestsTable.update(mixWithdrawStatusCol <-- WithdrawRequested.value, withdrawAddressCol <-- withdrawAddress).where(mixIdCol === mixId)
-              sendResponse(status = true, "will withdraw the requested mix with provided wihdraw address.")
-            }
-            else {
-              tables.mixRequestsTable.update(withdrawAddressCol <-- withdrawAddress).where(mixIdCol === mixId)
-              sendResponse(status = true, "withdraw address updated.")
-            }
-          }
-          else sendResponse(status = false, "withdraw address is invalid.")
-        }
-      }
+      if (withdrawAddress.nonEmpty) ergoMixer.updateMixWithdrawAddress(mixId, withdrawAddress)
+      if (withdrawNow) ergoMixer.withdrawMixNow(mixId)
+      Ok(s"""{"success": true}""".stripMargin).as("application/json")
+
     } catch {
-      //  catching the exception from the query of database
       case e: Throwable =>
-        e.getStackTrace
-        sendResponse(status = false, e.getMessage)
+        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
 }

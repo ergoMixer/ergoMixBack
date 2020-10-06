@@ -16,6 +16,7 @@ import org.ergoplatform.explorer.client.auth.ApiKeyAuth;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
+import java.net.Proxy;
 import java.text.DateFormat;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
@@ -28,6 +29,14 @@ public class ExplorerApiClient {
   private OkHttpClient.Builder okBuilder;
   private Retrofit.Builder adapterBuilder;
   private JSON json;
+  private Proxy proxy;
+
+  public ExplorerApiClient(String hostUrl, Proxy proxy) {
+    _hostUrl = hostUrl;
+    apiAuthorizations = new LinkedHashMap<String, Interceptor>();
+    this.proxy = proxy;
+    createDefaultAdapter();
+  }
 
   public ExplorerApiClient(String hostUrl) {
     _hostUrl = hostUrl;
@@ -74,6 +83,9 @@ public class ExplorerApiClient {
   public void createDefaultAdapter() {
     json = new JSON();
     okBuilder = new OkHttpClient.Builder();
+    if (proxy != null) {
+      okBuilder = okBuilder.proxy(proxy);
+    }
 
     if (!_hostUrl.endsWith("/"))
       _hostUrl = _hostUrl + "/";

@@ -102,4 +102,5 @@ The database will be saved in your home directory. This database contains all th
   
   NOTE: The `/path/on/host/to/ergo/database_and_logfile` directory must have `777` permission or have owner/group numeric id equal to `9052` to be writable by the container.
   
-  NOTE:Database schema for version 2.0.0 has changed; So, please consider binding to a different location if you are using docker for v2.
+
+  NOTE: Database schema for version 3.0.0 has changed; So, please consider binding to a different location if you previously have used an older version.

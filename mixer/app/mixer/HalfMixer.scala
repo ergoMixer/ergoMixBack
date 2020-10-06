@@ -1,17 +1,18 @@
 package mixer
 
-import org.ergoplatform.appkit.InputBox
-import cli.{AliceOrBob, ErgoMixCLIUtil}
+import app.ergomix.FullMixBox
+import app.{Configs, TokenErgoMix}
+import cli.{AliceOrBob, MixUtils}
+import db.Columns.{withdrawAddressCol, _}
 import db.ScalaDB._
+import db.Tables
 import db.core.DataStructures.anyToAny
-import mixer.Columns.{withdrawAddressCol, _}
-import mixer.ErgoMixerUtils._
+import helpers.ErgoMixerUtils._
+import helpers.Util.now
 import mixer.Models.MixStatus.Running
 import mixer.Models.MixTransaction
 import mixer.Models.MixWithdrawStatus.WithdrawRequested
-import mixer.Util.now
-import app.ergomix.FullMixBox
-import app.{Configs, TokenErgoMix}
+import org.ergoplatform.appkit.InputBox
 import play.api.Logger
 import sigmastate.eval._
 
@@ -20,6 +21,9 @@ class HalfMixer(tables: Tables) {
 
   import tables._
 
+  /**
+   * processes half-boxes one by one
+   */
   def processHalfMixQueue(): Unit = {
     // Read (from db) our half mix boxes with unspent status
     // Check (from block explorer) if any of those are spent, obtain our full mix box for each spent half mix box, save to full mix table and mark half mix box as spent
@@ -68,13 +72,19 @@ class HalfMixer(tables: Tables) {
 
   private implicit val insertReason = "HalfMixer.processHalfMix"
 
-  /*
-    Purpose of this method:
-
-      it checks the halfMixId (created by us) has been spent by someone else in a mix transaction. If so, it obtains our full mix box and saves it to the fullMix table for further processing by FullMixer class
-
+  /**
+   * processes a sepecific half-box
+   *
+   * @param mixId            mix id
+   * @param currentRound     current round of mixing
+   * @param halfMixBoxId     half-box id
+   * @param masterSecret     master secret
+   * @param optEmissionBoxId fee-emission box id (spent in order to create this half-box)
+   * @param tokenBoxId       token-emission box id
+   * @param withdrawStatus   withdraw status of this mix
+   * @param withdrawAddress  withdraw address
    */
-  private def processHalfMix(mixId: String, currentRound: Int, halfMixBoxId: String, masterSecret: BigInt, optEmissionBoxId: Option[String], tokenBoxId: String, withdrawStatus: String, withdrawAddress: String) = ErgoMixCLIUtil.usingClient { implicit ctx =>
+  private def processHalfMix(mixId: String, currentRound: Int, halfMixBoxId: String, masterSecret: BigInt, optEmissionBoxId: Option[String], tokenBoxId: String, withdrawStatus: String, withdrawAddress: String) = MixUtils.usingClient { implicit ctx =>
     logger.info(s"[HALF:$mixId ($currentRound)] [half:$halfMixBoxId]")
     val currentTime = now
     val explorer = new BlockExplorer()
@@ -82,11 +92,11 @@ class HalfMixer(tables: Tables) {
     val halfMixBoxConfirmations = explorer.getConfirmationsForBoxId(halfMixBoxId)
     if (halfMixBoxConfirmations >= minConfirmations) {
       logger.info(s" [HALF: $mixId ($currentRound)] Sufficient confirmations ($halfMixBoxConfirmations) [half:$halfMixBoxId]")
-      val spendingTx = ErgoMixCLIUtil.getSpendingTxId(halfMixBoxId)
+      val spendingTx = MixUtils.getSpendingTxId(halfMixBoxId)
       if (spendingTx.isEmpty && withdrawStatus.equals(WithdrawRequested.value)) {
         if (shouldWithdraw(mixId, halfMixBoxId)) {
           val optFeeEmissionBoxId = getRandomValidBoxId(
-            ErgoMixCLIUtil.getFeeEmissionBoxes(considerPool = true)
+            MixUtils.getFeeEmissionBoxes(considerPool = true)
               .map(_.id).filterNot(id => spentFeeEmissionBoxTable.exists(boxIdCol === id))
           )
           if (optFeeEmissionBoxId.nonEmpty) {
@@ -151,7 +161,7 @@ class HalfMixer(tables: Tables) {
               // logger.info(s"    [HalfMix $mixId] Zero conf. halfMixBoxId: $halfMixBoxId, currentRound: $currentRound while emissionBoxId $emissionBoxId spent")
               // the emissionBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
               try {
-                undoMixStep(mixId, currentRound, halfMixTable)
+                undoMixStep(mixId, currentRound, halfMixTable, halfMixBoxId)
                 logger.info(s" [HALF:$mixId ($currentRound)] <-- (undo) [half:$halfMixBoxId not spent while fee:$emissionBoxId spent]")
               } catch {
                 case a: Throwable =>
@@ -176,7 +186,7 @@ class HalfMixer(tables: Tables) {
             // token emission box double spent check
             if (isDoubleSpent(tokenBoxId, halfMixBoxId)) {
               try {
-                undoMixStep(mixId, currentRound, halfMixTable)
+                undoMixStep(mixId, currentRound, halfMixTable, halfMixBoxId)
                 logger.info(s" [HALF:$mixId ($currentRound)] <-- (undo) [half:$halfMixBoxId not spent while token:$tokenBoxId spent]")
               } catch {
                 case a: Throwable =>
@@ -186,7 +196,7 @@ class HalfMixer(tables: Tables) {
               // token emission box is ok
               // Need to check for fork by checking if any of the deposits have suddenly disappeared
               spentDepositsTable.select(boxIdCol).where(purposeCol === mixId).firstAsT[String].find { depositBoxId =>
-                explorer.doesBoxExist(depositBoxId) == Some(false) // deposit has disappeared, so need to rescan
+                explorer.doesBoxExist(depositBoxId).contains(false) // deposit has disappeared, so need to rescan
               }.map { depositBoxId =>
                 logger.error(s" [HALF:$mixId ($currentRound)] [ERROR] Rescanning [deposit:$depositBoxId disappeared]")
                 Thread.currentThread().getStackTrace foreach println

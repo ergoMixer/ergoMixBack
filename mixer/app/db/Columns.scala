@@ -1,4 +1,4 @@
-package mixer
+package db
 
 import db.core.DataStructures.{BIGDEC, BLOB, BOOL, Col, UINT, ULONG, VARCHAR}
 
@@ -16,7 +16,7 @@ object Columns {
 
   val boxIdCol = Col("box_id", STR)
   val inputsCol = Col("inputs", BIGSTR)
-  val tokenId = Col("token_id", STR)
+  val tokenIdCol = Col("token_id", STR)
   val amountCol = Col("amount", ULONG)
   val depositCol = Col("deposit_done", ULONG)
   val tokenDepositCol = Col("deposit_done_token", ULONG)
@@ -29,6 +29,7 @@ object Columns {
   val txIdCol = Col("tx_id", STR)
   val purposeCol = Col("purpose", STR)
   val spentTimeCol = Col("spent_time", ULONG) // unsigned long, epoch time millis
+  val lastActivityCol = Col("last_activity", ULONG) // unsigned long, epoch time millis
 
   val numRoundsCol = Col("num_rounds", UINT)
   val chainOrderCol = Col("order_num", UINT)

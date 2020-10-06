@@ -3,19 +3,16 @@ package app
 import java.math.BigInteger
 import java.util
 
-import special.collection.{Coll, PairColl}
+import org.ergoplatform.ErgoAddressEncoder
 import org.ergoplatform.appkit._
 import org.ergoplatform.appkit.impl.ErgoTreeContract
-import org.ergoplatform.{ErgoAddressEncoder, Pay2SAddress}
 import org.scalatest.{Matchers, PropSpec}
 import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
-import scorex.util.encode.Base16
 import sigmastate.eval._
 import sigmastate.interpreter.CryptoConstants
 import special.sigma.GroupElement
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable
 
 class TokenContractsSpec extends PropSpec with Matchers
   with ScalaCheckDrivenPropertyChecks

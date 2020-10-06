@@ -1,7 +1,7 @@
 package mixer
 
 import app.TokenErgoMix
-import cli.ErgoMixCLIUtil
+import cli.MixUtils
 import mixer.Models.{FBox, FollowedMix, HBox}
 import play.api.Logger
 import sigmastate.eval._
@@ -9,17 +9,21 @@ import sigmastate.eval._
 object MixScanner {
   private val logger: Logger = Logger(this.getClass)
 
-  private def getSpendingTx(boxId:String) = ErgoMixCLIUtil.usingClient{implicit ctx =>
+  /**
+   * @param boxId box id
+   * @return spending transaction of box id if spent at all
+   */
+  private def getSpendingTx(boxId: String) = MixUtils.usingClient { implicit ctx =>
     val explorer = new BlockExplorer
     explorer.getSpendingTxId(boxId).flatMap(explorer.getTransaction)
   }
 
-  def followHalfMix(halfMixBoxId:String, currentRound:Int, masterSecret:BigInt):Seq[FollowedMix] = {
+  def followHalfMix(halfMixBoxId: String, currentRound: Int, masterSecret: BigInt): Seq[FollowedMix] = {
     val secret = new Wallet(masterSecret).getSecret(currentRound).bigInteger
     val gZ = TokenErgoMix.g.exp(secret)
 
     getSpendingTx(halfMixBoxId).map { tx =>
-      tx.outboxes.flatMap{outbox =>
+      tx.outboxes.flatMap { outbox =>
         outbox.mixBox match {
           case Some(Right(FBox(fullMixBoxId, r4, r5, `gZ`))) if r4.exp(secret) == r5 =>
             logger.info(s"$currentRound.5:[halfMixBoxId:$halfMixBoxId]->[fullMixBoxId:$fullMixBoxId]")
@@ -30,13 +34,13 @@ object MixScanner {
     }.getOrElse(Nil)
   }
 
-  def followFullMix(fullMixBoxId:String, currentRound:Int, masterSecret:BigInt):Seq[FollowedMix] = {
+  def followFullMix(fullMixBoxId: String, currentRound: Int, masterSecret: BigInt): Seq[FollowedMix] = {
     val wallet = new Wallet(masterSecret)
     val nextRound = currentRound + 1
     val nextSecret = wallet.getSecret(nextRound)
     val gZ = TokenErgoMix.g.exp(nextSecret.bigInteger)
-    getSpendingTx(fullMixBoxId).map{tx =>
-      tx.outboxes.flatMap{outbox =>
+    getSpendingTx(fullMixBoxId).map { tx =>
+      tx.outboxes.flatMap { outbox =>
         outbox.mixBox match {
           case Some(Left(HBox(halfMixBoxId, `gZ`))) => // spent as Alice
             logger.info(s"$nextRound.0:[fullMixBoxId:$fullMixBoxId]->[halfMixBoxId:$halfMixBoxId]")
@@ -53,9 +57,9 @@ object MixScanner {
   }
 
   @deprecated("This takes a lot of time. Use followFullMix and followHalfMix", "1.0")
-  def followDeposit(boxId:String, masterSecret:BigInt, poolAmount: Long = 1000000000): Seq[FollowedMix] = {
-    getSpendingTx(boxId).map{tx =>
-      tx.outboxes.filter(_.amount == poolAmount).flatMap{outBox =>
+  def followDeposit(boxId: String, masterSecret: BigInt, poolAmount: Long = 1000000000): Seq[FollowedMix] = {
+    getSpendingTx(boxId).map { tx =>
+      tx.outboxes.filter(_.amount == poolAmount).flatMap { outBox =>
         followHalfMix(outBox.id, 0, masterSecret) ++ followFullMix(outBox.id, 0, masterSecret)
       }
     }.getOrElse(Nil)

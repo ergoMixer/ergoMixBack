@@ -1,30 +1,45 @@
 package app
 
 import java.math.BigInteger
-import ergomix.{Alice, DHT, EndBox, FullMixBox, HalfMixTx}
+
+import app.TokenErgoMix._
+import app.ergomix._
+import cli.MixUtils
 import org.ergoplatform.appkit._
 import org.ergoplatform.appkit.impl.ErgoTreeContract
-import special.sigma.GroupElement
 import sigmastate.eval._
-import scala.jdk.CollectionConverters._
-import TokenErgoMix._
-import cli.ErgoMixCLIUtil
 import special.collection.Coll
+import special.sigma.GroupElement
 
-class AliceImpl (x:BigInteger) (implicit ctx: BlockchainContext) extends Alice {
+import scala.jdk.CollectionConverters._
+
+class AliceImpl(x: BigInteger)(implicit ctx: BlockchainContext) extends Alice {
   val gX: GroupElement = g.exp(x)
-  implicit val tokenErgoMix: TokenErgoMix = ErgoMixCLIUtil.tokenErgoMix.get
+  implicit val tokenErgoMix: TokenErgoMix = MixUtils.tokenErgoMix.get
   val util = new Util()
 
-  def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount:Long, otherInputBoxes:Array[InputBox], changeAddress:String, changeBoxRegs:Seq[ErgoValue[_]], additionalDlogSecrets:Array[BigInteger], additionalDHTuples:Array[DHT]): SignedTransaction = {
+  /**
+   * spends full-box, is used for mixing as alice
+   *
+   * @param f                     full-box
+   * @param endBoxes              end-boxes
+   * @param feeAmount             fee amount
+   * @param otherInputBoxes       other inputs like fee
+   * @param changeAddress         change address
+   * @param changeBoxRegs         change box registers
+   * @param additionalDlogSecrets secrets to spent inputs
+   * @param additionalDHTuples    dh tuples
+   * @return tx spending full-box as alice
+   */
+  def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT]): SignedTransaction = {
     val (gY, gXY) = (f.r4, f.r5)
     val txB: UnsignedTransactionBuilder = ctx.newTxBuilder
 
-    val outBoxes: Seq[OutBox] = endBoxes.map{ endBox =>
+    val outBoxes: Seq[OutBox] = endBoxes.map { endBox =>
       var outBoxBuilder = txB.outBoxBuilder().value(endBox.value).contract(new ErgoTreeContract(endBox.receiverBoxScript))
       if (endBox.tokens.nonEmpty)
-        outBoxBuilder = outBoxBuilder.tokens(endBox.tokens:_*)
-      (if (endBox.receiverBoxRegs.isEmpty) outBoxBuilder else outBoxBuilder.registers(endBox.receiverBoxRegs:_*)).build()
+        outBoxBuilder = outBoxBuilder.tokens(endBox.tokens: _*)
+      (if (endBox.receiverBoxRegs.isEmpty) outBoxBuilder else outBoxBuilder.registers(endBox.receiverBoxRegs: _*)).build()
     }
 
     val inputs = new java.util.ArrayList[InputBox]()
@@ -37,9 +52,9 @@ class AliceImpl (x:BigInteger) (implicit ctx: BlockchainContext) extends Alice {
     }
 
     val txToSign = txB.boxesToSpend(inputs)
-      .outputs(outBoxes:_*)
+      .outputs(outBoxes: _*)
       .fee(feeAmount)
-      .sendChangeTo(util.getAddress(changeAddress), changeBoxRegs:_*)
+      .sendChangeTo(util.getAddress(changeAddress))
       .build()
 
     val alice: ErgoProver = additionalDHTuples.foldLeft(
@@ -55,8 +70,22 @@ class AliceImpl (x:BigInteger) (implicit ctx: BlockchainContext) extends Alice {
     alice.sign(txToSign)
   }
 
-  def createHalfMixBox(inputBoxes:Array[InputBox], feeAmount:Long, changeAddress:String,
-                       additionalDlogSecrets:Array[BigInteger], additionalDHTuples:Array[DHT],
+  /**
+   * creates half-box, is used for entering mixing
+   *
+   * @param inputBoxes            input boxes
+   * @param feeAmount             fee amount
+   * @param changeAddress         change address
+   * @param additionalDlogSecrets secrets for spending inputs
+   * @param additionalDHTuples    dh tuples
+   * @param poolAmount            ring
+   * @param numToken              mix level
+   * @param mixingTokenId         mixing token id in case of token mixing, empty if it is erg mixing
+   * @param mixingTokenAmount     token ring
+   * @return
+   */
+  def createHalfMixBox(inputBoxes: Array[InputBox], feeAmount: Long, changeAddress: String,
+                       additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT],
                        poolAmount: Long, numToken: Int = 0, mixingTokenId: String, mixingTokenAmount: Long): HalfMixTx = {
     val txB: UnsignedTransactionBuilder = ctx.newTxBuilder
 
@@ -66,7 +95,7 @@ class AliceImpl (x:BigInteger) (implicit ctx: BlockchainContext) extends Alice {
       .value(poolAmount)
       .registers(ErgoValue.of(gX))
       .contract(tokenErgoMix.halfMixContract)
-      .tokens(tokens:_*)
+      .tokens(tokens: _*)
       .build()
 
     val tokenBox = inputBoxes.last
@@ -93,7 +122,7 @@ class AliceImpl (x:BigInteger) (implicit ctx: BlockchainContext) extends Alice {
     val copy = ctx.newTxBuilder().outBoxBuilder
       .value(tokenBox.getValue)
       .tokens(new ErgoToken(TokenErgoMix.tokenId, tokenBox.getTokens.get(0).getValue - numToken))
-      .registers(tokenBox.getRegisters.asScala:_*)
+      .registers(tokenBox.getRegisters.asScala: _*)
       .contract(tokenErgoMix.tokenEmissionContract)
       .build()
 

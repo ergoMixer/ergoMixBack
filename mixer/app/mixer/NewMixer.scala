@@ -1,14 +1,15 @@
 package mixer
 
 import app.{Configs, TokenErgoMix}
-import cli.{Alice, AliceOrBob, Bob, ErgoMixCLIUtil}
+import cli.{Alice, AliceOrBob, Bob, MixUtils}
+import db.Columns._
 import db.ScalaDB._
-import mixer.Columns._
-import mixer.ErgoMixerUtils._
+import db.Tables
+import helpers.ErgoMixerUtils._
+import helpers.Util.now
 import mixer.Models.MixStatus.{Queued, Running}
 import mixer.Models.MixWithdrawStatus.WithdrawRequested
 import mixer.Models.{Deposit, MixRequest, OutBox}
-import mixer.Util.now
 import play.api.Logger
 
 class NewMixer(tables: Tables) {
@@ -17,14 +18,26 @@ class NewMixer(tables: Tables) {
   import tables._
 
   var halfs: Seq[OutBox] = _
+
+  /**
+   * gets half-boxes to be used by all new mixes
+   * @return half-boxes
+   */
   def getHalfBoxes: Seq[OutBox] = {
     if (halfs == null)
-      halfs = ErgoMixCLIUtil.getHalfMixBoxes(considerPool = true)
+      halfs = MixUtils.getHalfMixBoxes(considerPool = true)
     halfs
   }
 
+  /**
+   * @param address deposit address of a mix
+   * @return returns deposits of this address
+   */
   def getDeposits(address: String): List[Deposit] = unspentDepositsTable.selectStar.where(addressCol === address).as(Deposit(_))
 
+  /**
+   * processes new mixes one by one
+   */
   def processNewMixQueue(): Unit = {
     val reqs = mixRequestsTable.select(
       mixReqCols :+ masterSecretCol: _*
@@ -56,7 +69,12 @@ class NewMixer(tables: Tables) {
 
   private implicit val insertReason = "NewMixer.initiateMix"
 
-  private def initiateMix(mixRequest: MixRequest, masterSecret: BigInt): Unit = ErgoMixCLIUtil.usingClient { implicit ctx =>
+  /**
+   * starts mixing (as bob if possible or as alice)
+   * @param mixRequest mix request
+   * @param masterSecret master secret
+   */
+  private def initiateMix(mixRequest: MixRequest, masterSecret: BigInt): Unit = MixUtils.usingClient { implicit ctx =>
     val id = mixRequest.id
     val depositAddress = mixRequest.depositAddress
     val depositsToUse = getDeposits(depositAddress)
@@ -83,7 +101,7 @@ class NewMixer(tables: Tables) {
     val numFeeToken = mixRequest.numToken
     val neededErg = mixRequest.neededAmount
     val neededToken = mixRequest.neededTokenAmount
-    val optTokenBoxId = getRandomValidBoxId(ErgoMixCLIUtil.getTokenEmissionBoxes(numFeeToken, considerPool = true)
+    val optTokenBoxId = getRandomValidBoxId(MixUtils.getTokenEmissionBoxes(numFeeToken, considerPool = true)
       .filterNot(box => spentTokenEmissionBoxTable.exists(boxIdCol === box.id)).map(_.id.toString))
 
     if (avbl < neededErg || avblToken < neededToken) { // should not happen because we are only considering completed deposits.

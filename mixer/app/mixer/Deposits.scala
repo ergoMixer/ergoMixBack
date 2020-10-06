@@ -1,20 +1,26 @@
 package mixer
 
-import cli.ErgoMixCLIUtil
+import cli.MixUtils
+import db.Columns._
 import db.ScalaDB._
-import mixer.Columns._
+import db.Tables
+import helpers.Util.now
 import mixer.Models.MixRequest
-import mixer.Util.now
 import play.api.Logger
 
 class Deposits(tables: Tables) {
   private val logger: Logger = Logger(this.getClass)
+
   import tables._
 
-  def processDeposits():Unit = {
-    mixRequestsTable.select(mixReqCols:_*).where(depositCompletedCol === false).as(MixRequest(_)).map{req =>
+  /**
+   * process deposits, i.e. checks pending addresses to see if they've reached predefined threshold for entering mixing
+   * Does both for ergs and tokens
+   */
+  def processDeposits(): Unit = {
+    mixRequestsTable.select(mixReqCols: _*).where(depositCompletedCol === false).as(MixRequest(_)).map { req =>
       // logger.info(s"Trying to read deposits for depositAddress: $depositAddress")
-      ErgoMixCLIUtil.usingClient{implicit ctx =>
+      MixUtils.usingClient { implicit ctx =>
         val explorer = new BlockExplorer
         val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
 
@@ -22,7 +28,7 @@ class Deposits(tables: Tables) {
           spentDepositsTable.select(boxIdCol).where(addressCol === req.depositAddress).firstAsT[String]
 
 
-        allBoxes.filterNot(box => knownIds.contains(box.id)).map{box =>
+        allBoxes.filterNot(box => knownIds.contains(box.id)).map { box =>
           insertDeposit(req.depositAddress, box.amount, box.id, req.neededAmount, box.getToken(req.tokenId), req.neededTokenAmount)
           logger.info(s"Successfully processed deposit of ${box.amount} with boxId ${box.id} for depositAddress ${req.depositAddress}")
         }
@@ -32,7 +38,17 @@ class Deposits(tables: Tables) {
 
   private implicit val insertReason = "Deposits.insertDeposit"
 
-  def insertDeposit(address: String, amount:Long, boxId:String, needed: Long, tokenAmount: Long, neededTokenAmount: Long): String = {
+  /**
+   * inserts deposits into db
+   *
+   * @param address           deposit address
+   * @param amount            amount of deposit
+   * @param boxId             box id containing amount of deposit
+   * @param needed            needed erg amount to enter mixing
+   * @param tokenAmount       mixing level
+   * @param neededTokenAmount needed token amount to enter mixing
+   */
+  def insertDeposit(address: String, amount: Long, boxId: String, needed: Long, tokenAmount: Long, neededTokenAmount: Long): String = {
     // does not check from block explorer. Should be used by experts only. Otherwise, the job will automatically insert deposits
     if (mixRequestsTable.exists(depositAddressCol === address)) {
       if (unspentDepositsTable.exists(boxIdCol === boxId)) throw new Exception(s"Deposit already exists")

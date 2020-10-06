@@ -1,4 +1,5 @@
-package mixer
+package helpers
+
 import scala.collection.mutable
 
 object Stats {

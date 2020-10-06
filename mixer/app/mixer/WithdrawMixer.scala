@@ -1,19 +1,25 @@
 package mixer
 
-import mixer.ErgoMixerUtils._
+import cli.MixUtils
+import db.Columns._
+import db.ScalaDB._
+import db.Tables
+import helpers.ErgoMixerUtils._
 import mixer.Models.MixStatus.Complete
 import mixer.Models.MixWithdrawStatus.{WithdrawRequested, Withdrawn}
 import mixer.Models.{GroupMixStatus, MixRequest, WithdrawTx}
-import cli.ErgoMixCLIUtil
-import db.ScalaDB._
-import mixer.Columns._
 import play.api.Logger
 
 class WithdrawMixer(tables: Tables) {
   private val logger: Logger = Logger(this.getClass)
+
   import tables._
 
-  def processWitthraws(): Unit = {
+
+  /**
+   * processes withdrawals one by one
+   */
+  def processWithdrawals(): Unit = {
     val withdraws = withdrawTable.selectStar
       .where(
         (mixIdCol of withdrawTable) === (mixIdCol of mixRequestsTable),
@@ -32,7 +38,11 @@ class WithdrawMixer(tables: Tables) {
     }
   }
 
-  private def processWithdraw(tx: WithdrawTx) = ErgoMixCLIUtil.usingClient { implicit ctx =>
+  /**
+   * processes a specific withdraw, marks as done if tx is confirmed enough
+   * @param tx withdraw transaction
+   */
+  private def processWithdraw(tx: WithdrawTx) = MixUtils.usingClient { implicit ctx =>
     logger.info(s" [WITHDRAW: ${tx.mixId}] txId: ${tx.txId} processing.")
     val explorer = new BlockExplorer()
     val numConf = explorer.getTxNumConfirmations(tx.txId)
@@ -42,7 +52,7 @@ class WithdrawMixer(tables: Tables) {
       // other cases include the following:
       //   * this is a half box and is spent with someone else --> will be handled in HalfMixer
       //   * inputs are not available due to fork --> will be handled in other jobs (HalfMixer, FullMixer, NewMixer)
-      if (!ErgoMixCLIUtil.isTxInPool(tx.txId)) { // however, we broadcast anyway if tx is not in the pool
+      if (!MixUtils.isTxInPool(tx.txId)) { // however, we broadcast anyway if tx is not in the pool
         val result = ctx.sendTransaction(ctx.signedTxFromJson(tx.toString))
         logger.info(s"  broadcasting transaction: $result.")
       } else {
@@ -60,8 +70,8 @@ class WithdrawMixer(tables: Tables) {
       mixRequestsTable.update(mixStatusCol <-- Complete.value, mixWithdrawStatusCol <-- Withdrawn.value)
         .where(mixIdCol === tx.mixId)
       val mix: MixRequest = mixRequestsTable.selectStar.where(mixIdCol === tx.mixId).as(MixRequest(_)).head
-      val numRunning = mixRequestsTable.countWhere(mixGroupIdCol === mix.groupId, mixStatusCol <> Complete.value)
-      if (numRunning == 0) { // mix is done
+      val numRunning = mixRequestsTable.countWhere(mixGroupIdCol === mix.groupId, mixWithdrawStatusCol <> Withdrawn.value)
+      if (numRunning == 0) { // group mix is done because all mix boxes are withdrawn
         mixRequestsGroupTable.update(mixStatusCol <-- GroupMixStatus.Complete.value).where(mixGroupIdCol === mix.groupId)
       }
 

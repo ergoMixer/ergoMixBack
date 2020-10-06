@@ -4,13 +4,15 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 
+import app.{Configs, TokenErgoMix}
+import cli.MixUtils
+import db.core.DataStructures.anyToAny
+import helpers.{ErgoMixerUtils, Stats}
 import io.circe.generic.auto._
 import io.circe.syntax._
 import io.circe.{Encoder, Json, parser}
-import db.core.DataStructures.anyToAny
-import cli.ErgoMixCLIUtil
-import app.{Configs, TokenErgoMix}
 import org.ergoplatform.appkit.{ErgoToken, InputBox}
+import play.api.libs.json._
 import scorex.util.encode.Base16
 import special.collection.Coll
 import special.sigma.GroupElement
@@ -20,8 +22,8 @@ object Models {
   case class SpendTx(inboxes: Seq[InBox], outboxes: Seq[OutBox], id: String, address: String, timestamp: Long)
 
   case class InBox(id: String, address: String, createdTxId: String, value: Long) {
-    def isHalfMixBox: Boolean = ErgoMixCLIUtil.usingClient { implicit ctx =>
-      address == ErgoMixCLIUtil.tokenErgoMix.get.halfMixAddress.toString
+    def isHalfMixBox: Boolean = MixUtils.usingClient { implicit ctx =>
+      address == MixUtils.tokenErgoMix.get.halfMixAddress.toString
     }
   }
 
@@ -32,8 +34,8 @@ object Models {
       tokens.filter(_.getId.toString.equals(tokenId)).map(_.getValue.longValue()).sum
     }
 
-    def mixBox: Option[Either[HBox, FBox]] = try ErgoMixCLIUtil.usingClient { implicit ctx =>
-      val ergoMix = ErgoMixCLIUtil.tokenErgoMix.get
+    def mixBox: Option[Either[HBox, FBox]] = try MixUtils.usingClient { implicit ctx =>
+      val ergoMix = MixUtils.tokenErgoMix.get
       val fullMixBoxErgoTree = Base16.encode(ergoMix.fullMixScriptErgoTree.bytes).trim
       val halfMixBoxErgoTree = Base16.encode(ergoMix.halfMixContract.getErgoTree.bytes).trim
       ergoTree match {
@@ -118,6 +120,13 @@ object Models {
       formatter.format(date)
     }
 
+    def isErg: Boolean = tokenId.isEmpty
+
+    def getAmount: Long = {
+      if (isErg) amount
+      else mixingTokenAmount
+    }
+
     override def toString: String = this.asJson.toString
   }
 
@@ -144,18 +153,34 @@ object Models {
     }
   }
 
-  case class MixCovertRequest(id: String, createdTime: Long, depositAddress: String, numRounds: Int, doneErgDeposit: Long, doneTokenDeposit: Long, ergRing: Long, tokenRing: Long, tokenId: String, masterKey: BigInt) {
+  case class MixCovertRequest(id: String, createdTime: Long, depositAddress: String, numRounds: Int, masterKey: BigInt) {
     def creationTimePrettyPrinted: String = {
       new SimpleDateFormat("YYYY-MM-dd HH:mm:ss").format(new Date(createdTime))
     }
 
-    def getMinNeeded: (Long, Long) = { // returns what is needed to distribute
+    def getMinNeeded(ergRing: Long, tokenRing: Long): (Long, Long) = { // returns what is needed to distribute
       val needed = MixBox.getPrice(ergRing, tokenRing, numRounds)
       (needed._1 + Configs.distributeFee, needed._2)
     }
 
-    def getMixingNeed: (Long, Long) = { // returns what is needed for a single mix box
+    def getMixingNeed(ergRing: Long, tokenRing: Long): (Long, Long) = { // returns what is needed for a single mix box
       MixBox.getPrice(ergRing, tokenRing, numRounds)
+    }
+
+    def toJson(assets: Seq[CovertAsset], currentMixing: Map[String, Long] = Map.empty): String = {
+      val sortedAssets = assets.sortBy(_.lastActivity).reverse.sortBy(!_.isErg).sortBy(_.ring == 0)
+      val assetJsons = sortedAssets.map(asset => {
+        val curMixingAmount = currentMixing.getOrElse(asset.tokenId, 0L)
+        if (asset.isErg) asset.toJson(MixBox.getPrice(asset.ring, 0, numRounds)._1, curMixingAmount)
+        else asset.toJson(MixBox.getTokenPrice(asset.ring), curMixingAmount)
+      })
+      s"""{
+         |  "id": "${id}",
+         |  "createdDate": "${creationTimePrettyPrinted}",
+         |  "deposit": "${depositAddress}",
+         |  "numRounds": $numRounds,
+         |  "assets": [${assetJsons.mkString(",")}]
+         |}""".stripMargin
     }
   }
 
@@ -167,12 +192,40 @@ object Models {
         iterator.next().as[Long], // created time
         iterator.next().as[String], // deposit address
         iterator.next().as[Int], // num rounds
-        iterator.next().as[Long], // done deposit
-        iterator.next().as[Long], // token done deposit
-        iterator.next().as[Long], // mixing amount
-        iterator.next().as[Long], // mixing token amount
-        iterator.next().as[String], // token id
         iterator.next.as[BigDecimal].toBigInt() // master secret
+      )
+    }
+  }
+
+  case class CovertAsset(covertId: String, tokenId: String, ring: Long, confirmedDeposit: Long, lastActivity: Long) {
+    /**
+     * @param needed        needed amount of this asset for the mix to start
+     * @param currentMixing current mixing amount of this asset
+     * @return json of the asset as string
+     */
+    def toJson(needed: Long, currentMixing: Long): String = {
+      s"""{
+         |  "tokenId": "$tokenId",
+         |  "ring": $ring,
+         |  "need": $needed,
+         |  "confirmedDeposit": $confirmedDeposit,
+         |  "lastActivity": "${ErgoMixerUtils.prettyDate(lastActivity)}",
+         |  "currentMixingAmount": $currentMixing
+         |}""".stripMargin
+    }
+
+    def isErg: Boolean = tokenId.isEmpty
+  }
+
+  object CovertAsset {
+    def apply(a: Array[Any]): CovertAsset = {
+      val i = a.toIterator
+      new CovertAsset(
+        i.next().as[String],
+        i.next().as[String],
+        i.next().as[Long],
+        i.next().as[Long],
+        i.next().as[Long]
       )
     }
   }
@@ -263,11 +316,13 @@ object Models {
 
   case class WithdrawTx(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte]) {
     override def toString: String = new String(txBytes, StandardCharsets.UTF_16)
+
     def getFeeBox: Option[String] = { // returns fee box used in this tx if available
       val inputs = boxId.split(",")
       if (inputs.size > 1) return Some(inputs(inputs.size - 1))
       Option.empty
     }
+
     def getFirstInput: String = {
       boxId.split(",").head
     }
@@ -446,14 +501,14 @@ object Models {
     }
   }
 
-  case class EntityInfo(name: String, id: String, rings: Seq[Long], decimals: Int) {
+  case class EntityInfo(name: String, id: String, rings: Seq[Long], decimals: Int, dynamicFeeRate: Long) {
     def toJson(): String = {
       s"""{
-        |  "name": "$name",
-        |  "id": "$id",
-        |  "rings": [${rings.mkString(",")}],
-        |  "decimals": $decimals
-        |}""".stripMargin
+         |  "name": "$name",
+         |  "id": "$id",
+         |  "rings": [${rings.mkString(",")}],
+         |  "decimals": $decimals
+         |}""".stripMargin
     }
   }
 
@@ -462,8 +517,61 @@ object Models {
       val name = new String(box.getRegisters.get(0).getValue.asInstanceOf[Coll[Byte]].toArray, StandardCharsets.UTF_8)
       val id = new String(box.getRegisters.get(1).getValue.asInstanceOf[Coll[Byte]].toArray, StandardCharsets.UTF_8)
       val rings = box.getRegisters.get(2).getValue.asInstanceOf[Coll[Long]]
-      val decimals = if (box.getRegisters.size() == 4) box.getRegisters.get(3).getValue.asInstanceOf[Int] else 0
-      new EntityInfo(name, id, rings.toArray, decimals)
+      val decimals = if (box.getRegisters.size() >= 4) box.getRegisters.get(3).getValue.asInstanceOf[Int] else 0
+      val dynamicFeeRate = if (box.getRegisters.size() >= 5) box.getRegisters.get(4).getValue.asInstanceOf[Long] else 1000L // 1000 for 1e6 nano erg / byte
+      new EntityInfo(name, id, rings.toArray, decimals, dynamicFeeRate)
+    }
+  }
+
+  object MixBox {
+
+    /**
+     * calculates needed token for a given ring
+     *
+     * @return token needed to enter mixing, i.e. ring + tokenFee
+     */
+    def getTokenPrice(ring: Long): Long = {
+      val rate: Int = Stats.entranceFee.getOrElse(1000000)
+      ring + (if (rate > 0 && rate < 1000000) ring / rate else 0)
+    }
+
+    /**
+     * calculates needed amount with current fees for a specific mix box
+     *
+     * @param ergRing   erg ring of mix
+     * @param tokenRing token ring of mix
+     * @param mixRounds number of mixing rounds i.e. token num
+     * @return (erg needed, token needed)
+     */
+    def getPrice(ergRing: Long, tokenRing: Long, mixRounds: Int): (Long, Long) = {
+      val rate: Int = Stats.entranceFee.getOrElse(1000000)
+      val tokenPrice: Long = Stats.tokenPrices.get.getOrElse(mixRounds, -1)
+      assert(tokenPrice != -1)
+      val ergVal = if (rate > 0 && rate < 1000000) ergRing / rate else 0
+      (ergRing + Configs.startFee + tokenPrice + ergVal, getTokenPrice(tokenRing))
+    }
+  }
+
+  case class MixBox(withdraw: String, amount: Long, token: Int, mixingTokenAmount: Long, mixingTokenId: String) {
+    def price: (Long, Long) = {
+      MixBox.getPrice(amount, mixingTokenAmount, token)
+    }
+  }
+
+  case class MixBoxList(items: Iterable[MixBox])
+
+  object MixBoxList {
+    implicit val ReadsMixBoxList: Reads[MixBoxList] = new Reads[MixBoxList] {
+      override def reads(json: JsValue): JsResult[MixBoxList] = {
+        JsSuccess(MixBoxList(json.as[JsArray].value.map(item => {
+          val withdraw = (item \ "withdraw").as[String]
+          val amount = (item \ "amount").as[Long]
+          val token = (item \ "token").as[Int]
+          val mixingTokenId = (item \ "mixingTokenId").as[String]
+          val mixingTokenAmount = (item \ "mixingTokenAmount").as[Long]
+          MixBox(withdraw, amount, token, mixingTokenAmount, mixingTokenId)
+        })))
+      }
     }
   }
 

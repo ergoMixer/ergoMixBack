@@ -1,20 +1,13 @@
 package services
 
-import cli.Client
-import db.config.DBConfig
-import mixer.{ErgoMixer, ErgoMixerJobs, Tables}
 import app.Configs
+import cli.Client
+import db.Tables
+import mixer.{ErgoMixer, ErgoMixerJobs}
 
 object ErgoMixingSystem {
-
-  object Config extends DBConfig {
-    override val dbname: String = Configs.dbName
-    override val dbuser: String = Configs.dbUser
-    override val dbpass: String = Configs.dbPass
-  }
-
-  Client.setClient(Configs.nodeUrl, isMainnet = Configs.networkType.toLowerCase().equals("mainnet"), None, Configs.explorerUrl)
-  val tables = new Tables(Config)
-  val ergoMixer = new ErgoMixer(tables)
-  val ergoMixerJobs = new ErgoMixerJobs(tables)
+  Client.setClient(isMainnet = Configs.networkType.toLowerCase().equals("mainnet"), Configs.explorerUrl)
+  var tables: Tables = _
+  var ergoMixer: ErgoMixer = _
+  var ergoMixerJobs: ErgoMixerJobs = _
 }

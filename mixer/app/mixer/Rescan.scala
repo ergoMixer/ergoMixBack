@@ -1,14 +1,16 @@
 package mixer
 
+import db.Columns._
 import db.ScalaDB._
+import db.Tables
 import db.core.DataStructures.anyToAny
-import mixer.Columns._
-import mixer.Models.MixStatus.{Queued, Running}
+import helpers.Util.now
 import mixer.Models.{FollowedMix, PendingRescan}
-import mixer.Util.now
 
 class Rescan(tables: Tables) {
+
   import tables._
+
   private implicit val insertReason = "rescan"
 
   def processRescanQueue() = {
@@ -93,17 +95,6 @@ class Rescan(tables: Tables) {
   private def applyMixes(mixId: String, followedMixes: Seq[FollowedMix]) = {
     followedMixes.foreach(applyMix(mixId, _))
     followedMixes.lastOption.map(lastMix => clearFutureRounds(mixId, lastMix.round))
-  }
-
-  @deprecated("Use only manually", "1.0")
-  def manualRescanFromStart(mixId: String) = {
-    mixRequestsTable.select(mixStatusCol).where(
-      mixIdCol === mixId
-    ).firstAsT[String].headOption match {
-      case Some(Running.value) | Some(Queued.value) => // ok
-        applyMixes(mixId, getFollowedMix(mixId))
-      case _ => throw new Exception("Cannot only rescan running or queued mixes")
-    }
   }
 
 }

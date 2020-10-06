@@ -1,9 +1,10 @@
 package app
 
-import scalan.util.FileUtil
-import org.ergoplatform.appkit.JavaHelpers._
-import java.util.{List => JList}
 import java.lang.{String => JString}
+import java.util.{List => JList}
+
+import org.ergoplatform.appkit.JavaHelpers._
+import scalan.util.FileUtil
 
 trait HttpClientTesting {
   val responsesDir = "test/resources/mockwebserver"

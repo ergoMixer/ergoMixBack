@@ -1,21 +1,22 @@
-package mixer
+package db
 
+import cli.MixUtils
+import db.ScalaDB._
+import mixer.BlockExplorer
 import mixer.Models.MixStatus.Queued
 import mixer.Models.MixWithdrawStatus.WithdrawRequested
-import mixer.Models.{Deposit, MixHistory, WithdrawTx}
+import mixer.Models.{Deposit, MixHistory, MixRequest, WithdrawTx}
 import org.ergoplatform.appkit.SignedTransaction
-import cli.ErgoMixCLIUtil
-import db.DBManager
-import db.ScalaDB._
-import db.config.DBConfig
 import play.api.Logger
+import db.core.DataStructures.anyToAny
+import play.api.db.Database
 
-class Tables(config: DBConfig) {
+class Tables(playDB: Database) {
   private val logger: Logger = Logger(this.getClass)
 
-  import Columns._
+  import db.Columns._
 
-  implicit val dbConfig = config
+  implicit val playDb: Database = playDB
   /*
    The need to undo any of the steps (described below) can arise due to any of the following reasons:
      (F) Fork
@@ -48,16 +49,18 @@ class Tables(config: DBConfig) {
   */
 
   // covert mix
-  val mixCovertCols = Seq(mixGroupIdCol, createdTimeCol, depositAddressCol, numTokenCol, depositCol, tokenDepositCol, mixingAmount, mixingTokenAmount, tokenId)
-  val mixCovertTable = Tab.withName("mixing_covert_request").withCols(mixCovertCols :+ masterSecretGroupCol:_*).withPriKey(mixGroupIdCol)
+  val mixCovertCols = Seq(mixGroupIdCol, createdTimeCol, depositAddressCol, numTokenCol)
+  val mixCovertTable = Tab.withName("mixing_covert_request").withCols(mixCovertCols :+ masterSecretGroupCol: _*).withPriKey(mixGroupIdCol)
+  val covertDefaultsTable = Tab.withName("covert_defaults").withCols(mixGroupIdCol, tokenIdCol, mixingTokenAmount, depositCol, lastActivityCol).withPriKey(mixGroupIdCol, tokenIdCol)
+  val covertAddressesTable = Tab.withName("covert_addresses").withCols(mixGroupIdCol, addressCol).withPriKey(mixGroupIdCol, addressCol)
 
   // mix requests
-  val mixGroupReqCols = Seq(mixGroupIdCol, amountCol, mixStatusCol, createdTimeCol, depositAddressCol, depositCol, tokenDepositCol, mixingAmount, mixingTokenAmount, mixingTokenNeeded, tokenId)
-  val mixRequestsGroupTable = Tab.withName("mixing_group_request").withCols(mixGroupReqCols :+ masterSecretGroupCol:_*).withPriKey(mixGroupIdCol)
+  val mixGroupReqCols = Seq(mixGroupIdCol, amountCol, mixStatusCol, createdTimeCol, depositAddressCol, depositCol, tokenDepositCol, mixingAmount, mixingTokenAmount, mixingTokenNeeded, tokenIdCol)
+  val mixRequestsGroupTable = Tab.withName("mixing_group_request").withCols(mixGroupReqCols :+ masterSecretGroupCol: _*).withPriKey(mixGroupIdCol)
 
   val distributeTxsTable = Tab.withName("distribute_transactions").withCols(mixGroupIdCol, txIdCol, chainOrderCol, createdTimeCol, txCol, inputsCol).withPriKey(txIdCol)
 
-  val mixReqCols = Seq(mixIdCol, mixGroupIdCol, amountCol, numRoundsCol, mixStatusCol, createdTimeCol, withdrawAddressCol, depositAddressCol, depositCompletedCol, neededCol, numTokenCol, mixWithdrawStatusCol, mixingTokenAmount, mixingTokenNeeded, tokenId)
+  val mixReqCols = Seq(mixIdCol, mixGroupIdCol, amountCol, numRoundsCol, mixStatusCol, createdTimeCol, withdrawAddressCol, depositAddressCol, depositCompletedCol, neededCol, numTokenCol, mixWithdrawStatusCol, mixingTokenAmount, mixingTokenNeeded, tokenIdCol)
   val mixRequestsTable = Tab.withName("mixing_requests").withCols(mixReqCols :+ masterSecretCol: _*).withPriKey(mixIdCol)
 
   // stores unspent deposits
@@ -79,7 +82,7 @@ class Tables(config: DBConfig) {
     spentDepositsArchiveTable.insert(address, boxId, amount, createdTime, tokenAmount, txId, spentTime, purpose, insertReason)
   }
 
-  private def undoSpend(deposit: Deposit) = ErgoMixCLIUtil.usingClient { implicit ctx =>
+  private def undoSpend(deposit: Deposit) = MixUtils.usingClient { implicit ctx =>
     if (unspentDepositsTable.exists(boxIdCol === deposit.boxId)) throw new Exception(s"Unspent deposit already exists ${deposit.boxId}")
     val explorer = new BlockExplorer()
     if (explorer.getBoxById(deposit.boxId).spendingTxId.isDefined) throw new Exception(s"Cannot undo spend for already spend box ${deposit.boxId}")
@@ -180,7 +183,7 @@ class Tables(config: DBConfig) {
     mixStateHistoryArchiveTable.insert(mixId, round, isAlice, time, insertReason)
   }
 
-  def undoMixStep[T](mixId: String, round: Int, mixTable: DBManager) = {
+  def undoMixStep[T](mixId: String, round: Int, mixTable: DBManager, boxId: String) = {
     val currRound = mixStateTable.select(roundCol).where(mixIdCol === mixId).firstAsT[Int].headOption.getOrElse(throw new Exception(s"No entry exists for $mixId in mixStateTable"))
     if (currRound != round) throw new Exception(s"Current round ($currRound) != undo round ($round)")
 
@@ -188,6 +191,7 @@ class Tables(config: DBConfig) {
     if (currRound != maxRound) throw new Exception(s"Current round ($currRound) != max round ($maxRound)")
 
     mixStateHistoryTable.deleteWhere(mixIdCol === mixId, roundCol === round)
+    mixTransactionsTable.deleteWhere(boxIdCol === boxId)
 
     if (round == 0) {
       // delete from mixStateTable
@@ -271,4 +275,60 @@ class Tables(config: DBConfig) {
     rescanArchiveTable.insert(mixId, time, round, goBackward, isHalfMixTx, mixBoxId, insertReason)
   }
 
+  /**
+   * deletes a mix box and everything associated with that box including secrets
+   * only call this if mix for the box is done and it is withdrawn
+   * @param box mix request
+   */
+  def deleteMixBox(box: MixRequest): Unit = {
+    mixRequestsTable.deleteWhere(mixIdCol === box.id)
+
+    unspentDepositsTable.deleteWhere(addressCol === box.depositAddress)
+    unspentDepositsArchiveTable.deleteWhere(addressCol === box.depositAddress)
+
+    spentDepositsTable.deleteWhere(addressCol === box.depositAddress)
+    spentDepositsArchiveTable.deleteWhere(addressCol === box.depositAddress)
+
+    mixStateTable.deleteWhere(mixIdCol === box.id)
+    mixStateHistoryTable.deleteWhere(mixIdCol === box.id)
+    mixStateHistoryArchiveTable.deleteWhere(mixIdCol === box.id)
+
+    val boxIds: Seq[String] = halfMixTable.select(halfMixBoxIdCol).where(mixIdCol === box.id)
+      .as(_.toIterator.next().as[String]) ++ fullMixTable.select(fullMixBoxIdCol)
+      .where(mixIdCol === box.id).as(_.toIterator.next().as[String])
+
+    halfMixTable.deleteWhere(mixIdCol === box.id)
+    halfMixArchiveTable.deleteWhere(mixIdCol === box.id)
+
+    fullMixTable.deleteWhere(mixIdCol === box.id)
+    fullMixArchiveTable.deleteWhere(mixIdCol === box.id)
+
+    withdrawTable.deleteWhere(mixIdCol === box.id)
+    withdrawArchiveTable.deleteWhere(mixIdCol === box.id)
+
+    boxIds.foreach(boxId => {
+      mixTransactionsTable.deleteWhere(boxIdCol === boxId)
+    })
+
+    spentFeeEmissionBoxTable.deleteWhere(mixIdCol === box.id)
+    spentTokenEmissionBoxTable.deleteWhere(mixIdCol === box.id)
+
+    rescanTable.deleteWhere(mixIdCol === box.id)
+    rescanArchiveTable.deleteWhere(mixIdCol === box.id)
+  }
+
+  /**
+   * deletes a group mix request and everything associated with that request including mix boxes and secrets
+   * only call this if group mix is done and every box is withdrawn
+   * @param groupId group mix request
+   */
+  def deleteGroupMix(groupId: String): Unit = {
+    val boxes = mixRequestsTable.select(mixReqCols: _*).where(mixGroupIdCol === groupId).as(MixRequest(_))
+    mixRequestsGroupTable.deleteWhere(mixGroupIdCol === groupId)
+    distributeTxsTable.deleteWhere(mixGroupIdCol === groupId)
+    mixRequestsTable.deleteWhere(mixGroupIdCol === groupId)
+    boxes.foreach(box => {
+      deleteMixBox(box)
+    })
+  }
 }

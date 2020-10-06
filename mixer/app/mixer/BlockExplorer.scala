@@ -1,37 +1,41 @@
 package mixer
 
 import java.io.InputStream
-import java.net.HttpURLConnection
+import java.net.{HttpURLConnection, URLConnection}
 
+import app.Configs
 import io.circe.Json
 import mixer.Models.{InBox, OutBox, SpendTx}
-import app.Configs
 import org.ergoplatform.appkit.{BlockchainContext, ErgoToken}
 
 import scala.util.{Failure, Success, Try}
 
-class BlockExplorer(implicit ctx:BlockchainContext) extends UTXOReader {
+class BlockExplorer() {
 
   private val baseUrl = Configs.explorerUrl
 
   private val unspentUrl = s"$baseUrl/transactions/boxes/byAddress/unspent/"
-  private val blockUrl = s"$baseUrl/blocks"
+  private val blockUrl = s"$baseUrl/blocks?limit=1"
   private val boxUrl = s"$baseUrl/transactions/boxes/"
   private val txUrl = s"$baseUrl/transactions/"
   private val urlAddress = s"$baseUrl/addresses/"
 
-  private def getOutBoxFromJson(j: Json) = {
+  /**
+   * @param j json representation of box
+   * @return box as OutBox
+   */
+  private def getOutBoxFromJson(j: Json): OutBox = {
     val id = getId(j)
     val value = (j \\ "value").map(v => v.asNumber.get).head
     val creationHeight = (j \\ "creationHeight").map(v => v.asNumber.get).head
     val assets: Seq[Json] = (j \\ "assets").map(v => v.asArray.get).head
-    val tokens: Seq[ErgoToken] = assets.map{ asset =>
+    val tokens: Seq[ErgoToken] = assets.map { asset =>
       val tokenID = (asset \\ "tokenId").map(v => v.asString.get).head
       val value = (asset \\ "amount").map(v => v.asNumber.get).head.toLong.get
       new ErgoToken(tokenID, value)
     }
-    val registers = (j \\ "additionalRegisters").flatMap{r =>
-      r.asObject.get.toList.map{
+    val registers = (j \\ "additionalRegisters").flatMap { r =>
+      r.asObject.get.toList.map {
         case (key, value) => (key, value.asString.get)
       }
     }.toMap
@@ -41,8 +45,16 @@ class BlockExplorer(implicit ctx:BlockchainContext) extends UTXOReader {
     OutBox(id, value.toLong.get, registers, ergoTree, tokens, creationHeight.toInt.get, address, spendingTxId)
   }
 
-  private def getId(j: Json) = (j \\ "id").map(v => v.asString.get).apply(0)
+  /**
+   * @param j json representation of box
+   * @return id of box
+   */
+  private def getId(j: Json): String = (j \\ "id").map(v => v.asString.get).apply(0)
 
+  /**
+   * @param j json representation of box
+   * @return box as InBox
+   */
   private def getInBoxFromJson(j: Json) = {
     val id = getId(j)
     val address = (j \\ "address").map(v => v.asString.get).apply(0)
@@ -51,34 +63,63 @@ class BlockExplorer(implicit ctx:BlockchainContext) extends UTXOReader {
     InBox(id, address, createdTxId, value.toLong.get)
   }
 
+  /**
+   * @param json json representation of box
+   * @return box as OutBox
+   */
   private def getOutBoxesFromJson(json: Json): Seq[OutBox] = {
     json.asArray.get.map(getOutBoxFromJson)
   }
 
+  /**
+   * @param json json representation of box
+   * @return box as InBox
+   */
   private def getInBoxesFromJson(json: Json): Seq[InBox] = {
     json.asArray.get.map(getInBoxFromJson)
   }
 
+  /**
+   * @return current height of blockchain
+   */
   def getHeight: Int = {
     val json = GetURL.get(blockUrl)
-    ((json \\ "items") (0).asArray.get(0) \\ "height") (0).toString().toInt
+    ((json \\ "items").head.asArray.get(0) \\ "height").head.toString().toInt
   }
 
-  override def getUnspentBoxes(address: String): Seq[OutBox] = {
+  /**
+   * @param address address to get unspent boxes of
+   * @return list of unspent boxes
+   */
+  def getUnspentBoxes(address: String): Seq[OutBox] = {
     getOutBoxesFromJson(GetURL.get(unspentUrl + address))
   }
 
-  def getBoxById(boxId: String) = {
+  /**
+   * @param boxId box id
+   * @return box as OutBox
+   */
+  def getBoxById(boxId: String): OutBox = {
     getOutBoxFromJson(GetURL.get(boxUrl + boxId))
   }
 
-  def getSpendingTxId(boxId: String) = try {
+  /**
+   * @param boxId box id
+   * @return spending tx of box id if spent at all
+   */
+  def getSpendingTxId(boxId: String): Option[String] = try {
     getBoxById(boxId).spendingTxId
   } catch {
     case a: Throwable => None
   }
 
-  def getTransactionsByAddress(address:String, limit:Long = 0, offset:Long = 0): List[SpendTx] = try {
+  /**
+   * @param address address
+   * @param limit   max number of txs
+   * @param offset  offset
+   * @return list of transaction of address in specified range
+   */
+  def getTransactionsByAddress(address: String, limit: Long = 0, offset: Long = 0): List[SpendTx] = try {
     val json = GetURL.get(urlAddress + address + s"/transactions?limit=$limit&offset=$offset")
     val items = (json \\ "items").headOption.get.hcursor.as[List[Json]].getOrElse(null)
     items.map(item => SpendTx(
@@ -87,9 +128,13 @@ class BlockExplorer(implicit ctx:BlockchainContext) extends UTXOReader {
       "", address, (item \\ "timestamp").headOption.get.hcursor.as[Long].getOrElse(0)
     ))
   } catch {
-    case a:Throwable => List()
+    case a: Throwable => List()
   }
 
+  /**
+   * @param boxId box id
+   * @return confirmation num of box
+   */
   def getConfirmationsForBoxId(boxId: String): Int = try {
     val json = (GetURL.get(boxUrl + boxId))
     (json \\ "creationHeight").headOption.map { creationHeight =>
@@ -100,7 +145,11 @@ class BlockExplorer(implicit ctx:BlockchainContext) extends UTXOReader {
     case any: Throwable => 0
   }
 
-  def doesBoxExist(boxId: String) = {
+  /**
+   * @param boxId box id
+   * @return whether box exists on blockchain or not
+   */
+  def doesBoxExist(boxId: String): Option[Boolean] = {
     GetURL.getOrError(boxUrl + boxId) match {
       case Right(Some(_)) => Some(true)
       case Right(None) => Some(false)
@@ -115,16 +164,24 @@ class BlockExplorer(implicit ctx:BlockchainContext) extends UTXOReader {
     }
   }
 
+  /**
+   * @param txId transaction id
+   * @return transaction specified by txId
+   */
   def getTransaction(txId: String): Option[SpendTx] = try {
     val json = (GetURL.get(txUrl + txId))
     val outputs = (json \\ "outputs").headOption.get
     val inputs = (json \\ "inputs").headOption.get
-    val timestamp:Long = (json \\ "timestamp").headOption.get.hcursor.as[Long].getOrElse(0)
+    val timestamp: Long = (json \\ "timestamp").headOption.get.hcursor.as[Long].getOrElse(0)
     Some(SpendTx(getInBoxesFromJson(inputs), getOutBoxesFromJson(outputs), txId, "", timestamp))
   } catch {
     case a: Throwable => None
   }
 
+  /**
+   * @param txId transaction id
+   * @return confirmation number of transaction, -1 in case it is not mined at all
+   */
   def getTxNumConfirmations(txId: String): Int = try {
     val json = GetURL.get(txUrl + txId)
     (json \\ "confirmationsCount").head.asNumber.get.toInt.get
@@ -132,6 +189,9 @@ class BlockExplorer(implicit ctx:BlockchainContext) extends UTXOReader {
     case _: Throwable => -1 // not mined yet
   }
 
+  /**
+   * @return transactions currently in mempool (at most 200)
+   */
   def getPoolTransactionsStr: String = try { // useful for just checking if it contains a certain id, seems faster.
     GetURL.getStr(txUrl + "unconfirmed?limit=200") // just check 200 pool txs, decrease the chance of double spend anyway
   } catch {
@@ -159,10 +219,25 @@ object GetURL {
     }
   }
 
+  /**
+   * @param url           url
+   * @param headers       headers
+   * @param useProxyIfSet whether to use proxy if possible or not
+   * @return connection (potentially with going through proxy)
+   */
+  def getConnection(url: String, headers: Map[String, String], useProxyIfSet: Boolean = true): URLConnection = {
+    val connection = {
+      if (!useProxyIfSet || Configs.proxy == null) new URL(url).openConnection
+      else new URL(url).openConnection(Configs.proxy)
+    }
+    headers.foreach { case (name, value) => connection.setRequestProperty(name, value) }
+    connection.setConnectTimeout(5000)
+    connection
+  }
+
   def getOrError(url: String): Either[Throwable, Option[Json]] = {
     Try {
-      val connection = new URL(url).openConnection
-      requestProperties.foreach { case (name, value) => connection.setRequestProperty(name, value) }
+      val connection = getConnection(url, requestProperties)
       val httpConn = connection.asInstanceOf[HttpURLConnection]
       (httpConn.getResponseCode, httpConn)
     } match {
@@ -173,10 +248,9 @@ object GetURL {
     }
   }
 
-  def getOrErrorStr(url: String): Either[Throwable, Option[String]] = {
+  def getOrErrorStr(url: String, headers: Map[String, String], useProxyIfSet: Boolean = true): Either[Throwable, Option[String]] = {
     Try {
-      val connection = new URL(url).openConnection
-      requestProperties.foreach { case (name, value) => connection.setRequestProperty(name, value) }
+      val connection = getConnection(url, headers, useProxyIfSet)
       val httpConn = connection.asInstanceOf[HttpURLConnection]
       (httpConn.getResponseCode, httpConn)
     } match {
@@ -185,6 +259,10 @@ object GetURL {
       case Success((httpCode, httpConn)) => Left(new Exception(s"http:$httpCode,error:${is2Str(httpConn.getErrorStream)}"))
       case Failure(ex) => Left(ex)
     }
+  }
+
+  def getOrErrorStr(url: String): Either[Throwable, Option[String]] = {
+    getOrErrorStr(url, requestProperties)
   }
 
   def get(url: String): Json = {
@@ -198,7 +276,15 @@ object GetURL {
   def getStr(url: String): String = {
     getOrErrorStr(url) match {
       case Right(Some(string)) => string
-      case Right(None) => throw new Exception("Explorer returned error 404")
+      case Right(None) => throw new Exception("Returned error 404")
+      case Left(ex) => throw ex
+    }
+  }
+
+  def getStr(url: String, additionalHeaders: Map[String, String], useProxyIfSet: Boolean = true): String = {
+    getOrErrorStr(url, additionalHeaders ++ requestProperties, useProxyIfSet) match {
+      case Right(Some(string)) => string
+      case Right(None) => throw new Exception("Returned error 404")
       case Left(ex) => throw ex
     }
   }

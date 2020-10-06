@@ -26,20 +26,26 @@ POST        /mix/withdraw                      controllers.ApiController.withdra
 
 # New mixing backend with tokens
 POST        /mix/request                       controllers.ApiController.mixRequest
-POST        /mix/request/covert                controllers.ApiController.covertRequest
-
 GET         /mix/request/list                  controllers.ApiController.mixGroupRequestList
 GET         /mix/request/activeList            controllers.ApiController.mixGroupRequestActiveList
 GET         /mix/request/completeList          controllers.ApiController.mixGroupRequestCompleteList
-
-GET         /mix/request/:groupId/list         controllers.ApiController.mixRequestList(groupId: String)
-
+GET         /mix/request/:id/list              controllers.ApiController.mixRequestList(id: String, status ?= "all")
 GET         /mix/fee                           controllers.ApiController.mixingFee
 GET         /mix/supported                     controllers.ApiController.supported
+
+POST        /covert                            controllers.ApiController.covertRequest
+POST        /covert/:covertId/asset            controllers.ApiController.covertAddOrUpdate(covertId: String)
+GET         /covert/list                       controllers.ApiController.covertList
+GET         /covert/:covertId/asset            controllers.ApiController.covertAssetList(covertId: String)
+POST        /covert/:covertId/address          controllers.ApiController.setCovertAddresses(covertId: String)
+GET         /covert/:covertId/address          controllers.ApiController.getCovertAddresses(covertId: String)
+
 
 GET         /dashboard                         controllers.MixerController.dashboard
 GET         /dashboard/*file                   controllers.MixerController.assetOrDefault(file)
 
 # Return Info of Mixer
 GET         /info                              controllers.ApiController.getInfo
-GET        /exit                              controllers.ApiController.exit
+POST        /exit                              controllers.ApiController.exit
+GET         /backup                            controllers.ApiController.backup
+POST        /restore                           controllers.ApiController.restore
