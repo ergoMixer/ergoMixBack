@@ -10,13 +10,14 @@ import db.core.DataStructures.anyToAny
 import helpers.ErgoMixerUtils._
 import helpers.Util
 import mixer.Models.{CovertAsset, DistributeTx, MixCovertRequest, OutBox}
-import org.ergoplatform.ErgoAddressEncoder
+import org.ergoplatform.{ErgoAddressEncoder, Input}
 import org.ergoplatform.appkit.impl.ScalaBridge
-import org.ergoplatform.appkit.{Address, ErgoToken}
+import org.ergoplatform.appkit.{Address, ErgoToken, InputBox}
 import play.api.Logger
 import services.ErgoMixingSystem
 
 import scala.collection.mutable
+import scala.collection.JavaConverters._
 
 class CovertMixer(tables: Tables) {
   private val logger: Logger = Logger(this.getClass)
@@ -55,7 +56,7 @@ class CovertMixer(tables: Tables) {
               box.tokens.foreach(token => realDeposits(token.getId.toString) = realDeposits.getOrElse(token.getId.toString, 0L) + token.getValue)
               box
             } else null
-          }).filter(_ != null)
+          }).filter(_ != null).filter(box => {!spent.contains(box.id)}).toList
 
           realDeposits.foreach(dep => {
             if ((supported ++ unsupported).exists(_.tokenId == dep._1)) {
@@ -182,17 +183,40 @@ class CovertMixer(tables: Tables) {
    */
   def processTx(req: MixCovertRequest): Unit = MixUtils.usingClient { implicit ctx =>
     val explorer = new BlockExplorer()
+    var outputs: Array[String] = Array()
     distributeTxsTable.selectStar.where(mixGroupIdCol === req.id, chainOrderCol > 0).as(DistributeTx(_))
       .sortBy(_.order)
       .foreach(tx => {
         val confNum = explorer.getTxNumConfirmations(tx.txId)
         if (confNum == -1) { // not mined yet, broadcast tx again!
-          val res = ctx.sendTransaction(ctx.signedTxFromJson(tx.toString))
+          val signedTx = ctx.signedTxFromJson(tx.toString)
+          val res = ctx.sendTransaction(signedTx)
           logger.info(s"  broadcasting tx ${tx.txId}, response: $res...")
           if (res == null) {
-            logger.error(s"  transaction got refused by the node! potential reason: node does not support chain transactions. waiting...")
+            var spendingTxId: String = ""
+            val boxStatus = tx.inputs.split(",").forall(boxId => {
+              explorer.getSpendingTxId(boxId) match {
+                case Some(txId) =>
+                  spendingTxId = txId
+                case None =>
+                  spendingTxId = ""
+              }
+              if ((!spendingTxId.isEmpty && spendingTxId != req.id) || outputs.contains(boxId)){
+                false
+              }
+              else true
+            })
+            if(boxStatus){
+              logger.error(s"  transaction got refused by the node! potential reason: node does not support chain transactions. waiting...")
+            }
+            else{
+              outputs = outputs ++ signedTx.getOutputsToSpend.asScala.map(box => {
+                box.getId.toString
+              })
+              distributeTxsTable.update(chainOrderCol <-- 0).where(txIdCol === tx.txId)
+              logger.info(s"  tx ${tx.txId} has a box spent or has a wrong box")
+            }
           }
-
         } else if (confNum >= Configs.numConfirmation) { // confirmed enough
           logger.info(s"  tx ${tx.txId} is confirmed.")
           distributeTxsTable.update(chainOrderCol <-- 0).where(txIdCol === tx.txId)
