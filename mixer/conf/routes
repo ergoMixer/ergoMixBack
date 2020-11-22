@@ -3,7 +3,7 @@
 # ~~~~
 
 # Home page
-GET         /                                  controllers.MixerController.index
+GET         /                                  controllers.ApiController.index
 
 # Route for swagger
 GET         /swagger.conf                      controllers.ApiController.swagger
@@ -35,14 +35,15 @@ GET         /mix/supported                     controllers.ApiController.support
 
 POST        /covert                            controllers.ApiController.covertRequest
 POST        /covert/:covertId/asset            controllers.ApiController.covertAddOrUpdate(covertId: String)
+POST        /covert/:covertId/name             controllers.ApiController.covertChangeName(covertId: String)
 GET         /covert/list                       controllers.ApiController.covertList
 GET         /covert/:covertId/asset            controllers.ApiController.covertAssetList(covertId: String)
 POST        /covert/:covertId/address          controllers.ApiController.setCovertAddresses(covertId: String)
 GET         /covert/:covertId/address          controllers.ApiController.getCovertAddresses(covertId: String)
 
 
-GET         /dashboard                         controllers.MixerController.dashboard
-GET         /dashboard/*file                   controllers.MixerController.assetOrDefault(file)
+GET         /dashboard                         controllers.ApiController.dashboard
+GET         /dashboard/*file                   controllers.ApiController.assetOrDefault(file)
 
 # Return Info of Mixer
 GET         /info                              controllers.ApiController.getInfo

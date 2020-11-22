@@ -1,25 +1,29 @@
 package mixer
 
-import app.ergomix.FullMixBox
-import app.{Configs, TokenErgoMix}
-import cli.{AliceOrBob, MixUtils}
+import app.Configs
+import mixinterface.AliceOrBob
 import db.Columns.{withdrawAddressCol, _}
 import db.ScalaDB._
 import db.Tables
 import db.core.DataStructures.anyToAny
-import helpers.ErgoMixerUtils._
-import helpers.Util.now
-import mixer.Models.MixStatus.Running
-import mixer.Models.MixTransaction
-import mixer.Models.MixWithdrawStatus.WithdrawRequested
+import helpers.ErgoMixerUtils
+import wallet.WalletHelper.now
+import javax.inject.Inject
+import models.Models.MixStatus.Running
+import models.Models.{MixTransaction, FullMixBox}
+import models.Models.MixWithdrawStatus.WithdrawRequested
+import network.{BlockExplorer, NetworkUtils}
 import org.ergoplatform.appkit.InputBox
 import play.api.Logger
 import sigmastate.eval._
+import wallet.{Wallet, WalletHelper}
 
-class HalfMixer(tables: Tables) {
+class HalfMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
+                          networkUtils: NetworkUtils, explorer: BlockExplorer) {
   private val logger: Logger = Logger(this.getClass)
 
   import tables._
+  import ergoMixerUtils._
 
   /**
    * processes half-boxes one by one
@@ -84,26 +88,25 @@ class HalfMixer(tables: Tables) {
    * @param withdrawStatus   withdraw status of this mix
    * @param withdrawAddress  withdraw address
    */
-  private def processHalfMix(mixId: String, currentRound: Int, halfMixBoxId: String, masterSecret: BigInt, optEmissionBoxId: Option[String], tokenBoxId: String, withdrawStatus: String, withdrawAddress: String) = MixUtils.usingClient { implicit ctx =>
+  private def processHalfMix(mixId: String, currentRound: Int, halfMixBoxId: String, masterSecret: BigInt, optEmissionBoxId: Option[String], tokenBoxId: String, withdrawStatus: String, withdrawAddress: String) = networkUtils.usingClient { implicit ctx =>
     logger.info(s"[HALF:$mixId ($currentRound)] [half:$halfMixBoxId]")
     val currentTime = now
-    val explorer = new BlockExplorer()
 
     val halfMixBoxConfirmations = explorer.getConfirmationsForBoxId(halfMixBoxId)
-    if (halfMixBoxConfirmations >= minConfirmations) {
+    if (halfMixBoxConfirmations >= Configs.numConfirmation) {
       logger.info(s" [HALF: $mixId ($currentRound)] Sufficient confirmations ($halfMixBoxConfirmations) [half:$halfMixBoxId]")
-      val spendingTx = MixUtils.getSpendingTxId(halfMixBoxId)
+      val spendingTx = networkUtils.getSpendingTxId(halfMixBoxId)
       if (spendingTx.isEmpty && withdrawStatus.equals(WithdrawRequested.value)) {
         if (shouldWithdraw(mixId, halfMixBoxId)) {
           val optFeeEmissionBoxId = getRandomValidBoxId(
-            MixUtils.getFeeEmissionBoxes(considerPool = true)
+            networkUtils.getFeeEmissionBoxes(considerPool = true)
               .map(_.id).filterNot(id => spentFeeEmissionBoxTable.exists(boxIdCol === id))
           )
           if (optFeeEmissionBoxId.nonEmpty) {
             require(withdrawAddress.nonEmpty)
             val wallet = new Wallet(masterSecret)
             val secret = wallet.getSecret(currentRound).bigInteger
-            val tx = AliceOrBob.spendBox(halfMixBoxId, optFeeEmissionBoxId, withdrawAddress, Array(secret), Configs.defaultHalfFee, broadCast = false)
+            val tx = aliceOrBob.spendBox(halfMixBoxId, optFeeEmissionBoxId, withdrawAddress, Array(secret), Configs.defaultHalfFee, broadCast = false)
             val txBytes = tx.toJson(false).getBytes("utf-16")
             tables.insertWithdraw(mixId, tx.getId, currentTime, halfMixBoxId + "," + optFeeEmissionBoxId.get, txBytes)
             logger.info(s" [Half: $mixId ($currentRound)] Withdraw txId: ${tx.getId}, is requested: ${withdrawStatus.equals(WithdrawRequested.value)}")
@@ -118,7 +121,7 @@ class HalfMixer(tables: Tables) {
       spendingTx.map { fullMixTxId =>
         explorer.getTransaction(fullMixTxId).map { tx =>
 
-          val boxIds: Seq[String] = tx.outboxes.flatMap(_.getFBox.map(_.id))
+          val boxIds: Seq[String] = tx.outboxes.flatMap(_.getFBox(networkUtils.tokenErgoMix.get).map(_.id))
 
           val boxes: Seq[InputBox] = boxIds.flatMap { boxId =>
             try ctx.getBoxesById(boxId).toList catch {
@@ -126,7 +129,7 @@ class HalfMixer(tables: Tables) {
             }
           }
           val x = new Wallet(masterSecret).getSecret(currentRound).bigInteger
-          val gX = TokenErgoMix.g.exp(x)
+          val gX = WalletHelper.g.exp(x)
           boxes.map { box =>
             val fullMixBox = FullMixBox(box)
             require(fullMixBox.r6 == gX)
@@ -157,7 +160,7 @@ class HalfMixer(tables: Tables) {
         optEmissionBoxId match {
           case Some(emissionBoxId) =>
             // we are here, thus; there was a fee emission box used and so this is a remix transaction
-            if (isDoubleSpent(emissionBoxId, halfMixBoxId)) {
+            if (networkUtils.isDoubleSpent(emissionBoxId, halfMixBoxId)) {
               // logger.info(s"    [HalfMix $mixId] Zero conf. halfMixBoxId: $halfMixBoxId, currentRound: $currentRound while emissionBoxId $emissionBoxId spent")
               // the emissionBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
               try {
@@ -184,7 +187,7 @@ class HalfMixer(tables: Tables) {
           case _ => {
             // no emission box, so this is an entry.
             // token emission box double spent check
-            if (isDoubleSpent(tokenBoxId, halfMixBoxId)) {
+            if (networkUtils.isDoubleSpent(tokenBoxId, halfMixBoxId)) {
               try {
                 undoMixStep(mixId, currentRound, halfMixTable, halfMixBoxId)
                 logger.info(s" [HALF:$mixId ($currentRound)] <-- (undo) [half:$halfMixBoxId not spent while token:$tokenBoxId spent]")

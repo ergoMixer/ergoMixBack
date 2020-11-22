@@ -1,14 +1,15 @@
 package mixer
 
-import cli.MixUtils
 import db.Columns._
 import db.ScalaDB._
 import db.Tables
-import helpers.Util.now
-import mixer.Models.MixRequest
+import wallet.WalletHelper.now
+import javax.inject.Inject
+import models.Models.MixRequest
+import network.{BlockExplorer, NetworkUtils}
 import play.api.Logger
 
-class Deposits(tables: Tables) {
+class Deposits @Inject()(tables: Tables, networkUtils: NetworkUtils, explorer: BlockExplorer) {
   private val logger: Logger = Logger(this.getClass)
 
   import tables._
@@ -20,8 +21,7 @@ class Deposits(tables: Tables) {
   def processDeposits(): Unit = {
     mixRequestsTable.select(mixReqCols: _*).where(depositCompletedCol === false).as(MixRequest(_)).map { req =>
       // logger.info(s"Trying to read deposits for depositAddress: $depositAddress")
-      MixUtils.usingClient { implicit ctx =>
-        val explorer = new BlockExplorer
+      networkUtils.usingClient { implicit ctx =>
         val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
 
         val knownIds = unspentDepositsTable.select(boxIdCol).where(addressCol === req.depositAddress).firstAsT[String] ++

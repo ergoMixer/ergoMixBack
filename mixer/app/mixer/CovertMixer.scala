@@ -1,25 +1,27 @@
 package mixer
 
 import app.Configs
-import app.ergomix.EndBox
-import cli.{AliceOrBob, MixUtils}
+import mixinterface.AliceOrBob
 import db.Columns._
 import db.ScalaDB._
 import db.Tables
 import db.core.DataStructures.anyToAny
-import helpers.ErgoMixerUtils._
-import helpers.Util
-import mixer.Models.{CovertAsset, DistributeTx, MixCovertRequest, OutBox}
-import org.ergoplatform.{ErgoAddressEncoder, Input}
+import helpers.ErgoMixerUtils
+import javax.inject.{Inject, Singleton}
+import models.Models.{CovertAsset, DistributeTx, EndBox, MixCovertRequest, OutBox}
+import network.{BlockExplorer, NetworkUtils}
+import org.ergoplatform.ErgoAddressEncoder
 import org.ergoplatform.appkit.impl.ScalaBridge
 import org.ergoplatform.appkit.{Address, ErgoToken, InputBox}
 import play.api.Logger
-import services.ErgoMixingSystem
+import wallet.{Wallet, WalletHelper}
 
 import scala.collection.mutable
 import scala.collection.JavaConverters._
 
-class CovertMixer(tables: Tables) {
+@Singleton
+class CovertMixer @Inject() (tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
+                             ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtils, explorer: BlockExplorer) {
   private val logger: Logger = Logger(this.getClass)
 
   import tables._
@@ -28,8 +30,7 @@ class CovertMixer(tables: Tables) {
    * processes covert addresses, i.e. handle deposits, merges input boxes, initiate mixing.
    */
   def processCovert(): Unit = {
-    MixUtils.usingClient { implicit ctx =>
-      val explorer = new BlockExplorer
+    networkUtils.usingClient { implicit ctx =>
       mixCovertTable.selectStar.as(arr => MixCovertRequest(arr)).foreach(req => {
         try {
           logger.info(s"[covert: ${req.id}] processing deposits...")
@@ -44,9 +45,9 @@ class CovertMixer(tables: Tables) {
           supported.foreach(sup => deposits(sup.tokenId) = 0L)
           (supported ++ unsupported).foreach(sup => realDeposits(sup.tokenId) = 0L)
           val confirmedBoxes = allBoxes.map(box => { // all confirmed boxes
-            val conf = MixUtils.getConfirmationsForBoxId(box.id)
+            val conf = networkUtils.getConfirmationsForBoxId(box.id)
             // we only consider enough confirmed boxes as deposit
-            if (conf >= minConfirmations) {
+            if (conf >= Configs.numConfirmation) {
               if (!spent.contains(box.id)) {
                 // we can spend this box
                 deposits("") = deposits.getOrElse("", 0L) + box.amount
@@ -61,20 +62,20 @@ class CovertMixer(tables: Tables) {
           realDeposits.foreach(dep => {
             if ((supported ++ unsupported).exists(_.tokenId == dep._1)) {
               if ((supported ++ unsupported).filter(_.tokenId == dep._1).head.confirmedDeposit != dep._2) {
-                covertDefaultsTable.update(depositCol <-- dep._2, lastActivityCol <-- Util.now).where(mixGroupIdCol === req.id, tokenIdCol === dep._1)
+                covertDefaultsTable.update(depositCol <-- dep._2, lastActivityCol <-- WalletHelper.now).where(mixGroupIdCol === req.id, tokenIdCol === dep._1)
                 var name = dep._1
                 if (name.isEmpty) name = "erg"
                 logger.info(s"  processed confirmed deposits, $name: ${dep._2}")
               }
             } else {
               logger.info(s"  processed confirmed unsupported deposits, ${dep._1}: ${dep._2}")
-              ErgoMixingSystem.ergoMixer.handleCovertSupport(req.id, dep._1, 0L)
-              covertDefaultsTable.update(depositCol <-- dep._2, lastActivityCol <-- Util.now).where(mixGroupIdCol === req.id, tokenIdCol === dep._1)
+              ergoMixer.handleCovertSupport(req.id, dep._1, 0L)
+              covertDefaultsTable.update(depositCol <-- dep._2, lastActivityCol <-- WalletHelper.now).where(mixGroupIdCol === req.id, tokenIdCol === dep._1)
             }
           })
 
           processTx(req)
-          if (confirmedBoxes.size > Configs.maxIns) {
+          if (confirmedBoxes.size >= Configs.maxIns) {
             logger.info(s"  many unspent boxes (${confirmedBoxes.size}), merging them....")
             mergeInputs(req, confirmedBoxes)
 
@@ -84,7 +85,7 @@ class CovertMixer(tables: Tables) {
         } catch {
           case a: Throwable =>
             logger.error(s" [covert: ${req.id}] An error occurred. Stacktrace below")
-            logger.error(getStackTraceStr(a))
+            logger.error(ergoMixerUtils.getStackTraceStr(a))
         }
       })
     }
@@ -98,7 +99,7 @@ class CovertMixer(tables: Tables) {
    * @param supported supported assets of this covert address
    * @param deposit   current deposits of this address
    */
-  def enterMixing(req: MixCovertRequest, inputs: Seq[OutBox], supported: Seq[CovertAsset], deposit: mutable.Map[String, Long]): Unit = MixUtils.usingClient { implicit ctx =>
+  def enterMixing(req: MixCovertRequest, inputs: Seq[OutBox], supported: Seq[CovertAsset], deposit: mutable.Map[String, Long]): Unit = networkUtils.usingClient { implicit ctx =>
     val addresses = covertAddressesTable.select(addressCol).where(mixGroupIdCol === req.id).as(res => res.toIterator.next().as[String])
     var endBoxes = Seq[EndBox]()
     supported.filter(_.tokenId.nonEmpty).foreach(toMix => { // try to mix anything but erg!
@@ -107,9 +108,9 @@ class CovertMixer(tables: Tables) {
         val mixingNeed = req.getMixingNeed(Configs.ergRing, toMix.ring)
         val ergNeeded = ((endBoxes.length + Configs.maxOuts) / Configs.maxOuts) * Configs.distributeFee + mixingNeed._1
         if (deposit("") >= ergNeeded && deposit(toMix.tokenId) >= mixingNeed._2) {
-          val withdrawAddress = getRandom(addresses).getOrElse("")
+          val withdrawAddress = ergoMixerUtils.getRandom(addresses).getOrElse("")
           logger.info(s"  creating a box to mix ${toMix.tokenId} in ring: ${toMix.ring}, withdraw address: $withdrawAddress")
-          val depAddr = ErgoMixingSystem.ergoMixer.newMixRequest(withdrawAddress, req.numRounds, Configs.ergRing, mixingNeed._1, toMix.ring, mixingNeed._2, toMix.tokenId, req.id)
+          val depAddr = ergoMixer.newMixRequest(withdrawAddress, req.numRounds, Configs.ergRing, mixingNeed._1, toMix.ring, mixingNeed._2, toMix.tokenId, req.id)
           endBoxes = endBoxes :+ EndBox(Address.create(depAddr).getErgoAddress.script, Seq(), mixingNeed._1, Seq(new ErgoToken(toMix.tokenId, mixingNeed._2)))
           // subtract what was needed from deposits!
           deposit("") -= mixingNeed._1
@@ -126,9 +127,9 @@ class CovertMixer(tables: Tables) {
         val mixingNeed = req.getMixingNeed(toMix.ring, 0L)
         val ergNeeded = ((endBoxes.length + Configs.maxOuts) / Configs.maxOuts) * Configs.distributeFee + mixingNeed._1
         if (deposit("") >= ergNeeded) {
-          val withdrawAddress = getRandom(addresses).getOrElse("")
+          val withdrawAddress = ergoMixerUtils.getRandom(addresses).getOrElse("")
           logger.info(s"  creating a box to mix erg in ring: ${toMix.ring}, withdraw address: $withdrawAddress")
-          val depAddr = ErgoMixingSystem.ergoMixer.newMixRequest(withdrawAddress, req.numRounds, toMix.ring, mixingNeed._1, 0L, mixingNeed._2, toMix.tokenId, req.id)
+          val depAddr = ergoMixer.newMixRequest(withdrawAddress, req.numRounds, toMix.ring, mixingNeed._1, 0L, mixingNeed._2, toMix.tokenId, req.id)
           endBoxes = endBoxes :+ EndBox(Address.create(depAddr).getErgoAddress.script, Seq(), mixingNeed._1, Nil)
           // subtract what was needed from deposits!
           deposit("") -= mixingNeed._1
@@ -161,14 +162,15 @@ class CovertMixer(tables: Tables) {
     }
 
     val wallet = new Wallet(req.masterKey)
-    val secret = wallet.getSecret(-1).bigInteger
+    val secret = wallet.getSecret(-1, req.isManualCovert).bigInteger
+
     logger.info(s"  we will create ${endBoxes.length} boxes to enter mixing...")
 
-    val transactions = AliceOrBob.distribute(inputs.map(_.id).toArray, endBoxes.toArray, Array(secret), Configs.distributeFee, req.depositAddress, Configs.maxOuts)
+    val transactions = aliceOrBob.distribute(inputs.map(_.id).toArray, endBoxes.toArray, Array(secret), Configs.distributeFee, req.depositAddress, Configs.maxOuts)
     for (i <- transactions.indices) {
       val tx = transactions(i)
       val inputs = tx.getInputBoxes.map(ScalaBridge.isoErgoTransactionInput.from(_).getBoxId).mkString(",")
-      distributeTxsTable.insert(req.id, tx.getId, i + 1, Util.now, tx.toJson(false).getBytes("utf-16"), inputs)
+      distributeTxsTable.insert(req.id, tx.getId, i + 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputs)
       val sendRes = ctx.sendTransaction(tx)
       if (sendRes == null) {
         logger.error(s"  transaction got refused by the node! maybe it doesn't support chained transactions, waiting... consider updating your node for a faster mixing experience.")
@@ -181,8 +183,7 @@ class CovertMixer(tables: Tables) {
    *
    * @param req covert request
    */
-  def processTx(req: MixCovertRequest): Unit = MixUtils.usingClient { implicit ctx =>
-    val explorer = new BlockExplorer()
+  def processTx(req: MixCovertRequest): Unit = networkUtils.usingClient { implicit ctx =>
     var outputs: Array[String] = Array()
     distributeTxsTable.selectStar.where(mixGroupIdCol === req.id, chainOrderCol > 0).as(DistributeTx(_))
       .sortBy(_.order)
@@ -234,7 +235,8 @@ class CovertMixer(tables: Tables) {
    */
   def mergeInputs(req: MixCovertRequest, inputs: Seq[OutBox]): Unit = {
     val wallet = new Wallet(req.masterKey)
-    val secret = wallet.getSecret(-1).bigInteger
+    val secret = wallet.getSecret(-1, req.isManualCovert).bigInteger
+
     (0 until inputs.size / Configs.maxIns).foreach(i => {
       val start = i * Configs.maxIns
       val curInputs = inputs.slice(start, start + Configs.maxIns)
@@ -244,9 +246,9 @@ class CovertMixer(tables: Tables) {
         curTokens(token.getId.toString) = curTokens.getOrElse(token.getId.toString, 0L) + token.getValue
       })
       val out = EndBox(Address.create(req.depositAddress).getErgoAddress.script, Seq(), ergSum - Configs.distributeFee, curTokens.map(tok => new ErgoToken(tok._1, tok._2)).toSeq)
-      val tx = AliceOrBob.mergeBoxes(curInputs.map(_.id).toArray, out, secret, Configs.distributeFee, req.depositAddress)
+      val tx = aliceOrBob.mergeBoxes(curInputs.map(_.id).toArray, out, secret, Configs.distributeFee, req.depositAddress)
       val inputIds = tx.getInputBoxes.map(ScalaBridge.isoErgoTransactionInput.from(_).getBoxId).mkString(",")
-      distributeTxsTable.insert(req.id, tx.getId, 1, Util.now, tx.toJson(false).getBytes("utf-16"), inputIds)
+      distributeTxsTable.insert(req.id, tx.getId, 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputIds)
       logger.info(s"  merging inputs with tx ${tx.getId}...")
     })
   }

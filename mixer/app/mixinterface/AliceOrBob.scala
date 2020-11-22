@@ -1,18 +1,23 @@
-package cli
+package mixinterface
 
 
 import java.math.BigInteger
 
-import app.ergomix._
-import app.{AliceImpl, BobImpl, TokenErgoMix, Util}
-import cli.MixUtils.{getProver, usingClient}
+import mixinterface.ErgoMixBase._
+import javax.inject.{Inject, Singleton}
+import network.NetworkUtils
 import org.ergoplatform.appkit._
+import models.Models.{EndBox, FullMixBox, FullMixTx, HalfMixBox, HalfMixTx}
 import org.ergoplatform.appkit.impl.ErgoTreeContract
+import wallet.WalletHelper
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-object AliceOrBob {
+@Singleton
+class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils) {
+
+  import networkUtils._
 
   /**
    * Withdraws boxes, used for half-box and deposits.
@@ -179,7 +184,7 @@ object AliceOrBob {
    * @return tx withdrawing the full-box
    */
   def spendFullMixBox(isAlice: Boolean, secret: BigInt, fullMixBoxId: String, withdrawAddress: String, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String, broadCast: Boolean) = {
-    val ergoMix = MixUtils.tokenErgoMix.get
+    val ergoMix = tokenErgoMix.get
     usingClient { implicit ctx =>
       val alice_or_bob = getProver(secret, isAlice)
       val fullMixBox: InputBox = ctx.getBoxesById(fullMixBoxId)(0)
@@ -188,7 +193,7 @@ object AliceOrBob {
         if (token.getId.toString != TokenErgoMix.tokenId) tokens = tokens :+ token
       })
 
-      val endBox = EndBox(new Util().getAddress(withdrawAddress).script, Nil, if (inputBoxIds.nonEmpty) fullMixBox.getValue else fullMixBox.getValue - feeAmount, tokens)
+      val endBox = EndBox(WalletHelper.getAddress(withdrawAddress).script, Nil, if (inputBoxIds.nonEmpty) fullMixBox.getValue else fullMixBox.getValue - feeAmount, tokens)
       var outs = Seq(endBox)
       if (inputBoxIds.length > 0) { // there is fee box
         val feeBox = ctx.getBoxesById(inputBoxIds.head)(0)
@@ -215,7 +220,7 @@ object AliceOrBob {
   def spendFullMixBox_RemixAsAlice(isAlice: Boolean, secret: BigInt, fullMixBoxId: String, nextSecret: BigInt, feeEmissionBoxId: String, feeAmount: Long): HalfMixTx = {
     usingClient { implicit ctx =>
       val feeEmissionBox = ctx.getBoxesById(feeEmissionBoxId)(0)
-      val feeEmissionBoxAddress = new Util().addressEncoder.fromProposition(feeEmissionBox.getErgoTree).get.toString
+      val feeEmissionBoxAddress = WalletHelper.addressEncoder.fromProposition(feeEmissionBox.getErgoTree).get.toString
       spendFullMixBox_RemixAsAlice(isAlice, secret, fullMixBoxId, nextSecret, Array(feeEmissionBoxId), feeAmount, feeEmissionBoxAddress, Seq(), broadCast = false)
     }
   }
@@ -249,7 +254,7 @@ object AliceOrBob {
                                  halfBoxId: String, feeEmissionBoxId: String, feeAmount: Long): (FullMixTx, Boolean) = {
     usingClient { implicit ctx =>
       val feeEmissionBox = ctx.getBoxesById(feeEmissionBoxId)(0)
-      val feeEmissionBoxAddress = new Util().addressEncoder.fromProposition(feeEmissionBox.getErgoTree).get.toString
+      val feeEmissionBoxAddress = WalletHelper.addressEncoder.fromProposition(feeEmissionBox.getErgoTree).get.toString
       spendFullMixBox_RemixAsBob(isAlice, secret, fullMixBoxId, nextSecret, halfBoxId, Array(feeEmissionBoxId), feeAmount, feeEmissionBoxAddress, Seq(), broadCast = false)
     }
   }
@@ -259,7 +264,7 @@ object AliceOrBob {
    */
   private def spendFullMixBox_RemixAsBob(isAlice: Boolean, secret: BigInt, fullMixBoxId: String, nextSecret: BigInt, nextHalfMixBoxId: String, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], broadCast: Boolean): (FullMixTx, Boolean) = {
     usingClient { implicit ctx =>
-      val alice_or_bob: FullMixBoxSpender = if (isAlice) new AliceImpl(secret.bigInteger) else new BobImpl(secret.bigInteger)
+      val alice_or_bob: FullMixBoxSpender = if (isAlice) new AliceImpl(secret.bigInteger, tokenErgoMix.get) else new BobImpl(secret.bigInteger, tokenErgoMix.get)
       val fullMixBox: InputBox = ctx.getBoxesById(fullMixBoxId)(0)
       val halfMixBox = ctx.getBoxesById(nextHalfMixBoxId)(0)
       val (fullMixTx, bit) = alice_or_bob.spendFullMixBoxNextBob(FullMixBox(fullMixBox), HalfMixBox(halfMixBox), nextSecret.bigInteger, feeAmount, inputBoxIds, changeAddress, changeBoxRegs, Array[BigInteger](), Array[DHT]())
@@ -267,4 +272,67 @@ object AliceOrBob {
       (fullMixTx, bit)
     }
   }
+
+  /**
+   * enters mixing as bob, i.e. spends a half-box and generates two full-boxes
+   *
+   * @param y                 secret for the first round
+   * @param halfMixBoxId      half-box the will be spend
+   * @param inputBoxIds       other inputs of the tx (token emission box, deposit box)
+   * @param feeAmount         fee amount
+   * @param changeAddress     change address
+   * @param proverDlogSecrets secrets for spending inputs
+   * @param broadCast         whether to broadcast or just return
+   * @param numToken          number of mixing tokens, i.e. mixing level
+   * @return tx spending half-box and inputs and enter mixing as bob
+   */
+  def spendHalfMixBox(y: BigInt, halfMixBoxId: String, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String, proverDlogSecrets: Array[String], broadCast: Boolean, numToken: Int = 0) = {
+    usingClient { implicit ctx =>
+      val bob = new BobImpl(y.bigInteger, tokenErgoMix.get)
+      val halfMixBox: InputBox = ctx.getBoxesById(halfMixBoxId)(0)
+      val dlogs: Array[BigInteger] = proverDlogSecrets.map(BigInt(_).bigInteger)
+      val (fullMixTx, bit) = bob.spendHalfMixBox(HalfMixBox(halfMixBox), inputBoxIds, feeAmount, changeAddress, dlogs, Array[DHT](), numToken)
+      if (broadCast) ctx.sendTransaction(fullMixTx.tx)
+      (fullMixTx, bit)
+    }
+  }
+
+  /**
+   * Creates a half-box for entering mix as alice
+   *
+   * @param x                 the secret
+   * @param inputBoxIds       input boxes
+   * @param feeAmount         fee
+   * @param changeAddress     change address
+   * @param proverDlogSecrets DLog secrets
+   * @param broadCast         broadcast the tx or just return
+   * @param poolAmount        mixing ring
+   * @param numToken          number of mixing token (mix level)
+   * @param mixingTokenId     if of mixing token (if it is a token mixing mix)
+   * @param mixingTokenAmount number mixing token
+   * @return the transaction in which half-box is created
+   */
+  def createHalfMixBox(x: BigInt, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String,
+                       proverDlogSecrets: Array[String], broadCast: Boolean, poolAmount: Long, numToken: Int = 0,
+                       mixingTokenId: String, mixingTokenAmount: Long) = {
+    usingClient { implicit ctx =>
+      val alice = new AliceImpl(x.bigInteger, tokenErgoMix.get)
+      val dlogs: Array[BigInteger] = proverDlogSecrets.map(BigInt(_).bigInteger)
+      val tx = alice.createHalfMixBox(inputBoxIds, feeAmount, changeAddress, dlogs, Array[DHT](), poolAmount, numToken, mixingTokenId, mixingTokenAmount)
+      if (broadCast) ctx.sendTransaction(tx.tx)
+      tx
+    }
+  }
+
+  /**
+   * @param secret  secret associated with mix round
+   * @param isAlice was box created as alice or bob
+   * @param ctx     blockchain context
+   * @return Alic or Bob implementation based on isAlice
+   */
+  def getProver(secret: BigInt, isAlice: Boolean)(implicit ctx: BlockchainContext): mixinterface.ErgoMixBase.FullMixBoxSpender = {
+    if (isAlice) new AliceImpl(secret.bigInteger, tokenErgoMix.get)
+    else new BobImpl(secret.bigInteger, tokenErgoMix.get)
+  }
+
 }

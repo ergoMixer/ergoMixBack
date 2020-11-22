@@ -1,23 +1,23 @@
 package db
 
 import app.Configs
-import cli.MixUtils
-import cli.MixUtils
 import db.Columns._
 import db.ScalaDB._
-import helpers.ErgoMixerUtils._
-import helpers.Util
-import mixer.BlockExplorer
-import mixer.Models.GroupMixStatus._
-import mixer.Models.MixWithdrawStatus.Withdrawn
-import mixer.Models.{DistributeTx, MixCovertRequest, MixGroupRequest, MixRequest, Withdraw}
+import helpers.ErgoMixerUtils
+import javax.inject.Inject
+import models.Models.GroupMixStatus._
+import models.Models.MixWithdrawStatus.Withdrawn
+import models.Models.{DistributeTx, MixCovertRequest, MixGroupRequest, MixRequest}
+import network.{BlockExplorer, NetworkUtils}
 import org.ergoplatform.appkit.BlockchainContext
 import play.api.Logger
+import wallet.WalletHelper
 
-class PruneDB(tables: Tables) {
+class PruneDB @Inject()(tables: Tables, ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtils, explorer: BlockExplorer) {
   private val logger: Logger = Logger(this.getClass)
 
   import tables._
+  import networkUtils._
 
   /**
    * prunes group mixes and covert mixes
@@ -25,7 +25,7 @@ class PruneDB(tables: Tables) {
   def processPrune(): Unit = {
     try {
       if (Configs.dbPrune) {
-        MixUtils.usingClient { implicit ctx =>
+        usingClient { implicit ctx =>
           pruneGroupMixes()
           pruneCovertMixes()
         }
@@ -33,7 +33,7 @@ class PruneDB(tables: Tables) {
     } catch {
       case a: Throwable =>
         logger.error(s"  prune DB: An error occurred. Stacktrace below")
-        logger.error(getStackTraceStr(a))
+        logger.error(ergoMixerUtils.getStackTraceStr(a))
     }
   }
 
@@ -41,8 +41,7 @@ class PruneDB(tables: Tables) {
    * Will prune group mixes if possible one by one
    */
   def pruneGroupMixes()(implicit ctx: BlockchainContext): Unit = {
-    val explorer = new BlockExplorer()
-    val currentTime = Util.now
+    val currentTime = WalletHelper.now
     val requests = mixRequestsGroupTable.selectStar.where(mixStatusCol === Complete.value).as(arr => MixGroupRequest(arr))
     requests.foreach(req => {
       val mixes = mixRequestsTable.selectStar.where(mixGroupIdCol === req.id).as(MixRequest(_))
@@ -69,8 +68,7 @@ class PruneDB(tables: Tables) {
    * will prune covert mix boxes one by one if possible
    */
   def pruneCovertMixes()(implicit ctx: BlockchainContext): Unit = {
-    val explorer = new BlockExplorer()
-    val currentTime = Util.now
+    val currentTime = WalletHelper.now
     val requests = mixCovertTable.selectStar.as(arr => MixCovertRequest(arr))
     requests.foreach(req => {
       val mixes = mixRequestsTable.selectStar.where(mixGroupIdCol === req.id, mixWithdrawStatusCol === Withdrawn.value).as(MixRequest(_))

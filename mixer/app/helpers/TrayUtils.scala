@@ -7,11 +7,11 @@ import java.io.File
 import java.net.URI
 
 import app.Configs.readKey
-import helpers.ErgoMixerUtils.getStackTraceStr
 import play.api.Logger
 
 object TrayUtils {
   private val logger: Logger = Logger(this.getClass)
+
   var triedPrepare = false
   var shownNotification = false
   var trayIcon: TrayIcon = _
@@ -55,8 +55,7 @@ object TrayUtils {
       trayIcon.setPopupMenu(popup)
 
     } catch {
-      case e: Throwable => logger.error(getStackTraceStr(e))
-
+      case e: Throwable => logger.error(s"failed to create tray icon ${e.getMessage}")
     }
   }
 

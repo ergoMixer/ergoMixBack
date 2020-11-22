@@ -1,55 +1,20 @@
-package app
+package mixinterface
 
-import cli.MixUtils
+import org.ergoplatform.ErgoAddress
 import org.ergoplatform.appkit._
 import org.ergoplatform.appkit.impl.ErgoTreeContract
-import org.ergoplatform.{ErgoAddress, ErgoAddressEncoder}
 import scorex.crypto.hash.Digest32
 import sigmastate.Values.ErgoTree
-import sigmastate.eval._
-import sigmastate.interpreter.CryptoConstants
-import special.sigma.GroupElement
-
-class Util(implicit ctx: BlockchainContext) {
-  val addressEncoder = new ErgoAddressEncoder(ctx.getNetworkType.networkPrefix)
-
-  def getAddress(address: String): ErgoAddress = addressEncoder.fromString(address).get
-}
+import wallet.WalletHelper._
 
 object TokenErgoMix {
   val paramAddress: Address = Address.create("9hUjrNWLTXBU4qkGSA6ssCG8Fe7WpPKT5HW4E5zUr3YJ1HSo1rB")
   val mixerOwner: Address = Address.create("9hoR2npAUVwRGWEa6z1wpeiUAmpCnegCwPVVGZEnZ6Q8w8eeZJb")
   val mixerIncome: Address = Address.create("9f4bRuh6yjhz4wWuz75ihSJwXHrtGXsZiQWUaHSDRf3Da16dMuf")
   val tokenId: String = "1a6a8c16e4b1cc9d73d03183565cfb8e79dd84198cb66beeed7d3463e0da2b98"
-
-  def getHash(bytes: Array[Byte]) = scorex.crypto.hash.Blake2b256(bytes)
-
-  val g: GroupElement = CryptoConstants.dlogGroup.generator
-  val poisonousHalfs: Seq[GroupElement] = Seq(g.exp(BigInt(1).bigInteger), g.exp(BigInt(-1).bigInteger))
-
-  def hexToGroupElement(hex: String): GroupElement = {
-    JavaHelpers.decodeStringToGE(hex)
-  }
-
-  def getProveDlogAddress(z: BigInt): String = {
-    val gZ: GroupElement = g.exp(z.bigInteger)
-    MixUtils.usingClient { implicit ctx =>
-      val contract = ctx.compileContract(
-        ConstantsBuilder.create().item(
-          "gZ", gZ
-        ).build(), "{proveDlog(gZ)}"
-      )
-      new Util().addressEncoder.fromProposition(contract.getErgoTree).get.toString
-    }
-  }
 }
 
 class TokenErgoMix(ctx: BlockchainContext) {
-  // at the very least having ergo trees instead of actual scripts will have the safety that one can not easily
-  // interfere with logic and cause problems (for himself at least)!
-  // also cleaner and more efficient.
-  val addressEncoder = new ErgoAddressEncoder(ctx.getNetworkType.networkPrefix)
-
   val fullMixScript: String =
     """
       |{
@@ -171,7 +136,7 @@ class TokenErgoMix(ctx: BlockchainContext) {
   )
   val feeEmissionAddress: ErgoAddress = addressEncoder.fromProposition(feeEmissionContract.getErgoTree).get
   val feeEmissionErgoTree: ErgoTree = feeEmissionContract.getErgoTree
-  val feeScriptHash: Digest32 = TokenErgoMix.getHash(feeEmissionErgoTree.bytes)
+  val feeScriptHash: Digest32 = getHash(feeEmissionErgoTree.bytes)
 
   val fullMixScriptContract: ErgoContract = ctx.compileContract(
     ConstantsBuilder.create()
@@ -182,7 +147,7 @@ class TokenErgoMix(ctx: BlockchainContext) {
   )
   val fullMixScriptErgoTree: ErgoTree = fullMixScriptContract.getErgoTree
   val fullMixAddress: ErgoAddress = addressEncoder.fromProposition(fullMixScriptErgoTree).get
-  val fullMixScriptHash: Digest32 = TokenErgoMix.getHash(fullMixScriptErgoTree.bytes)
+  val fullMixScriptHash: Digest32 = getHash(fullMixScriptErgoTree.bytes)
 
   val halfMixContract: ErgoContract = ctx.compileContract(
     ConstantsBuilder.create()
@@ -191,7 +156,7 @@ class TokenErgoMix(ctx: BlockchainContext) {
       .build(),
     halfMixScript
   )
-  val halfMixScriptHash: Digest32 = TokenErgoMix.getHash(halfMixContract.getErgoTree.bytes)
+  val halfMixScriptHash: Digest32 = getHash(halfMixContract.getErgoTree.bytes)
   val halfMixAddress: ErgoAddress = addressEncoder.fromProposition(halfMixContract.getErgoTree).get
 
   val income = new ErgoTreeContract(TokenErgoMix.mixerIncome.getErgoAddress.script)
@@ -199,7 +164,7 @@ class TokenErgoMix(ctx: BlockchainContext) {
     ConstantsBuilder.create()
       .item("halfMixScriptHash", halfMixScriptHash)
       .item("mixerOwner", TokenErgoMix.mixerOwner.getPublicKey)
-      .item("mixerIncome", TokenErgoMix.getHash(income.getErgoTree.bytes))
+      .item("mixerIncome", getHash(income.getErgoTree.bytes))
       .build(),
     tokenEmissionScript
   )

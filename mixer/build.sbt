@@ -11,7 +11,7 @@ libraryDependencies ++= Seq(evolutions, jdbc)
 
 lazy val commonSettings = Seq(
   organization := "ergoMixer",
-  version := "3.0.1",
+  version := "3.1.0",
   scalaVersion := "2.12.10",
   resolvers ++= Seq(sonatypeReleases,
     "SonaType" at "https://oss.sonatype.org/content/groups/public",
@@ -67,9 +67,10 @@ lazy val mockWebServer = "com.squareup.okhttp3" % "mockwebserver" % "3.12.0" % "
 
 libraryDependencies ++= Seq(
   mockWebServer,
-  "org.scalatest" %% "scalatest" % "3.0.8" % "test",
+  "org.scalatestplus.play" %% "scalatestplus-play" % "4.0.3" % Test,
   "com.h2database" % "h2" % "1.4.199",
   "org.ergoplatform" %% "ergo-appkit" % "mixer-appkit-SNAPSHOT",
+  "org.mockito" % "mockito-core" % "3.3.0",
   "org.apache.commons" % "commons-lang3" % "3.11"
 )
 

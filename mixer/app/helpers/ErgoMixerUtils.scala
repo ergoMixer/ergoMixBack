@@ -1,22 +1,18 @@
 package helpers
 
 import java.io._
-import java.net.{Authenticator, InetSocketAddress, PasswordAuthentication, Proxy}
 import java.security.SecureRandom
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.zip.{ZipEntry, ZipInputStream, ZipOutputStream}
 
 import app.Configs
-import cli.MixUtils
-import mixer.BlockExplorer
+import javax.inject.Inject
+import network.NetworkUtils
 import play.api.Logger
 
-object ErgoMixerUtils {
+class ErgoMixerUtils @Inject()(networkUtils: NetworkUtils) {
   private val logger: Logger = Logger(this.getClass)
-
-  // The minimum number of confirmations for a current mix transaction before proceeding to next step
-  val minConfirmations: Int = Configs.numConfirmation
 
   def getFee(tokenId: String, tokenAmount: Long, ergAmount: Long, isFull: Boolean): Long = {
     if (tokenId.nonEmpty) {
@@ -36,18 +32,7 @@ object ErgoMixerUtils {
     sw.toString
   }
 
-  def isDoubleSpent(boxId: String, wrtBoxId: String): Boolean = MixUtils.usingClient { implicit ctx =>
-    val explorer: BlockExplorer = new BlockExplorer()
-    explorer.getSpendingTxId(boxId).flatMap { txId =>
-      // boxId has been spent, while the fullMixBox generated has zero confirmations. Looks like box has been double-spent elsewhere
-      explorer.getTransaction(txId).map { tx =>
-        // to be sure, get the complete tx and check that none if its outputs are our fullMixBox
-        !tx.outboxes.map(_.id).contains(wrtBoxId)
-      }
-    }
-  }.getOrElse(false)
-
-  def getRandomValidBoxId(origBoxIds: Seq[String]) = MixUtils.usingClient { implicit ctx =>
+  def getRandomValidBoxId(origBoxIds: Seq[String]): Option[String] = networkUtils.usingClient { implicit ctx =>
     val random = new SecureRandom()
     val boxIds = new scala.util.Random(random).shuffle(origBoxIds)
     boxIds.find { boxId =>
@@ -62,28 +47,13 @@ object ErgoMixerUtils {
     }
   }
 
-  def getRandom(seq: Seq[String]) = MixUtils.usingClient { implicit ctx =>
+  def getRandom(seq: Seq[String]) = networkUtils.usingClient { implicit ctx =>
     val random = new SecureRandom()
     new scala.util.Random(random).shuffle(seq).headOption
   }
 
   def prettyDate(timestamp: Long): String = {
     new SimpleDateFormat("YYYY-MM-dd HH:mm:ss").format(new Date(timestamp))
-  }
-
-  def handleProxy(url: String, port: Int, protocol: String): Unit = {
-    if (url.nonEmpty && port != -1 && protocol.nonEmpty) {
-      val prot: Proxy.Type = {
-        if (protocol.toLowerCase().contains("socks")) Proxy.Type.SOCKS
-        else if (protocol.toLowerCase().contains("http")) Proxy.Type.HTTP
-        else null
-      }
-      if (prot == null) {
-        logger.error("protocol type for proxy is not valid.")
-        return
-      }
-      Configs.proxy = new Proxy(prot, new InetSocketAddress(url, port))
-    }
   }
 
   def backup(): String = {

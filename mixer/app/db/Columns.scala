@@ -40,6 +40,8 @@ object Columns {
   val mixWithdrawStatusCol = Col("withdraw_status", STR)
   val masterSecretCol = Col("master_secret", BIGINT)
   val withdrawAddressCol = Col("withdraw_address", BIGSTR)
+  val nameCovertCol = Col("name_covert", STR)
+  val isManualCovertCol = Col("is_manual_covert", BOOL)
 
   val roundCol = Col("round", UINT)
   val isAliceCol = Col("is_alice", BOOL) // if not Alice then it is Bob

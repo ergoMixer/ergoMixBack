@@ -1,21 +1,25 @@
 package mixer
 
-import app.{Configs, TokenErgoMix}
-import cli.{Alice, AliceOrBob, Bob, MixUtils}
+import app.Configs
+import mixinterface.{AliceOrBob, TokenErgoMix}
 import db.Columns._
 import db.ScalaDB._
 import db.Tables
-import helpers.ErgoMixerUtils._
-import helpers.Util.now
-import mixer.Models.MixStatus.{Queued, Running}
-import mixer.Models.MixWithdrawStatus.WithdrawRequested
-import mixer.Models.{Deposit, MixRequest, OutBox}
+import helpers.ErgoMixerUtils
+import wallet.WalletHelper.now
+import javax.inject.Inject
+import models.Models.MixStatus.{Queued, Running}
+import models.Models.MixWithdrawStatus.WithdrawRequested
+import models.Models.{Deposit, MixRequest, OutBox}
+import network.NetworkUtils
 import play.api.Logger
+import wallet.Wallet
 
-class NewMixer(tables: Tables) {
+class NewMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtils) {
   private val logger: Logger = Logger(this.getClass)
 
   import tables._
+  import ergoMixerUtils._
 
   var halfs: Seq[OutBox] = _
 
@@ -25,7 +29,7 @@ class NewMixer(tables: Tables) {
    */
   def getHalfBoxes: Seq[OutBox] = {
     if (halfs == null)
-      halfs = MixUtils.getHalfMixBoxes(considerPool = true)
+      halfs = networkUtils.getHalfMixBoxes(considerPool = true)
     halfs
   }
 
@@ -74,7 +78,7 @@ class NewMixer(tables: Tables) {
    * @param mixRequest mix request
    * @param masterSecret master secret
    */
-  private def initiateMix(mixRequest: MixRequest, masterSecret: BigInt): Unit = MixUtils.usingClient { implicit ctx =>
+  private def initiateMix(mixRequest: MixRequest, masterSecret: BigInt): Unit = networkUtils.usingClient { implicit ctx =>
     val id = mixRequest.id
     val depositAddress = mixRequest.depositAddress
     val depositsToUse = getDeposits(depositAddress)
@@ -85,7 +89,7 @@ class NewMixer(tables: Tables) {
         val wallet = new Wallet(masterSecret)
         val secret = wallet.getSecret(-1).bigInteger
         assert(boxIds.size == 1)
-        val tx = AliceOrBob.spendBox(boxIds.head, Option.empty, mixRequest.withdrawAddress, Array(secret), Configs.defaultHalfFee, broadCast = true)
+        val tx = aliceOrBob.spendBox(boxIds.head, Option.empty, mixRequest.withdrawAddress, Array(secret), Configs.defaultHalfFee, broadCast = true)
         val txBytes = tx.toJson(false).getBytes("utf-16")
         tables.insertWithdraw(id, tx.getId, now, boxIds.head, txBytes)
         val sendRes = ctx.sendTransaction(tx)
@@ -101,7 +105,7 @@ class NewMixer(tables: Tables) {
     val numFeeToken = mixRequest.numToken
     val neededErg = mixRequest.neededAmount
     val neededToken = mixRequest.neededTokenAmount
-    val optTokenBoxId = getRandomValidBoxId(MixUtils.getTokenEmissionBoxes(numFeeToken, considerPool = true)
+    val optTokenBoxId = getRandomValidBoxId(networkUtils.getTokenEmissionBoxes(numFeeToken, considerPool = true)
       .filterNot(box => spentTokenEmissionBoxTable.exists(boxIdCol === box.id)).map(_.id.toString))
 
     if (avbl < neededErg || avblToken < neededToken) { // should not happen because we are only considering completed deposits.
@@ -132,7 +136,7 @@ class NewMixer(tables: Tables) {
       val (txId, isAlice) = if (optHalfMixBoxId.nonEmpty) {
         // half-mix box exists... behave as Bob
         val halfMixBoxId = optHalfMixBoxId.get
-        val (fullMixTx, bit) = Bob.spendHalfMixBox(secret, halfMixBoxId, inputBoxIds :+ optTokenBoxId.get, Configs.startFee, depositAddress, Array(dLogSecret), broadCast = false, numFeeToken)
+        val (fullMixTx, bit) = aliceOrBob.spendHalfMixBox(secret, halfMixBoxId, inputBoxIds :+ optTokenBoxId.get, Configs.startFee, depositAddress, Array(dLogSecret), broadCast = false, numFeeToken)
         val (left, right) = fullMixTx.getFullMixBoxes
         val bobFullMixBox = if (bit) right else left
         tables.insertFullMix(mixRequest.id, round = 0, time = currentTime, halfMixBoxId, bobFullMixBox.id)
@@ -144,7 +148,7 @@ class NewMixer(tables: Tables) {
       } else {
         // half-mix box does not exist... behave as Alice
         // get a random token emission box
-        val tx = Alice.createHalfMixBox(secret, inputBoxIds :+ optTokenBoxId.get, Configs.startFee,
+        val tx = aliceOrBob.createHalfMixBox(secret, inputBoxIds :+ optTokenBoxId.get, Configs.startFee,
           depositAddress, Array(dLogSecret), broadCast = false, poolAmount, numFeeToken, mixRequest.tokenId, mixRequest.mixingTokenAmount)
         tables.insertHalfMix(mixRequest.id, round = 0, time = currentTime, tx.getHalfMixBox.id, isSpent = false)
         tables.insertTx(tx.getHalfMixBox.id, tx.tx)

@@ -3,6 +3,7 @@ package app
 import java.math.BigInteger
 import java.util
 
+import mixinterface.TokenErgoMix
 import org.ergoplatform.ErgoAddressEncoder
 import org.ergoplatform.appkit._
 import org.ergoplatform.appkit.impl.ErgoTreeContract
@@ -11,6 +12,7 @@ import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
 import sigmastate.eval._
 import sigmastate.interpreter.CryptoConstants
 import special.sigma.GroupElement
+import wallet.WalletHelper
 
 import scala.collection.JavaConverters._
 
@@ -95,7 +97,7 @@ class TokenContractsSpec extends PropSpec with Matchers
         ConstantsBuilder.create()
           .item("halfMixScriptHash", mix.halfMixScriptHash)
           .item("mixerOwner", prover.getAddress.getPublicKey)
-          .item("mixerIncome", TokenErgoMix.getHash(income.getErgoTree.bytes))
+          .item("mixerIncome", WalletHelper.getHash(income.getErgoTree.bytes))
           .build(),
         mix.tokenEmissionScript
       )

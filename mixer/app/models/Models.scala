@@ -1,63 +1,58 @@
-package mixer
+package models
 
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 
-import app.{Configs, TokenErgoMix}
-import cli.MixUtils
+import app.Configs
 import db.core.DataStructures.anyToAny
-import helpers.{ErgoMixerUtils, Stats}
 import io.circe.generic.auto._
 import io.circe.syntax._
 import io.circe.{Encoder, Json, parser}
-import org.ergoplatform.appkit.{ErgoToken, InputBox}
+import mixinterface.TokenErgoMix
+import org.ergoplatform.appkit.{ErgoToken, ErgoValue, InputBox, SignedTransaction}
 import play.api.libs.json._
 import scorex.util.encode.Base16
+import sigmastate.Values.ErgoTree
 import special.collection.Coll
 import special.sigma.GroupElement
+import wallet.WalletHelper
+
+import scala.jdk.CollectionConverters._
 
 object Models {
 
   case class SpendTx(inboxes: Seq[InBox], outboxes: Seq[OutBox], id: String, address: String, timestamp: Long)
 
-  case class InBox(id: String, address: String, createdTxId: String, value: Long) {
-    def isHalfMixBox: Boolean = MixUtils.usingClient { implicit ctx =>
-      address == MixUtils.tokenErgoMix.get.halfMixAddress.toString
-    }
-  }
+  case class InBox(id: String, address: String, createdTxId: String, value: Long)
 
   case class OutBox(id: String, amount: Long, registers: Map[String, String], ergoTree: String, tokens: Seq[ErgoToken], creationHeight: Int, address: String, spendingTxId: Option[String]) {
-    def ge(regId: String): GroupElement = TokenErgoMix.hexToGroupElement(registers(regId).drop(2))
+    def ge(regId: String): GroupElement = WalletHelper.hexToGroupElement(registers(regId).drop(2))
 
     def getToken(tokenId: String): Long = {
       tokens.filter(_.getId.toString.equals(tokenId)).map(_.getValue.longValue()).sum
     }
 
-    def mixBox: Option[Either[HBox, FBox]] = try MixUtils.usingClient { implicit ctx =>
-      val ergoMix = MixUtils.tokenErgoMix.get
-      val fullMixBoxErgoTree = Base16.encode(ergoMix.fullMixScriptErgoTree.bytes).trim
-      val halfMixBoxErgoTree = Base16.encode(ergoMix.halfMixContract.getErgoTree.bytes).trim
-      ergoTree match {
-        case `fullMixBoxErgoTree` =>
-          Some(Right(FBox(id, ge("R4"), ge("R5"), ge("R6"))))
-        case `halfMixBoxErgoTree` =>
-          Some(Left(HBox(id, ge("R4"))))
-        case any =>
+    def mixBox(tokenErgoMix: TokenErgoMix): Option[Either[HBox, FBox]] = {
+      try {
+        val fullMixBoxErgoTree = Base16.encode(tokenErgoMix.fullMixScriptErgoTree.bytes).trim
+        val halfMixBoxErgoTree = Base16.encode(tokenErgoMix.halfMixContract.getErgoTree.bytes).trim
+        ergoTree match {
+          case `fullMixBoxErgoTree` =>
+            Some(Right(FBox(id, ge("R4"), ge("R5"), ge("R6"))))
+          case `halfMixBoxErgoTree` =>
+            Some(Left(HBox(id, ge("R4"))))
+          case any =>
+            None
+        }
+      } catch {
+        case _: Throwable =>
           None
       }
-    } catch {
-      case a: Throwable =>
-        None
     }
 
-    def getFBox: Option[FBox] = mixBox.flatMap {
+    def getFBox(tokenErgoMix: TokenErgoMix): Option[FBox] = mixBox(tokenErgoMix).flatMap {
       case Right(fBox) => Some(fBox)
-      case _ => None
-    }
-
-    def getHBox: Option[HBox] = mixBox.flatMap {
-      case Left(hBox) => Some(hBox)
       case _ => None
     }
   }
@@ -153,33 +148,35 @@ object Models {
     }
   }
 
-  case class MixCovertRequest(id: String, createdTime: Long, depositAddress: String, numRounds: Int, masterKey: BigInt) {
+  case class MixCovertRequest(nameCovert: String = "", id: String, createdTime: Long, depositAddress: String, numRounds: Int, isManualCovert: Boolean, masterKey: BigInt) {
     def creationTimePrettyPrinted: String = {
       new SimpleDateFormat("YYYY-MM-dd HH:mm:ss").format(new Date(createdTime))
     }
 
     def getMinNeeded(ergRing: Long, tokenRing: Long): (Long, Long) = { // returns what is needed to distribute
-      val needed = MixBox.getPrice(ergRing, tokenRing, numRounds)
+      val needed = MixingBox.getPrice(ergRing, tokenRing, numRounds)
       (needed._1 + Configs.distributeFee, needed._2)
     }
 
     def getMixingNeed(ergRing: Long, tokenRing: Long): (Long, Long) = { // returns what is needed for a single mix box
-      MixBox.getPrice(ergRing, tokenRing, numRounds)
+      MixingBox.getPrice(ergRing, tokenRing, numRounds)
     }
 
     def toJson(assets: Seq[CovertAsset], currentMixing: Map[String, Long] = Map.empty): String = {
       val sortedAssets = assets.sortBy(_.lastActivity).reverse.sortBy(!_.isErg).sortBy(_.ring == 0)
       val assetJsons = sortedAssets.map(asset => {
         val curMixingAmount = currentMixing.getOrElse(asset.tokenId, 0L)
-        if (asset.isErg) asset.toJson(MixBox.getPrice(asset.ring, 0, numRounds)._1, curMixingAmount)
-        else asset.toJson(MixBox.getTokenPrice(asset.ring), curMixingAmount)
+        if (asset.isErg) asset.toJson(MixingBox.getPrice(asset.ring, 0, numRounds)._1, curMixingAmount)
+        else asset.toJson(MixingBox.getTokenPrice(asset.ring), curMixingAmount)
       })
       s"""{
+         |  "nameCovert": "${nameCovert}",
          |  "id": "${id}",
          |  "createdDate": "${creationTimePrettyPrinted}",
          |  "deposit": "${depositAddress}",
          |  "numRounds": $numRounds,
-         |  "assets": [${assetJsons.mkString(",")}]
+         |  "assets": [${assetJsons.mkString(",")}],
+         |  "isManualCovert": $isManualCovert
          |}""".stripMargin
     }
   }
@@ -188,10 +185,12 @@ object Models {
     def apply(a: Array[Any]): MixCovertRequest = {
       val iterator = a.toIterator
       new MixCovertRequest(
+        iterator.next().as[String], // name Covert
         iterator.next().as[String], // id
         iterator.next().as[Long], // created time
         iterator.next().as[String], // deposit address
         iterator.next().as[Int], // num rounds
+        iterator.next().as[Boolean], // isManualCovert
         iterator.next.as[BigDecimal].toBigInt() // master secret
       )
     }
@@ -209,12 +208,16 @@ object Models {
          |  "ring": $ring,
          |  "need": $needed,
          |  "confirmedDeposit": $confirmedDeposit,
-         |  "lastActivity": "${ErgoMixerUtils.prettyDate(lastActivity)}",
+         |  "lastActivity": "${prettyDate(lastActivity)}",
          |  "currentMixingAmount": $currentMixing
          |}""".stripMargin
     }
 
     def isErg: Boolean = tokenId.isEmpty
+
+    def prettyDate(timestamp: Long): String = {
+      new SimpleDateFormat("YYYY-MM-dd HH:mm:ss").format(new Date(timestamp))
+    }
   }
 
   object CovertAsset {
@@ -523,7 +526,7 @@ object Models {
     }
   }
 
-  object MixBox {
+  object MixingBox {
 
     /**
      * calculates needed token for a given ring
@@ -531,7 +534,7 @@ object Models {
      * @return token needed to enter mixing, i.e. ring + tokenFee
      */
     def getTokenPrice(ring: Long): Long = {
-      val rate: Int = Stats.entranceFee.getOrElse(1000000)
+      val rate: Int = Configs.entranceFee.getOrElse(1000000)
       ring + (if (rate > 0 && rate < 1000000) ring / rate else 0)
     }
 
@@ -544,21 +547,21 @@ object Models {
      * @return (erg needed, token needed)
      */
     def getPrice(ergRing: Long, tokenRing: Long, mixRounds: Int): (Long, Long) = {
-      val rate: Int = Stats.entranceFee.getOrElse(1000000)
-      val tokenPrice: Long = Stats.tokenPrices.get.getOrElse(mixRounds, -1)
+      val rate: Int = Configs.entranceFee.getOrElse(1000000)
+      val tokenPrice: Long = Configs.tokenPrices.get.getOrElse(mixRounds, -1)
       assert(tokenPrice != -1)
       val ergVal = if (rate > 0 && rate < 1000000) ergRing / rate else 0
       (ergRing + Configs.startFee + tokenPrice + ergVal, getTokenPrice(tokenRing))
     }
   }
 
-  case class MixBox(withdraw: String, amount: Long, token: Int, mixingTokenAmount: Long, mixingTokenId: String) {
+  case class MixingBox(withdraw: String, amount: Long, token: Int, mixingTokenAmount: Long, mixingTokenId: String) {
     def price: (Long, Long) = {
-      MixBox.getPrice(amount, mixingTokenAmount, token)
+      MixingBox.getPrice(amount, mixingTokenAmount, token)
     }
   }
 
-  case class MixBoxList(items: Iterable[MixBox])
+  case class MixBoxList(items: Iterable[MixingBox])
 
   object MixBoxList {
     implicit val ReadsMixBoxList: Reads[MixBoxList] = new Reads[MixBoxList] {
@@ -569,10 +572,52 @@ object Models {
           val token = (item \ "token").as[Int]
           val mixingTokenId = (item \ "mixingTokenId").as[String]
           val mixingTokenAmount = (item \ "mixingTokenAmount").as[Long]
-          MixBox(withdraw, amount, token, mixingTokenAmount, mixingTokenId)
+          MixingBox(withdraw, amount, token, mixingTokenAmount, mixingTokenId)
         })))
       }
     }
   }
+
+  case class EndBox(receiverBoxScript: ErgoTree, receiverBoxRegs: Seq[ErgoValue[_]] = Nil, value: Long, tokens: Seq[ErgoToken] = Nil) // box spending full mix box
+
+  case class HalfMixTx(tx: SignedTransaction)(implicit ergoMix: TokenErgoMix) {
+    val getHalfMixBox: HalfMixBox = HalfMixBox(tx.getOutputsToSpend.get(0))
+    require(getHalfMixBox.inputBox.getErgoTree == ergoMix.halfMixContract.getErgoTree)
+  }
+
+  case class FullMixTx(tx: SignedTransaction)(implicit ergoMix: TokenErgoMix) {
+    val getFullMixBoxes: (FullMixBox, FullMixBox) = (FullMixBox(tx.getOutputsToSpend.get(0)), FullMixBox(tx.getOutputsToSpend.get(1)))
+    require(getFullMixBoxes._1.inputBox.getErgoTree == ergoMix.fullMixScriptErgoTree)
+    require(getFullMixBoxes._2.inputBox.getErgoTree == ergoMix.fullMixScriptErgoTree)
+  }
+
+  abstract class MixBox(inputBox: InputBox) {
+    def getRegs = inputBox.getRegisters.asScala
+
+    def getR4 = getRegs.head
+
+    def getR5 = getRegs(1)
+
+    def getR6 = getRegs(2)
+  }
+
+  case class HalfMixBox(inputBox: InputBox) extends MixBox(inputBox) {
+    def id = inputBox.getId.toString
+
+    val gX: GroupElement = getR4.getValue match {
+      case g: GroupElement => g
+      case any => throw new Exception(s"Invalid value in R4: $any of type ${any.getClass}")
+    }
+  }
+
+  case class FullMixBox(inputBox: InputBox) extends MixBox(inputBox) {
+    def id = inputBox.getId.toString
+
+    val (r4, r5, r6) = (getR4.getValue, getR5.getValue, getR6.getValue) match {
+      case (c1: GroupElement, c2: GroupElement, gX: GroupElement) => (c1, c2, gX) //Values.GroupElementConstant(c1), Values.GroupElementConstant(c2)) => (c1, c2)
+      case (r4, r5, r6) => throw new Exception(s"Invalid registers R4:$r4, R5:$r5, R6:$r6")
+    }
+  }
+
 
 }

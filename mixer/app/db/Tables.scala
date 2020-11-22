@@ -1,17 +1,17 @@
 package db
 
-import cli.MixUtils
 import db.ScalaDB._
-import mixer.BlockExplorer
-import mixer.Models.MixStatus.Queued
-import mixer.Models.MixWithdrawStatus.WithdrawRequested
-import mixer.Models.{Deposit, MixHistory, MixRequest, WithdrawTx}
+import models.Models.MixStatus.Queued
+import models.Models.MixWithdrawStatus.WithdrawRequested
+import models.Models.{Deposit, MixHistory, MixRequest, WithdrawTx}
 import org.ergoplatform.appkit.SignedTransaction
 import play.api.Logger
 import db.core.DataStructures.anyToAny
+import javax.inject.Inject
+import network.{BlockExplorer, NetworkUtils}
 import play.api.db.Database
 
-class Tables(playDB: Database) {
+class Tables @Inject() (playDB: Database, networkUtils: NetworkUtils, explorer: BlockExplorer) {
   private val logger: Logger = Logger(this.getClass)
 
   import db.Columns._
@@ -49,7 +49,7 @@ class Tables(playDB: Database) {
   */
 
   // covert mix
-  val mixCovertCols = Seq(mixGroupIdCol, createdTimeCol, depositAddressCol, numTokenCol)
+  val mixCovertCols = Seq(nameCovertCol, mixGroupIdCol, createdTimeCol, depositAddressCol, numTokenCol, isManualCovertCol)
   val mixCovertTable = Tab.withName("mixing_covert_request").withCols(mixCovertCols :+ masterSecretGroupCol: _*).withPriKey(mixGroupIdCol)
   val covertDefaultsTable = Tab.withName("covert_defaults").withCols(mixGroupIdCol, tokenIdCol, mixingTokenAmount, depositCol, lastActivityCol).withPriKey(mixGroupIdCol, tokenIdCol)
   val covertAddressesTable = Tab.withName("covert_addresses").withCols(mixGroupIdCol, addressCol).withPriKey(mixGroupIdCol, addressCol)
@@ -82,9 +82,8 @@ class Tables(playDB: Database) {
     spentDepositsArchiveTable.insert(address, boxId, amount, createdTime, tokenAmount, txId, spentTime, purpose, insertReason)
   }
 
-  private def undoSpend(deposit: Deposit) = MixUtils.usingClient { implicit ctx =>
+  private def undoSpend(deposit: Deposit) = networkUtils.usingClient { implicit ctx =>
     if (unspentDepositsTable.exists(boxIdCol === deposit.boxId)) throw new Exception(s"Unspent deposit already exists ${deposit.boxId}")
-    val explorer = new BlockExplorer()
     if (explorer.getBoxById(deposit.boxId).spendingTxId.isDefined) throw new Exception(s"Cannot undo spend for already spend box ${deposit.boxId}")
     unspentDepositsTable.insert(deposit.address, deposit.boxId, deposit.amount, deposit.tokenAmount, deposit.createdTime)
     spentDepositsTable.deleteWhere(boxIdCol === deposit.boxId)

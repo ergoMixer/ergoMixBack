@@ -1,21 +1,23 @@
 package mixer
 
 import app.Configs
-import app.ergomix.EndBox
-import cli.{AliceOrBob, MixUtils}
+import mixinterface.AliceOrBob
 import db.Columns._
 import db.ScalaDB._
 import db.Tables
 import db.core.DataStructures.anyToAny
-import helpers.ErgoMixerUtils._
-import helpers.Util
-import mixer.Models.GroupMixStatus._
-import mixer.Models.{DistributeTx, MixGroupRequest}
+import helpers.ErgoMixerUtils
+import javax.inject.Inject
+import models.Models.GroupMixStatus._
+import models.Models.{DistributeTx, EndBox, MixGroupRequest}
+import network.{BlockExplorer, NetworkUtils}
 import org.ergoplatform.appkit.impl.ScalaBridge
 import org.ergoplatform.appkit.{Address, ErgoToken}
 import play.api.Logger
+import wallet.{Wallet, WalletHelper}
 
-class GroupMixer(tables: Tables) {
+class GroupMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
+                           networkUtils: NetworkUtils, explorer: BlockExplorer) {
   private val logger: Logger = Logger(this.getClass)
 
   import tables._
@@ -24,8 +26,7 @@ class GroupMixer(tables: Tables) {
    * processes group mixes one by one
    */
   def processGroupMixes(): Unit = {
-    MixUtils.usingClient { implicit ctx =>
-      val explorer = new BlockExplorer
+    networkUtils.usingClient { implicit ctx =>
       mixRequestsGroupTable.selectStar.where(
         mixStatusCol === Queued.value
       ).as(arr =>
@@ -36,8 +37,8 @@ class GroupMixer(tables: Tables) {
         var confirmedErgDeposits = 0L
         var confirmedTokenDeposits = 0L
         allBoxes.foreach(box => {
-          val conf = MixUtils.getConfirmationsForBoxId(box.id)
-          if (conf >= minConfirmations) {
+          val conf = networkUtils.getConfirmationsForBoxId(box.id)
+          if (conf >= Configs.numConfirmation) {
             confirmedErgDeposits += box.amount
             confirmedTokenDeposits += box.getToken(req.tokenId)
           }
@@ -65,7 +66,7 @@ class GroupMixer(tables: Tables) {
         } catch {
           case a: Throwable =>
             logger.error(s" [MixGroup: ${req.id}] An error occurred. Stacktrace below")
-            logger.error(getStackTraceStr(a))
+            logger.error(ergoMixerUtils.getStackTraceStr(a))
         }
       })
     }
@@ -73,10 +74,10 @@ class GroupMixer(tables: Tables) {
 
   /**
    * processes a specific group mix (enters mixing if all ok)
+   *
    * @param req group request
    */
-  def processStartingGroup(req: MixGroupRequest) = MixUtils.usingClient { implicit ctx =>
-    val explorer = new BlockExplorer()
+  def processStartingGroup(req: MixGroupRequest) = networkUtils.usingClient { implicit ctx =>
     logger.info(s"[MixGroup: ${req.id}] processing...")
     val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
     if (distributeTxsTable.exists(mixGroupIdCol === req.id)) { // txs already created, just w8 for enough confirmation
@@ -123,11 +124,11 @@ class GroupMixer(tables: Tables) {
       if (excessErg > 0) logger.info(s"  excess deposit: $excessErg...")
       if (excessToken > 0) logger.info(s"  excess token deposit: $excessToken...")
 
-      val transactions = AliceOrBob.distribute(allBoxes.map(_.id).toArray, reqEndBoxes, Array(secret), Configs.distributeFee, req.depositAddress, Configs.maxOuts)
+      val transactions = aliceOrBob.distribute(allBoxes.map(_.id).toArray, reqEndBoxes, Array(secret), Configs.distributeFee, req.depositAddress, Configs.maxOuts)
       for (i <- transactions.indices) {
         val tx = transactions(i)
         val inputs = tx.getInputBoxes.map(ScalaBridge.isoErgoTransactionInput.from(_).getBoxId).mkString(",")
-        distributeTxsTable.insert(req.id, tx.getId, i + 1, Util.now, tx.toJson(false).getBytes("utf-16"), inputs)
+        distributeTxsTable.insert(req.id, tx.getId, i + 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputs)
         val sendRes = ctx.sendTransaction(tx)
         if (sendRes == null) logger.error(s"  transaction got refused by the node! maybe it doesn't support chained transactions, waiting... consider updating your node for a faster mixing experience.")
       }

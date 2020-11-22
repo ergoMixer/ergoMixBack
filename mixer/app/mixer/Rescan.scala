@@ -4,10 +4,11 @@ import db.Columns._
 import db.ScalaDB._
 import db.Tables
 import db.core.DataStructures.anyToAny
-import helpers.Util.now
-import mixer.Models.{FollowedMix, PendingRescan}
+import wallet.WalletHelper.now
+import javax.inject.Inject
+import models.Models.{FollowedMix, PendingRescan}
 
-class Rescan(tables: Tables) {
+class Rescan @Inject()(tables: Tables, mixScanner: MixScanner) {
 
   import tables._
 
@@ -25,10 +26,10 @@ class Rescan(tables: Tables) {
     val masterSecret = mixRequestsTable.select(masterSecretCol).where(mixIdCol === mixId).firstAsT[BigDecimal].headOption.map(_.toBigInt()).getOrElse(throw new Exception("Unable to read master secret"))
     val poolAmount = mixRequestsTable.select(amountCol).where(mixIdCol === mixId).firstAsT[Long].headOption.getOrElse(throw new Exception("Unable to read pool amount"))
     val followedMixes: Seq[FollowedMix] = if (!goBackward) { // go forward
-      if (isHalfMixTx) MixScanner.followHalfMix(mixBoxId, round, masterSecret) else MixScanner.followFullMix(mixBoxId, round, masterSecret)
+      if (isHalfMixTx) mixScanner.followHalfMix(mixBoxId, round, masterSecret) else mixScanner.followFullMix(mixBoxId, round, masterSecret)
     } else { // go backward
       // TODO: Rescan from last good box instead of beginning. For now doing from beginning
-      MixScanner.followDeposit(mixBoxId, masterSecret, poolAmount)
+      mixScanner.followDeposit(mixBoxId, masterSecret, poolAmount)
     }
     applyMixes(mixId, followedMixes)
   }
@@ -37,7 +38,7 @@ class Rescan(tables: Tables) {
   def getFollowedMix(mixId: String): Seq[FollowedMix] = {
     mixRequestsTable.select(depositAddressCol, masterSecretCol, amountCol).where(mixIdCol === mixId).as(a => (a(0).as[String], a(1).as[BigDecimal], a(2).as[Int])).headOption.flatMap {
       case (depositAddress, bigDecimal, poolAmount) =>
-        spentDepositsTable.select(boxIdCol).where(addressCol === depositAddress).firstAsT[String].headOption.map(boxId => MixScanner.followDeposit(boxId, bigDecimal.toBigInt(), poolAmount))
+        spentDepositsTable.select(boxIdCol).where(addressCol === depositAddress).firstAsT[String].headOption.map(boxId => mixScanner.followDeposit(boxId, bigDecimal.toBigInt(), poolAmount))
     }.getOrElse(throw new Exception("Invalid mixID"))
   }
 

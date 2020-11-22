@@ -1,16 +1,18 @@
 package mixer
 
-import app.{Configs, TokenErgoMix}
-import cli.MixUtils
+import app.Configs
 import db.Tables
-import mixer.Models.EntityInfo
+import javax.inject.Inject
+import mixinterface.TokenErgoMix
+import models.Models.EntityInfo
+import network.{BlockExplorer, NetworkUtils}
 import special.collection.Coll
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.compat.Platform
 
-class ChainScanner(tables: Tables) {
+class ChainScanner @Inject()(tables: Tables, networkUtils: NetworkUtils, explorer: BlockExplorer) {
   /**
    * scans blockchain to extract ring statistics, # of half-boxes, # of mixes in the last 24 h
    *
@@ -21,13 +23,13 @@ class ChainScanner(tables: Tables) {
     // Limit for get transaction from explorer
     val limitGetTransaction = Configs.limitGetTransaction
     val periodTime: Long = Platform.currentTime - Configs.periodTimeRings
-    MixUtils.usingClient { implicit ctx =>
+    networkUtils.usingClient { implicit ctx =>
       // Get full Box address
-      val ergoMix = MixUtils.tokenErgoMix.get
+      val ergoMix = networkUtils.tokenErgoMix.get
       val fullBoxAddress = ergoMix.fullMixAddress.toString
       val halfBoxAddress = ergoMix.halfMixAddress.toString
       // Get unspent halfMixBox boxes
-      val halfMixBoxes = MixUtils.getAllHalfBoxes
+      val halfMixBoxes = networkUtils.getAllHalfBoxes
       // Add value of halfMixBoxes to result
       for (halfMixBox <- halfMixBoxes) {
         var coin = "erg"
@@ -47,7 +49,6 @@ class ChainScanner(tables: Tables) {
         }
       }
       // Create connection to explorer
-      val explorer: BlockExplorer = new BlockExplorer()
       var i = 0
       var timeFlag: Boolean = true
       while (timeFlag) {
@@ -92,10 +93,10 @@ class ChainScanner(tables: Tables) {
    * @return tuple containing a map (level -> price) and entering fee
    */
   def scanTokens: (Map[Int, Long], Int) = {
-    val tokenBoxes = MixUtils.getTokenEmissionBoxes(0)
+    val tokenBoxes = networkUtils.getTokenEmissionBoxes(0)
     if (tokenBoxes.nonEmpty) {
       val token = tokenBoxes.head
-      val tokenBox = MixUtils.getUnspentBoxById(token.id)
+      val tokenBox = networkUtils.getUnspentBoxById(token.id)
       var rate = 1000000
       if (tokenBox.getRegisters.size == 2) {
         rate = tokenBox.getRegisters.get(1).getValue.asInstanceOf[Int]
@@ -111,7 +112,7 @@ class ChainScanner(tables: Tables) {
    * @return list of supported entities
    */
   def scanParams: Seq[EntityInfo] = {
-    MixUtils.usingClient { implicit ctx =>
+    networkUtils.usingClient { implicit ctx =>
       return ctx.getUnspentBoxesFor(TokenErgoMix.paramAddress).asScala
         .filter(box => box.getTokens.size() > 0 && box.getTokens.get(0).getId.toString.equals(TokenErgoMix.tokenId))
         .map(box => EntityInfo(box))

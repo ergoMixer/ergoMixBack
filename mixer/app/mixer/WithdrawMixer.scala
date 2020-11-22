@@ -1,19 +1,23 @@
 package mixer
 
-import cli.MixUtils
+import app.Configs
 import db.Columns._
 import db.ScalaDB._
 import db.Tables
-import helpers.ErgoMixerUtils._
-import mixer.Models.MixStatus.Complete
-import mixer.Models.MixWithdrawStatus.{WithdrawRequested, Withdrawn}
-import mixer.Models.{GroupMixStatus, MixRequest, WithdrawTx}
+import helpers.ErgoMixerUtils
+import javax.inject.Inject
+import models.Models.MixStatus.Complete
+import models.Models.MixWithdrawStatus.{WithdrawRequested, Withdrawn}
+import models.Models.{GroupMixStatus, MixRequest, WithdrawTx}
+import network.{BlockExplorer, NetworkUtils}
 import play.api.Logger
 
-class WithdrawMixer(tables: Tables) {
+class WithdrawMixer @Inject()(tables: Tables, ergoMixerUtils: ErgoMixerUtils,
+                              networkUtils: NetworkUtils, explorer: BlockExplorer) {
   private val logger: Logger = Logger(this.getClass)
 
   import tables._
+  import ergoMixerUtils._
 
 
   /**
@@ -42,9 +46,8 @@ class WithdrawMixer(tables: Tables) {
    * processes a specific withdraw, marks as done if tx is confirmed enough
    * @param tx withdraw transaction
    */
-  private def processWithdraw(tx: WithdrawTx) = MixUtils.usingClient { implicit ctx =>
+  private def processWithdraw(tx: WithdrawTx) = networkUtils.usingClient { implicit ctx =>
     logger.info(s" [WITHDRAW: ${tx.mixId}] txId: ${tx.txId} processing.")
-    val explorer = new BlockExplorer()
     val numConf = explorer.getTxNumConfirmations(tx.txId)
     if (numConf == -1) { // not mined yet!
       // if tx is in pool just wait
@@ -52,7 +55,7 @@ class WithdrawMixer(tables: Tables) {
       // other cases include the following:
       //   * this is a half box and is spent with someone else --> will be handled in HalfMixer
       //   * inputs are not available due to fork --> will be handled in other jobs (HalfMixer, FullMixer, NewMixer)
-      if (!MixUtils.isTxInPool(tx.txId)) { // however, we broadcast anyway if tx is not in the pool
+      if (!networkUtils.isTxInPool(tx.txId)) { // however, we broadcast anyway if tx is not in the pool
         val result = ctx.sendTransaction(ctx.signedTxFromJson(tx.toString))
         logger.info(s"  broadcasting transaction: $result.")
       } else {
@@ -60,12 +63,12 @@ class WithdrawMixer(tables: Tables) {
       }
 
       // if fee box is used, check to see if it is double spent
-      if (tx.getFeeBox.nonEmpty && isDoubleSpent(tx.getFeeBox.get, tx.getFirstInput)) {
+      if (tx.getFeeBox.nonEmpty && networkUtils.isDoubleSpent(tx.getFeeBox.get, tx.getFirstInput)) {
         logger.info(s"  fee ${tx.getFeeBox.get} is double spent, will try in next round...")
         deleteWithdraw(tx.mixId)
       }
 
-    } else if (numConf >= minConfirmations) { // tx is confirmed enough, mix is done!
+    } else if (numConf >= Configs.numConfirmation) { // tx is confirmed enough, mix is done!
       logger.info(s"  transaction is confirmed enough. Mix is done.")
       mixRequestsTable.update(mixStatusCol <-- Complete.value, mixWithdrawStatusCol <-- Withdrawn.value)
         .where(mixIdCol === tx.mixId)

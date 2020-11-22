@@ -1,22 +1,27 @@
 package mixer
 
-import app.{Configs, TokenErgoMix}
-import cli.{AliceOrBob, MixUtils}
+import app.Configs
+import mixinterface.{AliceOrBob, TokenErgoMix}
 import db.Columns._
 import db.ScalaDB._
 import db.Tables
 import db.core.DataStructures.anyToAny
-import helpers.ErgoMixerUtils._
-import helpers.Util.now
-import mixer.Models.MixStatus.{Complete, Running}
-import mixer.Models.MixWithdrawStatus.WithdrawRequested
-import mixer.Models.{MixTransaction, OutBox}
+import helpers.ErgoMixerUtils
+import wallet.WalletHelper.now
+import javax.inject.Inject
+import models.Models.MixStatus.{Complete, Running}
+import models.Models.MixWithdrawStatus.WithdrawRequested
+import models.Models.{MixTransaction, OutBox}
+import network.{BlockExplorer, NetworkUtils}
 import play.api.Logger
+import wallet.Wallet
 
-class FullMixer(tables: Tables) {
+class FullMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
+                          networkUtils: NetworkUtils, explorer: BlockExplorer) {
   private val logger: Logger = Logger(this.getClass)
 
   import tables._
+  import ergoMixerUtils._
 
   var fees: Seq[OutBox] = _
   var halfs: Seq[OutBox] = _
@@ -28,7 +33,7 @@ class FullMixer(tables: Tables) {
    */
   def getHalfBoxes: Seq[OutBox] = {
     if (halfs == null)
-      halfs = MixUtils.getHalfMixBoxes(considerPool = true)
+      halfs = networkUtils.getHalfMixBoxes(considerPool = true)
     halfs
   }
 
@@ -39,7 +44,7 @@ class FullMixer(tables: Tables) {
    */
   def getFeeBoxes: Seq[OutBox] = {
     if (fees == null)
-      fees = MixUtils.getFeeEmissionBoxes(considerPool = true)
+      fees = networkUtils.getFeeEmissionBoxes(considerPool = true)
     fees
   }
 
@@ -121,8 +126,7 @@ class FullMixer(tables: Tables) {
    * @param withdrawStatus   withdraw status (whether is set to be withdrawn)
    * @param mixingTokenId    mixing token id (empty if erg)
    */
-  private def processFullMix(mixId: String, maxRounds: Int, withdrawAddress: String, masterSecret: BigInt, isAlice: Boolean, fullMixBoxId: String, currentRound: Int, halfMixBoxId: String, optEmissionBoxId: Option[String], tokenBoxId: String, withdrawStatus: String, mixingTokenId: String) = MixUtils.usingClient { implicit ctx =>
-    val explorer = new BlockExplorer()
+  private def processFullMix(mixId: String, maxRounds: Int, withdrawAddress: String, masterSecret: BigInt, isAlice: Boolean, fullMixBoxId: String, currentRound: Int, halfMixBoxId: String, optEmissionBoxId: Option[String], tokenBoxId: String, withdrawStatus: String, mixingTokenId: String) = networkUtils.usingClient { implicit ctx =>
 
     // If all is ok then the following should be true:
     //  1. halfMixBoxId must have minConfirmations
@@ -132,7 +136,7 @@ class FullMixer(tables: Tables) {
 
     val fullMixBoxConfirmations = explorer.getConfirmationsForBoxId(fullMixBoxId)
 
-    if (fullMixBoxConfirmations >= minConfirmations) {
+    if (fullMixBoxConfirmations >= Configs.numConfirmation) {
       // proceed only if full mix box is mature enough
       val currentTime = now
       explorer.getSpendingTxId(fullMixBoxId) match {
@@ -143,7 +147,7 @@ class FullMixer(tables: Tables) {
             insertForwardScan(mixId, currentTime, currentRound, isHalfMixTx = false, fullMixBoxId)
           }
         case None => // not spent, good to go
-          val fullMixBox: OutBox = MixUtils.getOutBoxById(fullMixBoxId)
+          val fullMixBox: OutBox = networkUtils.getOutBoxById(fullMixBoxId)
           val numTokens = fullMixBox.getToken(TokenErgoMix.tokenId)
           var tokenSize = 1
           if (mixingTokenId.nonEmpty) tokenSize = 2
@@ -160,7 +164,7 @@ class FullMixer(tables: Tables) {
             if (withdrawAddress.nonEmpty) {
               val optFeeEmissionBoxId = getRandomValidBoxId(getFeeBoxes.map(_.id).filterNot(id => spentFeeEmissionBoxTable.exists(boxIdCol === id)))
               if (shouldWithdraw(mixId, fullMixBoxId) && optFeeEmissionBoxId.nonEmpty) {
-                val tx = AliceOrBob.spendFullMixBox(isAlice, secret, fullMixBoxId, withdrawAddress, Array[String](optFeeEmissionBoxId.get), Configs.defaultHalfFee, withdrawAddress, broadCast = false)
+                val tx = aliceOrBob.spendFullMixBox(isAlice, secret, fullMixBoxId, withdrawAddress, Array[String](optFeeEmissionBoxId.get), Configs.defaultHalfFee, withdrawAddress, broadCast = false)
                 val txBytes = tx.toJson(false).getBytes("utf-16")
                 tables.insertWithdraw(mixId, tx.getId, currentTime, fullMixBoxId + "," + optFeeEmissionBoxId.get, txBytes)
                 logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] Withdraw txId: ${tx.getId}, is requested: ${withdrawStatus.equals(WithdrawRequested.value)}")
@@ -185,7 +189,7 @@ class FullMixer(tables: Tables) {
 
               def nextAlice = {
                 val feeAmount = getFee(mixingTokenId, tokenAmount = fullMixBox.getToken(mixingTokenId), fullMixBox.amount, isFull = false)
-                val halfMixTx = AliceOrBob.spendFullMixBox_RemixAsAlice(isAlice, secret, fullMixBoxId, nextSecret, feeEmissionBoxId, feeAmount)
+                val halfMixTx = aliceOrBob.spendFullMixBox_RemixAsAlice(isAlice, secret, fullMixBoxId, nextSecret, feeEmissionBoxId, feeAmount)
                 tables.insertHalfMix(mixId, nextRound, currentTime, halfMixTx.getHalfMixBox.id, isSpent = false)
                 mixStateTable.update(roundCol <-- nextRound, isAliceCol <-- true).where(mixIdCol === mixId)
                 tables.insertMixStateHistory(mixId, nextRound, isAlice = true, currentTime)
@@ -198,7 +202,7 @@ class FullMixer(tables: Tables) {
 
               def nextBob(halfMixBoxId: String) = {
                 val feeAmount = getFee(mixingTokenId, tokenAmount = fullMixBox.getToken(mixingTokenId), fullMixBox.amount, isFull = true)
-                val (fullMixTx, bit) = AliceOrBob.spendFullMixBox_RemixAsBob(isAlice, secret, fullMixBoxId, nextSecret, halfMixBoxId, feeEmissionBoxId, feeAmount)
+                val (fullMixTx, bit) = aliceOrBob.spendFullMixBox_RemixAsBob(isAlice, secret, fullMixBoxId, nextSecret, halfMixBoxId, feeEmissionBoxId, feeAmount)
                 val (left, right) = fullMixTx.getFullMixBoxes
                 val bobFullMixBox = if (bit) right else left
                 tables.insertFullMix(mixId, nextRound, currentTime, halfMixBoxId, bobFullMixBox.id)
@@ -240,7 +244,7 @@ class FullMixer(tables: Tables) {
             Thread.currentThread().getStackTrace foreach println
             insertBackwardScan(mixId, now, currentRound, isHalfMixTx = false, fullMixBoxId)
           case Some(true) =>
-            if (isDoubleSpent(halfMixBoxId, fullMixBoxId) || (currentRound == 0 && isDoubleSpent(tokenBoxId, fullMixBoxId))) {
+            if (networkUtils.isDoubleSpent(halfMixBoxId, fullMixBoxId) || (currentRound == 0 && networkUtils.isDoubleSpent(tokenBoxId, fullMixBoxId))) {
               // the halfMixBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
               try {
                 logger.info(s"  [FULL:$mixId ($currentRound) ${str(isAlice)}] <-- Bob (undo). [full: $fullMixBoxId not spent while half: $halfMixBoxId or token: $tokenBoxId spent]")
@@ -251,7 +255,7 @@ class FullMixer(tables: Tables) {
               }
             } else {
               optEmissionBoxId.map { emissionBoxId =>
-                if (isDoubleSpent(emissionBoxId, fullMixBoxId)) {
+                if (networkUtils.isDoubleSpent(emissionBoxId, fullMixBoxId)) {
                   // the emissionBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
                   try {
                     logger.info(s"  [FULL:$mixId ($currentRound) ${str(isAlice)}] <-- Bob (undo). [full:$fullMixBoxId not spent while fee:$emissionBoxId spent]")

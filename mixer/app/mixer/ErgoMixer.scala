@@ -2,22 +2,24 @@ package mixer
 
 import java.util.UUID
 
-import app.{Configs, TokenErgoMix, Util => EUtil}
-import cli._
+import app.Configs
 import db.Columns._
 import db.ScalaDB._
 import db.Tables
-import helpers.Util._
+import wallet.WalletHelper._
 import db.core.DataStructures.anyToAny
-import mixer.Models.MixStatus.{Complete, Queued}
-import mixer.Models.MixWithdrawStatus.{NoWithdrawYet, WithdrawRequested, Withdrawn}
-import mixer.Models.{CovertAsset, FullMix, GroupMixStatus, HalfMix, Mix, MixBox, MixCovertRequest, MixGroupRequest, MixRequest, MixState, MixStatus, MixWithdrawStatus, Withdraw}
+import javax.inject.Inject
+import models.Models.MixStatus.{Complete, Queued}
+import models.Models.MixWithdrawStatus.{NoWithdrawYet, WithdrawRequested, Withdrawn}
+import models.Models.{CovertAsset, FullMix, GroupMixStatus, HalfMix, Mix, MixingBox, MixCovertRequest, MixGroupRequest, MixRequest, MixState, MixStatus, MixWithdrawStatus, Withdraw}
+import network.NetworkUtils
 import play.api.Logger
+import wallet.{Wallet, WalletHelper}
 
 import scala.collection.mutable
 
 
-class ErgoMixer(tables: Tables) {
+class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
   private val logger: Logger = Logger(this.getClass)
 
   import tables._
@@ -29,19 +31,43 @@ class ErgoMixer(tables: Tables) {
    * @param addresses selected addresses for withdrawal
    * @return covert address
    */
-  def newCovertRequest(numRounds: Int, addresses: Seq[String] = Nil): String = {
-    MixUtils.usingClient { implicit ctx =>
-      val masterSecret = randBigInt
+  def newCovertRequest(nameCovert: String, numRounds: Int, addresses: Seq[String] = Nil, privateKey: String): String = {
+    networkUtils.usingClient { implicit ctx =>
+      var masterSecret: BigInt = BigInt(0)
+      if (privateKey.isEmpty) {
+        masterSecret = randBigInt
+      }
+      else {
+        masterSecret = BigInt(privateKey, 16)
+        if(mixCovertTable.exists(masterSecretGroupCol === masterSecret)){
+          throw new Exception("this private key exist")
+        }
+      }
       val wallet = new Wallet(masterSecret)
-      val depositSecret = wallet.getSecret(-1)
-      val depositAddress = TokenErgoMix.getProveDlogAddress(depositSecret)
+      val depositSecret = wallet.getSecret(-1, privateKey.nonEmpty)
+      val depositAddress = WalletHelper.getProveDlogAddress(depositSecret, ctx)
       val mixId = UUID.randomUUID().toString
-      val minErgRing = Configs.params.filter(_._1.isEmpty).head._2.rings.head
-      mixCovertTable.insert(mixId, now, depositAddress, numRounds, masterSecret)
+      val lastErgRing = Configs.params.filter(_._1.isEmpty).head._2.rings.last
+      mixCovertTable.insert(nameCovert, mixId, now, depositAddress, numRounds, privateKey.nonEmpty, masterSecret)
       addCovertWithdrawAddress(mixId, addresses)
-      handleCovertSupport(mixId, "", minErgRing)
+      handleCovertSupport(mixId, "", lastErgRing)
       logger.info(s"covert address $mixId is created, addr: $depositAddress. you can add supported asset for it.")
       depositAddress
+    }
+  }
+
+  /**
+   * Adds or updates name for a covert
+   *
+   * @param covertId covert id
+   * @param nameCovert name for covert
+   */
+  def handleNameCovert(covertId: String, nameCovert: String): Unit = {
+    if (!mixCovertTable.exists(mixGroupIdCol === covertId)) {
+      logger.info("no such covert id!")
+      throw new Exception("no such covert id!")
+    } else {
+      mixCovertTable.update(nameCovertCol <-- nameCovert).where(mixGroupIdCol === covertId)
     }
   }
 
@@ -73,14 +99,7 @@ class ErgoMixer(tables: Tables) {
    * @param addresses addresses to be added
    */
   def addCovertWithdrawAddress(covertId: String, addresses: Seq[String]): Unit = {
-    MixUtils.usingClient { implicit ctx =>
-      val util = new EUtil()
-      addresses.foreach(address => {
-        try util.getAddress(address).script catch {
-          case _: Throwable => throw new Exception("Invalid withdraw address")
-        }
-      })
-    }
+    okAddresses(addresses)
     if (!mixCovertTable.exists(mixGroupIdCol === covertId)) {
       throw new Exception("Invalid covert id")
     }
@@ -92,21 +111,18 @@ class ErgoMixer(tables: Tables) {
 
   /**
    * updates withdraw address of a mix if address is valid
+   *
    * @param mixId mix id
    */
   def updateMixWithdrawAddress(mixId: String, address: String): Unit = {
-    MixUtils.usingClient { implicit ctx =>
-      val util = new EUtil()
-      try util.getAddress(address).script catch {
-        case _: Throwable => throw new Exception("Invalid withdraw address")
-      }
-      mixRequestsTable.update(withdrawAddressCol <-- address).where(mixIdCol === mixId)
-    }
+    okAddresses(Seq(address))
+    mixRequestsTable.update(withdrawAddressCol <-- address).where(mixIdCol === mixId)
   }
 
 
   /**
    * sets mix for withdrawal
+   *
    * @param mixId mix id
    */
   def withdrawMixNow(mixId: String): Unit = {
@@ -174,11 +190,11 @@ class ErgoMixer(tables: Tables) {
    * @return deposit address of the box
    */
   def newMixRequest(withdrawAddress: String, numRounds: Int, ergRing: Long, ergNeeded: Long, tokenRing: Long, tokenNeeded: Long, mixingTokenId: String, topId: String): String = {
-    MixUtils.usingClient { implicit ctx =>
+    networkUtils.usingClient { implicit ctx =>
       val masterSecret = randBigInt
       val wallet = new Wallet(masterSecret)
       val depositSecret = wallet.getSecret(-1)
-      val depositAddress = TokenErgoMix.getProveDlogAddress(depositSecret)
+      val depositAddress = WalletHelper.getProveDlogAddress(depositSecret, ctx)
       val mixId = UUID.randomUUID().toString
       mixRequestsTable.insert(mixId, topId, ergRing, numRounds, Queued.value, now, withdrawAddress, depositAddress, false, ergNeeded, numRounds, NoWithdrawYet.value, tokenRing, tokenNeeded, mixingTokenId, masterSecret)
       depositAddress
@@ -191,16 +207,10 @@ class ErgoMixer(tables: Tables) {
    * @param mixRequests requests of this group mix, each will become a mix box
    * @return group mix id
    */
-  def newMixGroupRequest(mixRequests: Iterable[MixBox]): String = {
-    MixUtils.usingClient { implicit ctx =>
-      val util = new EUtil()
-      mixRequests.foreach(mixBox => {
-        if (mixBox.withdraw.nonEmpty) { // empty withdraw address means manual withdrawal!
-          try util.getAddress(mixBox.withdraw).script catch {
-            case e: Throwable => throw new Exception("Invalid withdraw address")
-          }
-        }
-      })
+  def newMixGroupRequest(mixRequests: Iterable[MixingBox]): String = {
+    networkUtils.usingClient { implicit ctx =>
+      val addresses = mixRequests.map(_.withdraw).filter(_.nonEmpty).toSeq
+      okAddresses(addresses)
       // if here then addresses are valid
       val masterSecret = randBigInt
       val wallet = new Wallet(masterSecret)
@@ -212,7 +222,7 @@ class ErgoMixer(tables: Tables) {
       var mixingTokenAmount: Long = 0
       var mixingTokenId: String = ""
       val depositSecret = wallet.getSecret(-1)
-      val depositAddress = TokenErgoMix.getProveDlogAddress(depositSecret)
+      val depositAddress = WalletHelper.getProveDlogAddress(depositSecret, ctx)
       val mixId = UUID.randomUUID().toString
       mixRequests.foreach(mixBox => {
         val price = mixBox.price
@@ -229,7 +239,7 @@ class ErgoMixer(tables: Tables) {
       } else {
         logger.info(s"Please deposit $totalNeededErg nanoErgs and $totalNeededToken of $mixingTokenId to $depositAddress")
       }
-      return mixId
+      mixId
     }
   }
 

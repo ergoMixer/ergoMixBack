@@ -6,11 +6,12 @@ import java.util.Date
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import app.Configs
 import app.Configs.readKey
-import cli.MixUtils
-import helpers.{Stats, TrayUtils}
-import mixer.ErgoMixerJobs
-import mixer.Models.EntityInfo
-import org.ergoplatform.appkit.RestApiErgoClient
+import db.PruneDB
+import helpers.TrayUtils
+import javax.inject.Inject
+import mixer._
+import models.Models.EntityInfo
+import network.NetworkUtils
 import play.api.Logger
 import services.ScheduledJobs.{RefreshMixingStats, RefreshPoolStats}
 
@@ -18,8 +19,14 @@ import scala.collection.mutable
 import scala.util.Try
 
 
+class ErgoMixerJobs @Inject()(val ergoMixer: ErgoMixer, val covertMixer: CovertMixer, val groupMixer: GroupMixer,
+                              val rescan: Rescan, val halfMixer: HalfMixer, val fullMixer: FullMixer, val newMixer: NewMixer,
+                              val withdrawMixer: WithdrawMixer, val deposits: Deposits, val pruneDb: PruneDB,
+                              val statScanner: ChainScanner, val networkUtils: NetworkUtils)
+
 class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
   private val logger: Logger = Logger(this.getClass)
+  import mixerJobs.networkUtils
 
   private def currentTimeString = {
     val date = new Date()
@@ -31,9 +38,9 @@ class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
     case RefreshMixingStats =>
       logger.info(s"$currentTimeString: Refreshing mixing stats: jobs started")
 
-      val wasOk = MixUtils.prunedClients.nonEmpty
-      MixUtils.pruneClients()
-      if (MixUtils.prunedClients.isEmpty) {
+      val wasOk = networkUtils.prunedClients.nonEmpty
+      networkUtils.pruneClients()
+      if (networkUtils.prunedClients.isEmpty) {
         logger.error("there is no node to connect to! will stop mixing until a node is available!")
         if (wasOk) {
           TrayUtils.showNotification("Can not connect to any node!", s"ErgoMixer can not connect to any specified nodes in the config. We stop mixing until the issue is resolved!")
@@ -42,7 +49,7 @@ class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
       } else {
         if (!wasOk) {
           logger.error("Issue with nodes is resolved, will continue mixing.")
-          TrayUtils.showNotification(s"Issue with node connectivity is resolved!", s"ErgoMixer can connect to ${MixUtils.prunedClients.length} nodes, will continue mixing!")
+          TrayUtils.showNotification(s"Issue with node connectivity is resolved!", s"ErgoMixer can connect to ${networkUtils.prunedClients.length} nodes, will continue mixing!")
         }
 
         logger.info("covert mixes: " + Try(mixerJobs.covertMixer.processCovert()))
@@ -65,8 +72,8 @@ class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
       logger.info(s"$currentTimeString: Refreshing stats: jobs started")
       val res = mixerJobs.statScanner.scanTokens
       if (res != (Map.empty, 1000000)) {
-        Stats.tokenPrices = Some(res._1)
-        Stats.entranceFee = Some(res._2)
+        Configs.tokenPrices = Some(res._1)
+        Configs.entranceFee = Some(res._2)
       }
 
       val idToParam = mutable.Map.empty[String, EntityInfo]
@@ -74,7 +81,7 @@ class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
       Configs.dynamicFeeRate = idToParam.head._2.dynamicFeeRate
       Configs.params = idToParam
 
-      Stats.ringStats = mixerJobs.statScanner.ringStats()
+      Configs.ringStats = mixerJobs.statScanner.ringStats()
 
       logger.info("pruneDB: " + Try(mixerJobs.pruneDb.processPrune()))
 

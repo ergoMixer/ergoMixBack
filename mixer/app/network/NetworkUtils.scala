@@ -1,23 +1,25 @@
-package cli
+package network
 
 import app._
-import helpers.Util
-import mixer.Models.OutBox
-import mixer.{BlockExplorer, GetURL, Models}
+import javax.inject.{Inject, Singleton}
+import mixinterface.TokenErgoMix
+import models.Models
+import models.Models.OutBox
 import org.ergoplatform.appkit.{BlockchainContext, ErgoClient, InputBox}
 import play.api.Logger
+import wallet.WalletHelper
 
-object MixUtils {
+@Singleton
+class NetworkUtils @Inject()(explorer: BlockExplorer) {
   private val logger: Logger = Logger(this.getClass)
 
   var allClients: Seq[ErgoClient] = Seq()
   var prunedClients: Seq[ErgoClient] = Seq()
   var tokenErgoMix: Option[TokenErgoMix] = None
-  val explorer = new BlockExplorer
 
   def pruneClients(): Unit = {
     val explorerHeight = explorer.getHeight
-    prunedClients = MixUtils.allClients.filter(client => {
+    prunedClients = allClients.filter(client => {
       try {
         client.execute(ctx => {
           val nodeHeight = ctx.getHeight
@@ -34,7 +36,7 @@ object MixUtils {
 
   def usingClient[T](f: BlockchainContext => T): T = {
     if (prunedClients.isEmpty) throw new Exception("There are no available nodes to connect to")
-    val rndClient = prunedClients(Util.randInt(prunedClients.size))
+    val rndClient = prunedClients(WalletHelper.randInt(prunedClients.size))
     rndClient.execute { ctx =>
       f(ctx)
     }
@@ -46,7 +48,6 @@ object MixUtils {
    */
   def getUnspentBoxes(address: String): Seq[OutBox] = {
     usingClient { implicit ctx =>
-      val explorer = new BlockExplorer()
       explorer.getUnspentBoxes(address)
     }
   }
@@ -57,7 +58,6 @@ object MixUtils {
    */
   def getConfirmationsForBoxId(boxId: String): Int = {
     usingClient { implicit ctx =>
-      val explorer = new BlockExplorer()
       explorer.getConfirmationsForBoxId(boxId)
     }
   }
@@ -68,13 +68,12 @@ object MixUtils {
    */
   def getHalfMixBoxes(considerPool: Boolean = false): List[OutBox] = {
     usingClient { implicit ctx =>
-      val explorer = new BlockExplorer()
       var txPool = ""
       if (considerPool) txPool = explorer.getPoolTransactionsStr
       val unspentBoxes = getUnspentBoxes(tokenErgoMix.get.halfMixAddress.toString)
       unspentBoxes.filter(box => {
         (!considerPool || !txPool.contains(s""""${box.id.toString}","txId"""")) && // not already in mempool
-          !TokenErgoMix.poisonousHalfs.contains(box.ge("R4")) // not poisonous
+          !WalletHelper.poisonousHalfs.contains(box.ge("R4")) // not poisonous
       }).toList
     }
   }
@@ -95,7 +94,6 @@ object MixUtils {
    */
   def getTokenEmissionBoxes(numToken: Int, considerPool: Boolean = false): List[OutBox] = {
     usingClient { implicit ctx =>
-      val explorer = new BlockExplorer()
       var txPool = ""
       if (considerPool) txPool = explorer.getPoolTransactionsStr
       getUnspentBoxes(tokenErgoMix.get.tokenEmissionAddress.toString).filter(box => {
@@ -136,7 +134,6 @@ object MixUtils {
    */
   def getOutBoxById(boxId: String): OutBox = {
     usingClient { implicit ctx =>
-      val explorer = new BlockExplorer()
       explorer.getBoxById(boxId)
     }
   }
@@ -147,7 +144,6 @@ object MixUtils {
    */
   def getSpendingTxId(boxId: String) = {
     usingClient { implicit ctx =>
-      val explorer = new BlockExplorer()
       explorer.getSpendingTxId(boxId)
     }
   }
@@ -159,7 +155,6 @@ object MixUtils {
   def isTxInPool(txId: String): Boolean = {
     usingClient { implicit ctx =>
       try {
-        val explorer = new BlockExplorer()
         explorer.doesTxExistInPool(txId)
       } catch {
         case _: Throwable => false
@@ -173,7 +168,6 @@ object MixUtils {
    */
   def getFeeEmissionBoxes(considerPool: Boolean = false): Seq[OutBox] = {
     usingClient { implicit ctx =>
-      val explorer = new BlockExplorer()
       var txPool = ""
       if (considerPool) txPool = explorer.getPoolTransactionsStr
       getUnspentBoxes(tokenErgoMix.get.feeEmissionAddress.toString).filter(box => box.spendingTxId.isEmpty
@@ -191,14 +185,19 @@ object MixUtils {
   }
 
   /**
-   * @param secret  secret associated with mix round
-   * @param isAlice was box created as alice or bob
-   * @param ctx     blockchain context
-   * @return Alic or Bob implementation based on isAlice
+   * whether boxId is double spent
+   * @param boxId box id
+   * @param wrtBoxId other box in the tx. if the boxId is spent and this box is also present int the tx then there is no double spending
+   * @return
    */
-  def getProver(secret: BigInt, isAlice: Boolean)(implicit ctx: BlockchainContext): ergomix.FullMixBoxSpender = {
-    if (isAlice) new AliceImpl(secret.bigInteger)
-    else new BobImpl(secret.bigInteger)
-  }
+  def isDoubleSpent(boxId: String, wrtBoxId: String): Boolean = usingClient { implicit ctx =>
+    explorer.getSpendingTxId(boxId).flatMap { txId =>
+      // boxId has been spent, while the fullMixBox generated has zero confirmations. Looks like box has been double-spent elsewhere
+      explorer.getTransaction(txId).map { tx =>
+        // to be sure, get the complete tx and check that none if its outputs are our fullMixBox
+        !tx.outboxes.map(_.id).contains(wrtBoxId)
+      }
+    }
+  }.getOrElse(false)
 
 }

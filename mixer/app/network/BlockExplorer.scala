@@ -1,15 +1,18 @@
-package mixer
+package network
 
 import java.io.InputStream
 import java.net.{HttpURLConnection, URLConnection}
 
 import app.Configs
 import io.circe.Json
-import mixer.Models.{InBox, OutBox, SpendTx}
-import org.ergoplatform.appkit.{BlockchainContext, ErgoToken}
+import javax.inject.Singleton
+import models.Models.{InBox, OutBox, SpendTx}
+import org.ergoplatform.appkit.ErgoToken
 
 import scala.util.{Failure, Success, Try}
 
+
+@Singleton
 class BlockExplorer() {
 
   private val baseUrl = Configs.explorerUrl
@@ -231,7 +234,7 @@ object GetURL {
       else new URL(url).openConnection(Configs.proxy)
     }
     headers.foreach { case (name, value) => connection.setRequestProperty(name, value) }
-    connection.setConnectTimeout(5000)
+    connection.setConnectTimeout(20000)
     connection
   }
 

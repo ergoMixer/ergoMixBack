@@ -2,37 +2,34 @@ package controllers
 
 import java.nio.file.Paths
 
-import app.{Configs, Util => EUtil}
-import cli.MixUtils
-import db.Columns._
-import db.ScalaDB._
-import helpers.ErgoMixerUtils.getStackTraceStr
-import helpers.{ErgoMixerUtils, Stats}
+import app.Configs
+import helpers.ErgoMixerUtils
 import info.BuildInfo
 import io.circe.Json
 import io.circe.syntax._
 import javax.inject._
-import mixer.Models.MixBoxList
-import mixer.Models.MixWithdrawStatus.WithdrawRequested
+import mixer.ErgoMixer
+import models.Models.MixBoxList
+import network.NetworkUtils
 import org.ergoplatform.appkit.RestApiErgoClient
 import play.api.Logger
 import play.api.libs.json._
 import play.api.mvc._
-import services.ErgoMixingSystem
-import ErgoMixerUtils.getStackTraceStr
 import com.zaxxer.hikari.HikariDataSource
 import org.apache.commons.lang3._
 import play.api.db.Database
 import helpers.TrayUtils.showNotification
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext
 import scala.io.Source
 
 /**
  * A controller inside of Mixer controller.
  */
-class ApiController @Inject()(val controllerComponents: ControllerComponents, db: Database)(implicit ec: ExecutionContext) extends BaseController {
+class ApiController @Inject()(assets: Assets, controllerComponents: ControllerComponents, db: Database, ergoMixerUtils: ErgoMixerUtils,
+                              ergoMixer: ErgoMixer, networkUtils: NetworkUtils
+                             )(implicit ec: ExecutionContext) extends AbstractController(controllerComponents) {
+  import networkUtils._
 
-  private lazy val ergoMixer = ErgoMixingSystem.ergoMixer
   private val logger: Logger = Logger(this.getClass)
 
   /**
@@ -78,7 +75,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
       var addresses: Array[String] = Array()
       try {
         for (_ <- 1 to countAddress) {
-          val res = MixUtils.deriveNextAddress(nodeAddress, apiKey)
+          val res = deriveNextAddress(nodeAddress, apiKey)
           val resJson: Json = io.circe.parser.parse(res).getOrElse(Json.Null)
           addresses :+= resJson.hcursor.downField("address").as[String].getOrElse(null)
         }
@@ -90,7 +87,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
         ).as("application/json")
       } catch {
         case ex: Throwable =>
-          logger.error(s"error in controller ${getStackTraceStr(ex)}")
+          logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(ex)}")
           BadRequest(
             s"""
                |{
@@ -116,7 +113,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
   def rings: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     Ok(
       s"""
-         |${Stats.ringStats.asJson}
+         |${Configs.ringStats.asJson}
          |""".stripMargin
     ).as("application/json")
   }
@@ -142,12 +139,12 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
   def backup: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     try {
       if (SystemUtils.IS_OS_WINDOWS) db.shutdown()
-      val res = ErgoMixerUtils.backup()
+      val res = ergoMixerUtils.backup()
       Ok.sendFile(new java.io.File(res))
 
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
@@ -158,12 +155,10 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
   def restore = Action(parse.multipartFormData) { request =>
     try {
       val path = System.getProperty("user.home")
-      request.body
-        .file("myFile")
-        .map { backup =>
+      request.body.file("myFile").map { backup =>
           db.shutdown()
           backup.ref.copyTo(Paths.get(s"$path/ergoMixer/ergoMixerRestore.zip"), replace = true)
-          ErgoMixerUtils.restore()
+          ergoMixerUtils.restore()
           System.exit(0)
           Ok("Backup restored")
         }
@@ -173,7 +168,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
 
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
@@ -191,7 +186,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
     val nodes = Configs.nodes.map(url =>
       s"""{
          |  "url": "$url",
-         |  "canConnect": ${MixUtils.prunedClients.map(_.asInstanceOf[RestApiErgoClient].getNodeUrl).contains(url)}
+         |  "canConnect": ${prunedClients.map(_.asInstanceOf[RestApiErgoClient].getNodeUrl).contains(url)}
          |}""".stripMargin)
     Ok(
       s"""
@@ -213,6 +208,8 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
     val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
     val numRounds: Int = js.hcursor.downField("numRounds").as[Int].getOrElse(-1)
     val addresses: Seq[String] = js.hcursor.downField("addresses").as[Seq[String]].getOrElse(Nil).map(_.trim)
+    val privateKey: String = js.hcursor.downField("privateKey").as[String].getOrElse("")
+    val nameCovert: String = js.hcursor.downField("nameCovert").as[String].getOrElse("")
     if (numRounds == -1) {
       BadRequest(
         s"""
@@ -224,7 +221,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
       ).as("application/json")
     } else {
       try {
-        val addr = ergoMixer.newCovertRequest(numRounds, addresses)
+        val addr = ergoMixer.newCovertRequest(nameCovert, numRounds, addresses, privateKey)
         Ok(
           s"""{
              |  "success": true,
@@ -233,7 +230,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
         ).as("application/json")
       } catch {
         case e: Throwable =>
-          logger.error(s"error in controller ${getStackTraceStr(e)}")
+          logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
           BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
       }
 
@@ -273,10 +270,36 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
         ).as("application/json")
       } catch {
         case e: Throwable =>
-          logger.error(s"error in controller ${getStackTraceStr(e)}")
+          logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
           BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
       }
     }
+  }
+
+  /**
+   * A post endpoint to change a covert's name
+   * example input:
+   * {
+   * "name": ""
+   * }
+   *
+   * @param covertId covert id
+   */
+  def covertChangeName(covertId: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
+    val name: String = js.hcursor.downField("nameCovert").as[String].getOrElse("")
+      try {
+        ergoMixer.handleNameCovert(covertId, name)
+        Ok(
+          s"""{
+             |  "success": true
+             |}""".stripMargin
+        ).as("application/json")
+      } catch {
+        case e: Throwable =>
+          logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+          BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+      }
   }
 
   /**
@@ -296,7 +319,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
            |}""".stripMargin).as("application/json")
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
 
@@ -314,7 +337,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
       Ok(s"[${addresses.mkString(",")}]".stripMargin).as("application/json")
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
 
@@ -335,7 +358,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
                |}""".stripMargin).as("application/json")
         } catch {
           case e: Throwable =>
-            logger.error(s"error in controller ${getStackTraceStr(e)}")
+            logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
             BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
         }
       case _ => BadRequest("{\"status\": \"error\"}").as("application/json")
@@ -356,7 +379,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
       ).as("application/json")
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"status": "error", "message": "${e.getMessage}"}""").as("application/json")
     }
   }
@@ -373,7 +396,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
       ).as("application/json")
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
@@ -387,7 +410,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
       Ok(res).as("application/json")
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
@@ -414,7 +437,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
       Ok(res).as("application/json")
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
@@ -428,7 +451,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
       Ok(res).as("application/json")
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
@@ -444,8 +467,8 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
           withdrawTxId = mix.withdraw.get.txId
         }
         val lastMixTime = {
-          if (mix.fullMix.isDefined) ErgoMixerUtils.prettyDate(mix.fullMix.get.createdTime)
-          else if (mix.halfMix.isDefined) ErgoMixerUtils.prettyDate(mix.halfMix.get.createdTime)
+          if (mix.fullMix.isDefined) ergoMixerUtils.prettyDate(mix.fullMix.get.createdTime)
+          else if (mix.halfMix.isDefined) ergoMixerUtils.prettyDate(mix.halfMix.get.createdTime)
           else "None"
         }
 
@@ -473,7 +496,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
       Ok(res).as("application/json")
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
@@ -499,7 +522,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
       }
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
@@ -515,7 +538,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
            |  "boxInTransaction": ${Configs.maxOuts},
            |  "distributeFee": ${Configs.distributeFee},
            |  "startFee": ${Configs.startFee},""".stripMargin
-      val tokenPrices = Stats.tokenPrices.orNull
+      val tokenPrices = Configs.tokenPrices.orNull
       if (tokenPrices == null) {
         BadRequest(
           s"""
@@ -526,7 +549,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
              |""".stripMargin
         ).as("application/json")
       } else {
-        val rate = Stats.entranceFee.getOrElse(1000000)
+        val rate = Configs.entranceFee.getOrElse(1000000)
         tokenPrices.foreach {
           element => res += s"""  "${element._1}": ${element._2},""".stripMargin
         }
@@ -538,7 +561,7 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
       }
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
@@ -569,9 +592,19 @@ class ApiController @Inject()(val controllerComponents: ControllerComponents, db
 
     } catch {
       case e: Throwable =>
-        logger.error(s"error in controller ${getStackTraceStr(e)}")
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
+  }
+
+  def index = Action {
+    Redirect("/dashboard")
+  }
+
+  def dashboard: Action[AnyContent] = assets.at("index.html")
+
+  def assetOrDefault(resource: String): Action[AnyContent] = {
+    if (resource.contains(".")) assets.at(resource) else dashboard
   }
 }
 

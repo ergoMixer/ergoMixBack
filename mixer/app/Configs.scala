@@ -2,8 +2,8 @@ package app
 
 import java.net.Proxy
 
-import helpers.{ConfigHelper, ErgoMixerUtils}
-import mixer.Models.EntityInfo
+import helpers.ConfigHelper
+import models.Models.EntityInfo
 
 import scala.collection.mutable
 
@@ -12,6 +12,7 @@ object Configs extends ConfigHelper {
   lazy val explorerUrl: String = readKey("explorerBackend")
   lazy val explorerFrontend: String = readKey("explorerFrontend")
   lazy val networkType: String = readKey("networkType")
+  lazy val isMainnet: Boolean = networkType.toLowerCase().equals("mainnet")
   lazy val jobInterval: Int = readKey("jobInterval").toInt
   lazy val statisticJobsInterval: Int = readKey("statisticJobsInterval").toInt
   lazy val numConfirmation: Int = readKey("numConfirmation").toInt
@@ -34,11 +35,17 @@ object Configs extends ConfigHelper {
   val ergRing: Long = 1e6.toLong // erg ring used in mixing tokens
   val minPossibleErgInBox: Long = 1e4.toLong
 
+  // proxy config
+  val proxyUrl: String = readKey("proxy.url", "")
+  val proxyPort: Int = readKey("proxy.port", "-1").toInt
+  val proxyProtocol = readKey("proxy.protocol", "")
   var proxy: Proxy = _
-  ErgoMixerUtils.handleProxy(readKey("proxy.url", ""), readKey("proxy.port", "-1").toInt,
-    readKey("proxy.protocol", ""))
 
   lazy val periodTimeRings: Long = 24L * 3600L * 1000L // Period time for calculate number of spent halfBox
   lazy val limitGetTransaction = 1000 // Limit for get transaction from explorer
-}
 
+  // stats
+  var tokenPrices: Option[Map[Int, Long]] = None
+  var entranceFee: Option[Int] = None
+  var ringStats = mutable.Map.empty[String, mutable.Map[Long, mutable.Map[String, Long]]]
+}
