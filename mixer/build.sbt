@@ -11,7 +11,7 @@ libraryDependencies ++= Seq(evolutions, jdbc)
 
 lazy val commonSettings = Seq(
   organization := "ergoMixer",
-  version := "3.1.0",
+  version := "3.2.0",
   scalaVersion := "2.12.10",
   resolvers ++= Seq(sonatypeReleases,
     "SonaType" at "https://oss.sonatype.org/content/groups/public",
@@ -71,7 +71,8 @@ libraryDependencies ++= Seq(
   "com.h2database" % "h2" % "1.4.199",
   "org.ergoplatform" %% "ergo-appkit" % "mixer-appkit-SNAPSHOT",
   "org.mockito" % "mockito-core" % "3.3.0",
-  "org.apache.commons" % "commons-lang3" % "3.11"
+  "org.apache.commons" % "commons-lang3" % "3.11",
+  "org.webjars" % "swagger-ui" % "3.38.0"
 )
 
 enablePlugins(JDKPackagerPlugin)

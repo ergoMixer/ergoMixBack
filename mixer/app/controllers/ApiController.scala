@@ -38,7 +38,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    * @return route /swagger with query params {"url": "/swagger.conf"}
    */
   def redirectDocs: Action[AnyContent] = Action {
-    Redirect(url = "/docs/index.html", queryStringParams = Map("url" -> Seq("/swagger.conf")))
+    Redirect(url = "/docs/index.html?url=/swagger.conf")
   }
 
   /**
