@@ -26,64 +26,56 @@ NOTE: If you want to use pre-built binaries and just run the ErgoMixer skip all 
     First you need to download an archive with the [latest release](https://github.com/oracle/graal/releases) of GraalVM (e.g.`graalvm-ce-java8-linux-amd64-19.3.1.tar.gz`) for Linux and put its content in your `$PATH` :
 
     ```shell
-    cd <your/directory/with/downloaded/graal>
-    tar -zxf graalvm-ce-java8-linux-amd64-19.3.1.tar.gz
-    export GRAAL_HOME=<your/directory/with/downloaded/graal>/graalvm-ce-java8-19.3.1
-    export PATH=$PATH:${GRAAL_HOME}/bin
+    $ cd <your/directory/with/downloaded/graal>
+    $ tar -zxf graalvm-ce-java8-linux-amd64-19.3.1.tar.gz
+    $ export GRAAL_HOME=<your/directory/with/downloaded/graal>/graalvm-ce-java8-19.3.1
+    $ export PATH=$PATH:${GRAAL_HOME}/bin
     ```
     
     The same for MacOS:
   
     ```shell
-    cd <your/directory/with/downloaded/graal>
-    tar -zxf graalvm-ce-darwin-amd64-19.3.1.tar.gz
-    export GRAAL_HOME=<your/directory/with/downloaded/graal>/graalvm-ce-java8-19.3.1/Contents/Home
-    export PATH=$PATH:${GRAAL_HOME}/bin
+    $ cd <your/directory/with/downloaded/graal>
+    $ tar -zxf graalvm-ce-darwin-amd64-19.3.1.tar.gz
+    $ export GRAAL_HOME=<your/directory/with/downloaded/graal>/graalvm-ce-java8-19.3.1/Contents/Home
+    $ export PATH=$PATH:${GRAAL_HOME}/bin
     ```
 
   * #### Build the Appkit project
     There is a slightly modified version of appkit in this repository. So, in order to build the mixer you first need to publish appkit locally in the Ivy repository:
     ```shell
-    cd <your_directory_clone_project>/mixer/appkit
-    sbt publishLocal
+    $ cd <your_directory_clone_project>/mixer/appkit
+    $ sbt publishLocal
     ```
 
 ### Build the ErgoMixer:
   * #### Frontend
       Use the following command to get the latest frontend:
       ```shell
-      git submodule update --init
+      $ git submodule update --init
       ```
-      Then build the `ergoMixFront` by following [these](https://github.com/ergoMixer/ergoMixFront/blob/master/README.md) instructions.
-
-      ```shell
-      cd ergoMixFront/
-      npm install
-      npm run build
-      ```
+      Then build the `ergomixfront` by following [these](https://github.com/ergoMixer/ergoMixFront/blob/master/README.md) instructions.
       
       Then, use the built front in the backend by using the following command in `ergomixback` directory:
       ```shell
-      mv ergoMixFront/build/ mixer/public
+      $ mv ergomixfront/build/ mixer/public
       ```
   * #### Backend      
     Finally, build the backend:
     ```shell
-    cd mixer/
-    sbt assembly
+    $ cd <your_directory_clone_project>/mixer/mixer
+    $ sbt assembly
     ```
     The jar file will appear in `target/scala-2.12/` directory.
-    
 
 ## Run mixer
 After building the project or [downloading](https://github.com/ergoMixer/ergoMixBack/releases) jar file, to run the ErgoMixer with default config (A node and explorer in Mainnet network) use:
 ```shell
-cd target/scala-2.12/
-java -jar ergoMixer-*.jar
+$ java -jar ergoMixer-<version>.jar
 ```
 Also to run the ErgoMixer with a custom config file use:
 ```shell
-java -jar -D"config.file"=<path-your-config>/customConfig.conf ergoMixer-<version>.jar
+$ java -jar -D"config.file"=<path-your-config>/customConfig.conf ergoMixer-<version>.jar
 ```
 You can use this [config file](mixer/sample.conf) and change it as you want.
 
@@ -92,14 +84,14 @@ The database will be saved in your home directory. This database contains all th
 ## Docker Quick Start
   The ergoMixer has officially supported Docker package, to run the ErgoMixer with default config (A node and explorer in Mainnet network) use:
   ```shell
-    docker run -p 127.0.0.1:9000:9000 \
+    $ docker run -p 127.0.0.1:9000:9000 \
       --restart=always \
       -v /path/on/host/to/ergo/database_and_logfile:/home/ergo/ergoMixer \
       -d ergomixer/mixer:latest 
   ```
   Also to run the ErgoMixer with a custom config file use:
   ```shell
-    docker run -p 127.0.0.1:9000:9000 \
+    $ docker run -p 127.0.0.1:9000:9000 \
       --restart=always \
       -v /path/on/host/to/ergo/database_and_logfile:/home/ergo/ergoMixer \
       -v <path-your-config-file>/yourConfig.conf:/home/ergo/mixer/application.conf \
