@@ -78,6 +78,17 @@ To get the Mixer up and running you have a few options:
 3. <a href="#run-mixer">Download the latest `.jar`</a>
 4. <a href="#Manual-Installation">Build from source</a>
 
+
+
+<!-- USAGE EXAMPLES -->
+## Usage
+
+When you open the Mixer, the home page displays information about the system and how each component works. ErgoMixer will also be available from your menu bar. 
+
+![ErgoMixerMenu](data/menu.png)
+
+
+## Installation
 ### Quick Start Shell Script
 
 Open your favourite terminal and enter the following:
@@ -107,50 +118,15 @@ docker run -p 127.0.0.1:9000:9000 \
 
 
 
-<!-- USAGE EXAMPLES -->
-## Usage
-
-When you open the Mixer, the home page displays information about the system and how each component works. ErgoMixer will also be available from your menu bar. 
-
-![ErgoMixerMenu](data/menu.png)
 
 <!-- MANUAL -->
-## Manual Installation
+### Manual Installation
 
-
+You will need JDK and SBT installed. 
   * #### OpenJDK 8
     Install an appropriate version of OpenJDK 8 from [Here](https://jdk.java.net/java-se-ri/8-MR3) based on your OS.
   * #### SBT 1.2.7
     Depending on your OS, you can follow instructions in [this](https://www.scala-sbt.org/1.0/docs/Setup.html) page to install sbt.
-
-  * #### GraalVM
-
-    #### Install GraalVM Community Edition on MacOS and Linux
-    
-    First you need to download an archive with the [latest release](https://github.com/oracle/graal/releases) of GraalVM (e.g.`graalvm-ce-java8-linux-amd64-19.3.1.tar.gz`) for Linux and put its content in your `$PATH` :
-
-    ```shell
-    $ cd <your/directory/with/downloaded/graal>
-    $ tar -zxf graalvm-ce-java8-linux-amd64-19.3.1.tar.gz
-    $ export GRAAL_HOME=<your/directory/with/downloaded/graal>/graalvm-ce-java8-19.3.1
-    $ export PATH=$PATH:${GRAAL_HOME}/bin
-    ```
-    
-    The same for MacOS:
-  
-    ```shell
-    $ cd <your/directory/with/downloaded/graal>
-    $ tar -zxf graalvm-ce-darwin-amd64-19.3.1.tar.gz
-    $ export GRAAL_HOME=<your/directory/with/downloaded/graal>/graalvm-ce-java8-19.3.1/Contents/Home
-    $ export PATH=$PATH:${GRAAL_HOME}/bin
-    ```
-
-  * #### Build the Appkit project
-    There is a slightly modified version of appkit in this repository. So, in order to build the mixer you first need to publish appkit locally in the Ivy repository:
-    ```shell
-    $ cd <your_directory_clone_project>/mixer/appkit
-    $ sbt publishLocal
-    ```
 
 ### Build the ErgoMixer:
   * #### Frontend
@@ -184,6 +160,40 @@ $ java -jar -D"config.file"=<path-your-config>/customConfig.conf ergoMixer-*.jar
 You can use this [config file](mixer/sample.conf) and change it as you want.
 
 The database will be saved in your home directory. This database contains all the information and secrets being used by the mixer, So, take good care of it.
+
+#### GraalVM
+GraalVM is not strictly necessary to run Appkit, unless you really use Graal features like running JavaScript.
+
+1) You may for some reason like JS and want to develop Ergo dApps using Node.js, then you can use Appkit from Node.js. 
+2) Or you have existing Node.js backend application and want it to seamlessly integrate with Ergo from the same Node.js process. Then you can run your entire Node.js under GraalVM (which is fully supported by the Graal team) and then just use Appkit from your legacy code directly
+3) You may have other use cases with other language in similar ways. Some experiments [here](https://github.com/aslesarenko/ergo-appkit-examples)
+
+    #### Install GraalVM Community Edition on MacOS and Linux
+    
+    First you need to download an archive with the [latest release](https://github.com/oracle/graal/releases) of GraalVM (e.g.`graalvm-ce-java8-linux-amd64-19.3.1.tar.gz`) for Linux and put its content in your `$PATH` :
+
+    ```shell
+    $ cd <your/directory/with/downloaded/graal>
+    $ tar -zxf graalvm-ce-java8-linux-amd64-19.3.1.tar.gz
+    $ export GRAAL_HOME=<your/directory/with/downloaded/graal>/graalvm-ce-java8-19.3.1
+    $ export PATH=$PATH:${GRAAL_HOME}/bin
+    ```
+    
+    The same for MacOS:
+  
+    ```shell
+    $ cd <your/directory/with/downloaded/graal>
+    $ tar -zxf graalvm-ce-darwin-amd64-19.3.1.tar.gz
+    $ export GRAAL_HOME=<your/directory/with/downloaded/graal>/graalvm-ce-java8-19.3.1/Contents/Home
+    $ export PATH=$PATH:${GRAAL_HOME}/bin
+    ```
+
+  * #### Build the Appkit project
+    There is a slightly modified version of appkit in this repository. So, in order to build the mixer you first need to publish appkit locally in the Ivy repository:
+    ```shell
+    $ cd <your_directory_clone_project>/mixer/appkit
+    $ sbt publishLocal
+    ```
 
 <!-- ROADMAP -->
 ## Roadmap
