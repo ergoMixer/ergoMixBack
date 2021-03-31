@@ -66,22 +66,17 @@ ErgoMixer is a web application for mixing ergs and tokens based on Ergo platform
 
 * [OpenJDK 8](https://jdk.java.net/java-se-ri/8-MR3)
 * [SBT 1.2.7](https://www.scala-sbt.org/1.0/docs/Setup.html)
-* [GraalVM]((https://github.com/oracle/graal/releases)) (Only required for advanced javascript features)
-
-
-
-## Overview
-
-
-ErgoMixer is a web application for mixing ergs and tokens based on Ergo platform. ErgoMixer is completely serverless; It only needs to connect to the explorer and a node (any node! no api_key is needed). 
-
-
+* [GraalVM](https://github.com/oracle/graal/releases) (Only required for advanced javascript features)
 
 
 <!-- GETTING STARTED -->
 ## Getting Started
 
-To get an instantiation of the Mixer up without much effort, you can build from source using the install script, use docker, or simply download and run the `.jar` file.
+To get the Mixer up and running you have a few options:
+1. <a href="#Quick-Start-Shell-Script">Quick-Start Shell Script</a> - builds from source (UNIX systems)
+2. <a href="#docker-quick-start">Docker Quick Start</a>
+3. <a href="#run-mixer">Download the latest `.jar`</a>
+4. <a href="#Manual-Installation">Build from source</a>
 
 ### Quick Start Shell Script
 
@@ -213,14 +208,6 @@ Contributions are what make the open source community such an amazing place to b
 
 Distributed under the MIT License. See `LICENSE` for more information.
 
-
-<!-- CONTACT -->
-## Contact
-
-
-
-<!-- ACKNOWLEDGEMENTS -->
-## Acknowledgements
 
 
 
