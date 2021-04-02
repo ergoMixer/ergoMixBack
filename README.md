@@ -10,6 +10,7 @@ NOTE: If you want to use pre-built binaries and just run the ErgoMixer skip all 
     - [Build the ErgoMixer:](#build-the-ergomixer)
   - [Run mixer](#run-mixer)
   - [Docker Quick Start](#docker-quick-start)
+  - [Notes](#notes)
 
 
 ## Setup
@@ -102,8 +103,32 @@ The database will be saved in your home directory. This database contains all th
   
   NOTE: The `/path/on/host/to/ergo/database_and_logfile` directory must have `777` permission or have owner/group numeric id equal to `9052` to be writable by the container.
   
+## Notes
+  * Database schema for version `3.0.0` has changed; So, please consider binding to a different location if you previously have used an older version.
 
-  NOTE: Database schema for version 3.0.0 has changed; So, please consider binding to a different location if you previously have used an older version.
-
-  NOTE: If you want to buy SigmaUSD/SigmaRSV directly from the mixer, DO NOT SET withdrawal address when creating the mix/covert address and use "Set Later" option. 
+  * If you want to buy SigmaUSD/SigmaRSV directly from the mixer, DO NOT SET withdrawal address when creating the mix/covert address and use "Set Later" option. 
         Later, at the moment of buying SigmaUSD/SigmaRSV, set withdraw address and choose "AGE USD" option.
+        
+  * If you now using manuall file config for your mixer after version `3.3.0` you must be update your config file, section `play.http` for using age-usd, like the following configuration:
+    ```
+    play: {
+      http {
+            filters="filters.CorsFilters",
+            fileMimeTypes = ${play.http.fileMimeTypes} """
+                     wasm=application/wasm
+                    """
+           }
+      filters {
+        hosts {
+          # Allow requests to example.com, its subdomains, and localhost:9000.
+          allowed = ["localhost", "127.0.0.1"]
+        }
+        cors {
+          pathPrefixes = ["/"]
+          allowedOrigins = null,
+          allowedHttpMethods = ["GET", "POST"]
+          allowedHttpHeaders = null
+        }
+      }
+    }
+    ```
