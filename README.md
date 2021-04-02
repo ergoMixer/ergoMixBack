@@ -104,12 +104,12 @@ The database will be saved in your home directory. This database contains all th
   NOTE: The `/path/on/host/to/ergo/database_and_logfile` directory must have `777` permission or have owner/group numeric id equal to `9052` to be writable by the container.
   
 ## Notes
-  * Database schema for version `3.0.0` has changed; So, please consider binding to a different location if you previously have used an older version.
+  * From version `3.0.0 ` database scheme is changed; So, please consider binding to a different location if you have previously used an older version.
 
-  * If you want to buy SigmaUSD/SigmaRSV directly from the mixer, DO NOT SET withdrawal address when creating the mix/covert address and use "Set Later" option. 
-        Later, at the moment of buying SigmaUSD/SigmaRSV, set withdraw address and choose "AGE USD" option.
+  * In order to buy SigmaUSD/SigmaRSV directly from the mixer, DO NOT SET withdrawal address when creating the mix/covert address and use "Set Later" option. 
+        Later, at the moment of buying SigmaUSD/SigmaRSV, set withdraw address and choose "AGE USD" option. Only completed boxes can be used for buying SigmaUSD/SigmaRSV.
         
-  * If you now using manuall file config for your mixer after version `3.3.0` you must be update your config file, section `play.http` for using age-usd, like the following configuration:
+  * If you are using manual config file for running mixer, make sure to add this setting in the config file, under section `play.http`, in order to use SigmaUSD/SigmaRSV support:
     ```
     play: {
       http {
