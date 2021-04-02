@@ -107,7 +107,7 @@ The database will be saved in your home directory. This database contains all th
   * From version `3.0.0 ` database scheme is changed; So, please consider binding to a different location if you have previously used an older version.
 
   * In order to buy SigmaUSD/SigmaRSV directly from the mixer, DO NOT SET withdrawal address when creating the mix/covert address and use "Set Later" option. 
-        Later, at the moment of buying SigmaUSD/SigmaRSV, set withdraw address and choose "AGE USD" option. Only completed boxes can be used for buying SigmaUSD/SigmaRSV.
+        Later, at the moment of buying SigmaUSD/SigmaRSV, set withdraw address and choose "SIG USD" option. Only completed boxes can be used for buying SigmaUSD/SigmaRSV.
         
   * If you are using manual config file for running mixer, make sure to add this setting in the config file, under section `play.http`, in order to use SigmaUSD/SigmaRSV support:
     ```
