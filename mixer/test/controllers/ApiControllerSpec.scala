@@ -2,6 +2,8 @@ package controllers
 
 import helpers.ErgoMixerUtils
 import mixer.ErgoMixer
+import mixinterface.AliceOrBob
+import db.Tables
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
@@ -23,6 +25,9 @@ class ApiControllerSpec extends PlaySpec with MockitoSugar with BeforeAndAfterAl
   var mockNetwork: NetworkUtils = _
   var mockErgoMixerUtils: ErgoMixerUtils = _
   var mockDb: Database = _
+  var mockExplorer: BlockExplorer = _
+  var mockAliceOrBob: AliceOrBob = _
+  var mockTables: Tables = _
   var ec: ExecutionContext = _
   var asset: Assets = _
 
@@ -31,10 +36,14 @@ class ApiControllerSpec extends PlaySpec with MockitoSugar with BeforeAndAfterAl
     mockNetwork = mock[NetworkUtils]
     mockErgoMixerUtils = mock[ErgoMixerUtils]
     mockDb = mock[Database]
+    mockExplorer = mock[BlockExplorer]
+    mockAliceOrBob = mock[AliceOrBob]
+    mockTables = mock[Tables]
 
     ec = mock[ExecutionContext]
     asset = mock[Assets]
-    controller = new ApiController(asset, stubControllerComponents(), mockDb, mockErgoMixerUtils, mockErgoMixer, mockNetwork)(ec)
+    controller = new ApiController(asset, stubControllerComponents(), mockDb, mockErgoMixerUtils, mockErgoMixer, mockNetwork,
+      mockExplorer, mockAliceOrBob, mockTables)(ec)
     super.beforeEach()
   }
   /** Check ordinary routes */
