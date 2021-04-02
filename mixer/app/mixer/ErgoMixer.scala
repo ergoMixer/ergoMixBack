@@ -9,9 +9,9 @@ import db.Tables
 import wallet.WalletHelper._
 import db.core.DataStructures.anyToAny
 import javax.inject.Inject
-import models.Models.MixStatus.{Complete, Queued}
+import models.Models.MixStatus.{Complete, Queued, Running}
 import models.Models.MixWithdrawStatus.{NoWithdrawYet, WithdrawRequested, Withdrawn}
-import models.Models.{CovertAsset, FullMix, GroupMixStatus, HalfMix, Mix, MixingBox, MixCovertRequest, MixGroupRequest, MixRequest, MixState, MixStatus, MixWithdrawStatus, Withdraw}
+import models.Models.{CovertAsset, FullMix, GroupMixStatus, HalfMix, Mix, MixCovertRequest, MixGroupRequest, MixRequest, MixState, MixStatus, MixWithdrawStatus, MixingBox, Withdraw}
 import network.NetworkUtils
 import play.api.Logger
 import wallet.{Wallet, WalletHelper}
@@ -39,7 +39,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
       }
       else {
         masterSecret = BigInt(privateKey, 16)
-        if(mixCovertTable.exists(masterSecretGroupCol === masterSecret)){
+        if (mixCovertTable.exists(masterSecretGroupCol === masterSecret)) {
           throw new Exception("this private key exist")
         }
       }
@@ -59,7 +59,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
   /**
    * Adds or updates name for a covert
    *
-   * @param covertId covert id
+   * @param covertId   covert id
    * @param nameCovert name for covert
    */
   def handleNameCovert(covertId: String, nameCovert: String): Unit = {
@@ -119,6 +119,64 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
     mixRequestsTable.update(withdrawAddressCol <-- address).where(mixIdCol === mixId)
   }
 
+  /**
+   * gets withdraw address of a mix
+   *
+   * @param mixId mix id
+   */
+  def getWithdrawAddress(mixId: String): String = {
+    mixRequestsTable.select(withdrawAddressCol).where(mixIdCol === mixId).firstAsT[String].head
+  }
+
+  /**
+   * gets master secret of a mix
+   *
+   * @param mixId mix id
+   */
+  def getMasterSecret(mixId: String): BigInt = {
+    mixRequestsTable.select(masterSecretCol).where(mixIdCol === mixId).firstAsT[BigDecimal].head.toBigInt()
+  }
+
+  /**
+   * gets round number of a mix
+   *
+   * @param mixId mix id
+   */
+  def getRoundNum(mixId: String): Int = {
+    mixStateTable.select(
+      roundCol
+    ).where(
+      mixIdCol === mixId,
+    ).firstAsT[Int].head
+  }
+
+  /**
+   * gets isAlice of a mix
+   *
+   * @param mixId mix id
+   */
+  def getIsAlice(mixId: String): Boolean = {
+    mixStateTable.select(
+      isAliceCol
+    ).where(
+      mixIdCol === mixId,
+    ).firstAsT[Boolean].head
+  }
+
+  /**
+   * gets full box id of a mix
+   *
+   * @param mixId mix id
+   */
+  def getFullBoxId(mixId: String): String = {
+    fullMixTable.select(
+      fullMixBoxIdCol of fullMixTable,
+    ).where(
+      (mixIdCol of fullMixTable) === mixId,
+      (mixIdCol of mixStateTable) === mixId,
+      (roundCol of fullMixTable) === (roundCol of mixStateTable),
+    ).firstAsT[String].head
+  }
 
   /**
    * sets mix for withdrawal
@@ -150,6 +208,20 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
   def getCovertCurrentMixing(covertId: String): Map[String, Long] = {
     val mp = mutable.Map.empty[String, Long]
     val mixBoxes = mixRequestsTable.selectStar.where(mixGroupIdCol === covertId, mixWithdrawStatusCol === NoWithdrawYet.value).as(MixRequest(_))
+    mixBoxes.foreach(box => mp(box.tokenId) = mp.getOrElse(box.tokenId, 0L) + box.getAmount)
+    mp.toMap
+  }
+
+  /**
+   * calculates amount of current running mixing for each asset of the covert request
+   *
+   * @param covertId covert id
+   * @return map of string to long, specifying token id to amount of current running mixing
+   */
+  def getCovertRunningMixing(covertId: String): Map[String, Long] = {
+    val mp = mutable.Map.empty[String, Long]
+    val mixBoxes = mixRequestsTable.selectStar.where(mixGroupIdCol === covertId, mixStatusCol === Running.value,
+      mixWithdrawStatusCol === NoWithdrawYet.value).as(MixRequest(_))
     mixBoxes.foreach(box => mp(box.tokenId) = mp.getOrElse(box.tokenId, 0L) + box.getAmount)
     mp.toMap
   }

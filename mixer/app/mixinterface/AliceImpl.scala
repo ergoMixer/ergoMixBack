@@ -151,4 +151,20 @@ class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit
 
     HalfMixTx(alice.sign(txToSign))
   }
+
+  override def getProver(f: FullMixBox): ErgoProver = {
+    val additionalDHTuples: Array[DHT] = Seq().toArray
+    val additionalDlogSecrets: Array[BigInteger] = Seq().toArray
+    val (gY, gXY) = (f.r4, f.r5)
+
+    additionalDHTuples.foldLeft(
+      additionalDlogSecrets.foldLeft(
+        ctx.newProverBuilder().withDHTData(g, gY, gX, gXY, x)
+      )(
+        (ergoProverBuilder, bigInteger) => ergoProverBuilder.withDLogSecret(bigInteger)
+      )
+    )(
+      (ergoProverBuilder, dh) => ergoProverBuilder.withDHTData(dh.gv, dh.hv, dh.uv, dh.vv, dh.x)
+    ).build()
+  }
 }

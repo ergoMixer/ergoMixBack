@@ -271,6 +271,10 @@ object JavaHelpers {
     createUnsignedInput(idBytes)
   }
 
+  def createDataInput(boxIdBytes: Array[Byte]): DataInput = {
+    DataInput(ADKey @@ boxIdBytes)
+  }
+
   def createUnsignedInput(boxIdBytes: Array[Byte]): UnsignedInput = {
     new UnsignedInput(ADKey @@ boxIdBytes)
   }

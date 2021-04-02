@@ -16,6 +16,9 @@ import scala.collection.immutable.Map;
 
 import java.math.BigInteger;
 import java.util.HashMap;
+import sigmastate.SType;
+import sigmastate.serialization.ValueSerializer;
+
 
 /**
  * This class is used to represent any valid value of ErgoScript language.
@@ -102,4 +105,26 @@ public class ErgoValue<T> {
         Coll value = JavaHelpers.SigmaDsl().Colls().fromMap(toScalaMap(mp), ErgoType.integerType().getRType(), ErgoType.longType().getRType());
         return new ErgoValue<>(value, type);
     }
+
+    /**
+     * Creates ErgoValue from hex encoded serialized bytes of Constant values.
+     * <p>
+     * In order to create ErgoValue you need to provide both value instance and
+     * ErgoType descriptor. This is similar to how values are represented in sigma
+     * ConstantNode. Each ConstantNode also have value instance and `tpe: SType`
+     * descriptor.
+     * Thus having ConstantNode we can use `Iso.isoErgoValueToSValue.from` method of to
+     * convert ConstantNode to ErgoValue.
+     *
+     * @param hex the string is obtained as hex encoding of serialized ConstantNode.
+     *            (The bytes obtained by ConstantSerializer in sigma)
+     * @return new deserialized ErgoValue instance
+     */
+    static public ErgoValue<?> fromHex(String hex) {
+        byte[] bytes = JavaHelpers.decodeStringToBytes(hex);
+        Values.EvaluatedValue<SType> c = (Values.EvaluatedValue<SType>)ValueSerializer.deserialize(bytes, 0);
+        ErgoValue<?> res = Iso.isoErgoValueToSValue().from(c);
+        return res;
+    }
+
 }

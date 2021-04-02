@@ -7,9 +7,12 @@ import java.util.Date
 import java.util.zip.{ZipEntry, ZipInputStream, ZipOutputStream}
 
 import app.Configs
+import io.circe.Json
 import javax.inject.Inject
 import network.NetworkUtils
 import play.api.Logger
+import sigmastate.SType
+import sigmastate.lang.SigmaParser
 
 class ErgoMixerUtils @Inject()(networkUtils: NetworkUtils) {
   private val logger: Logger = Logger(this.getClass)
@@ -52,9 +55,6 @@ class ErgoMixerUtils @Inject()(networkUtils: NetworkUtils) {
     new scala.util.Random(random).shuffle(seq).headOption
   }
 
-  def prettyDate(timestamp: Long): String = {
-    new SimpleDateFormat("YYYY-MM-dd HH:mm:ss").format(new Date(timestamp))
-  }
 
   def backup(): String = {
     val path = System.getProperty("user.home") + "/ergoMixer"

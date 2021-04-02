@@ -2,7 +2,7 @@ package db
 
 import db.ScalaDB._
 import models.Models.MixStatus.Queued
-import models.Models.MixWithdrawStatus.WithdrawRequested
+import models.Models.MixWithdrawStatus.{AgeUSDRequested, WithdrawRequested}
 import models.Models.{Deposit, MixHistory, MixRequest, WithdrawTx}
 import org.ergoplatform.appkit.SignedTransaction
 import play.api.Logger
@@ -219,18 +219,26 @@ class Tables @Inject() (playDB: Database, networkUtils: NetworkUtils, explorer: 
     mixTable.deleteWhere(mixIdCol === mixId, roundCol === round)
   }
 
-  val withdrawTable = Tab.withName("withdraw").withCols(mixIdCol, txIdCol, createdTimeCol, boxIdCol, txCol).withPriKey(mixIdCol)
-  private val withdrawArchiveTable = Tab.withName("withdraw_archived").withCols(mixIdCol, txIdCol, createdTimeCol, fullMixBoxIdCol, txCol, insertReasonCol).withPriKey()
+  val withdrawTable = Tab.withName("withdraw").withCols(mixIdCol, txIdCol, createdTimeCol, boxIdCol, txCol, additional_info).withPriKey(mixIdCol)
+  private val withdrawArchiveTable = Tab.withName("withdraw_archived").withCols(mixIdCol, txIdCol, createdTimeCol, fullMixBoxIdCol, txCol, additional_info, insertReasonCol).withPriKey()
 
-  def insertWithdraw(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte])(implicit insertReason: String) = {
+  def insertWithdraw(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte], withdrawStat: String = WithdrawRequested.value, additionalInfo: String = null)(implicit insertReason: String) = {
     withdrawTable.deleteWhere(mixIdCol === mixId)
-    withdrawTable.insert(mixId, txId, time, boxId, txBytes)
-    withdrawArchiveTable.insert(mixId, txId, time, boxId, txBytes, insertReason)
-    mixRequestsTable.update(mixWithdrawStatusCol <-- WithdrawRequested.value).where(mixIdCol === mixId)
+    withdrawTable.insert(mixId, txId, time, boxId, txBytes, additionalInfo)
+    withdrawArchiveTable.insert(mixId, txId, time, boxId, txBytes, additionalInfo, insertReason)
+    mixRequestsTable.update(mixWithdrawStatusCol <-- withdrawStat).where(mixIdCol === mixId)
   }
 
   def deleteWithdraw(mixId: String): Unit = {
     withdrawTable.deleteWhere(mixIdCol === mixId)
+  }
+
+  def getMintingTxs: Seq[WithdrawTx] = {
+    withdrawTable.selectStar
+      .where(
+        (mixIdCol of withdrawTable) === (mixIdCol of mixRequestsTable),
+        (mixWithdrawStatusCol of mixRequestsTable) === AgeUSDRequested.value
+      ).as(WithdrawTx(_))
   }
 
   val mixTransactionsTable = Tab.withName("mix_transactions").withCols(boxIdCol, txIdCol, txCol).withPriKey(boxIdCol) // saves the transaction in which boxIdCol is created

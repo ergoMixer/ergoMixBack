@@ -77,7 +77,7 @@ Also to run the ErgoMixer with a custom config file use:
 ```shell
 $ java -jar -D"config.file"=<path-your-config>/customConfig.conf ergoMixer-<version>.jar
 ```
-You can use this [config file](mixer/sample.conf) and change it as you want.
+You can use this [config file](mixer/reference.conf) and change it as you want.
 
 The database will be saved in your home directory. This database contains all the information and secrets being used by the mixer, So, take good care of it.
 
@@ -104,3 +104,6 @@ The database will be saved in your home directory. This database contains all th
   
 
   NOTE: Database schema for version 3.0.0 has changed; So, please consider binding to a different location if you previously have used an older version.
+
+  NOTE: If you want to buy SigmaUSD/SigmaRSV directly from the mixer, DO NOT SET withdrawal address when creating the mix/covert address and use "Set Later" option. 
+        Later, at the moment of buying SigmaUSD/SigmaRSV, set withdraw address and choose "AGE USD" option.

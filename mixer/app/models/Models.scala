@@ -99,6 +99,8 @@ object Models {
 
     object WithdrawRequested extends MixWithdrawStatus("withdrawing")
 
+    object AgeUSDRequested extends MixWithdrawStatus("minting")
+
     object Withdrawn extends MixWithdrawStatus("withdrawn")
 
     private def all = Seq(NoWithdrawYet, WithdrawRequested, Withdrawn)
@@ -107,13 +109,7 @@ object Models {
   }
 
   case class MixRequest(id: String, groupId: String, amount: Long, numRounds: Int, mixStatus: MixStatus, createdTime: Long, withdrawAddress: String, depositAddress: String, depositCompleted: Boolean, neededAmount: Long, numToken: Int, withdrawStatus: String, mixingTokenAmount: Long, neededTokenAmount: Long, tokenId: String) {
-    def creationTimePrettyPrinted: String = {
-      import java.text.SimpleDateFormat
 
-      val date = new Date(createdTime)
-      val formatter = new SimpleDateFormat("HH:mm:ss")
-      formatter.format(date)
-    }
 
     def isErg: Boolean = tokenId.isEmpty
 
@@ -149,9 +145,7 @@ object Models {
   }
 
   case class MixCovertRequest(nameCovert: String = "", id: String, createdTime: Long, depositAddress: String, numRounds: Int, isManualCovert: Boolean, masterKey: BigInt) {
-    def creationTimePrettyPrinted: String = {
-      new SimpleDateFormat("YYYY-MM-dd HH:mm:ss").format(new Date(createdTime))
-    }
+
 
     def getMinNeeded(ergRing: Long, tokenRing: Long): (Long, Long) = { // returns what is needed to distribute
       val needed = MixingBox.getPrice(ergRing, tokenRing, numRounds)
@@ -162,17 +156,18 @@ object Models {
       MixingBox.getPrice(ergRing, tokenRing, numRounds)
     }
 
-    def toJson(assets: Seq[CovertAsset], currentMixing: Map[String, Long] = Map.empty): String = {
+    def toJson(assets: Seq[CovertAsset], currentMixing: Map[String, Long] = Map.empty, runningMixing: Map[String, Long] = Map.empty): String = {
       val sortedAssets = assets.sortBy(_.lastActivity).reverse.sortBy(!_.isErg).sortBy(_.ring == 0)
       val assetJsons = sortedAssets.map(asset => {
         val curMixingAmount = currentMixing.getOrElse(asset.tokenId, 0L)
-        if (asset.isErg) asset.toJson(MixingBox.getPrice(asset.ring, 0, numRounds)._1, curMixingAmount)
-        else asset.toJson(MixingBox.getTokenPrice(asset.ring), curMixingAmount)
+        val runningMixingAmount = runningMixing.getOrElse(asset.tokenId, 0L)
+        if (asset.isErg) asset.toJson(MixingBox.getPrice(asset.ring, 0, numRounds)._1, curMixingAmount, runningMixingAmount)
+        else asset.toJson(MixingBox.getTokenPrice(asset.ring), curMixingAmount, runningMixingAmount)
       })
       s"""{
          |  "nameCovert": "${nameCovert}",
          |  "id": "${id}",
-         |  "createdDate": "${creationTimePrettyPrinted}",
+         |  "createdDate": ${createdTime},
          |  "deposit": "${depositAddress}",
          |  "numRounds": $numRounds,
          |  "assets": [${assetJsons.mkString(",")}],
@@ -202,22 +197,21 @@ object Models {
      * @param currentMixing current mixing amount of this asset
      * @return json of the asset as string
      */
-    def toJson(needed: Long, currentMixing: Long): String = {
+    def toJson(needed: Long, currentMixing: Long, runningMixing: Long): String = {
       s"""{
          |  "tokenId": "$tokenId",
          |  "ring": $ring,
          |  "need": $needed,
          |  "confirmedDeposit": $confirmedDeposit,
-         |  "lastActivity": "${prettyDate(lastActivity)}",
-         |  "currentMixingAmount": $currentMixing
+         |  "lastActivity": ${lastActivity},
+         |  "currentMixingAmount": $currentMixing,
+         |  "runningMixingAmount": $runningMixing
          |}""".stripMargin
     }
 
     def isErg: Boolean = tokenId.isEmpty
 
-    def prettyDate(timestamp: Long): String = {
-      new SimpleDateFormat("YYYY-MM-dd HH:mm:ss").format(new Date(timestamp))
-    }
+
   }
 
   object CovertAsset {
@@ -235,9 +229,7 @@ object Models {
 
   //ixGroupIdCol, amountCol, mixStatusCol, createdTimeCol, depositAddressCol, depositCompletedCol
   case class MixGroupRequest(id: String, neededAmount: Long, status: String, createdTime: Long, depositAddress: String, doneDeposit: Long, tokenDoneDeposit: Long, mixingAmount: Long, mixingTokenAmount: Long, neededTokenAmount: Long, tokenId: String, masterKey: BigInt) {
-    def creationTimePrettyPrinted: String = {
-      new SimpleDateFormat("YYYY-MM-dd HH:mm:ss").format(new Date(createdTime))
-    }
+
 
     def toJson(statJson: String = null): String = {
       s"""
@@ -245,7 +237,7 @@ object Models {
          |  "id": "${id}",
          |  "amount": ${neededAmount},
          |  "tokenAmount": ${neededTokenAmount},
-         |  "createdDate": "${creationTimePrettyPrinted}",
+         |  "createdDate": ${createdTime},
          |  "deposit": "${depositAddress}",
          |  "status": "${status}",
          |  "mixingAmount": $mixingAmount,
@@ -317,7 +309,7 @@ object Models {
     }
   }
 
-  case class WithdrawTx(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte]) {
+  case class WithdrawTx(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte], additionalInfo: String) {
     override def toString: String = new String(txBytes, StandardCharsets.UTF_16)
 
     def getFeeBox: Option[String] = { // returns fee box used in this tx if available
@@ -326,8 +318,21 @@ object Models {
       Option.empty
     }
 
-    def getFirstInput: String = {
-      boxId.split(",").head
+    def getJson: Json = io.circe.parser.parse(toString).getOrElse(Json.Null)
+
+    def getDataInputs: Seq[String] = {
+        getJson.hcursor.downField("dataInputs").as[Seq[Json]].getOrElse(Seq())
+        .map(js => js.hcursor.downField("boxId").as[String].getOrElse(null))
+    }
+
+    def getOutputs: Seq[String] = {
+      getJson.hcursor.downField("outputs").as[Seq[Json]].getOrElse(Seq())
+        .map(js => js.hcursor.downField("boxId").as[String].getOrElse(null))
+    }
+
+    def getInputs: Seq[String] = {
+      getJson.hcursor.downField("inputs").as[Seq[Json]].getOrElse(Seq())
+        .map(js => js.hcursor.downField("boxId").as[String].getOrElse(null))
     }
   }
 
@@ -339,7 +344,8 @@ object Models {
         i.next().as[String],
         i.next().as[Long],
         i.next().as[String],
-        i.next().as[Array[Byte]]
+        i.next().as[Array[Byte]],
+        i.next().as[String],
       )
     }
   }

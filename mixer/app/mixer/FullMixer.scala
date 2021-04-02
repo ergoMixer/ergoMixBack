@@ -126,7 +126,7 @@ class FullMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils
    * @param withdrawStatus   withdraw status (whether is set to be withdrawn)
    * @param mixingTokenId    mixing token id (empty if erg)
    */
-  private def processFullMix(mixId: String, maxRounds: Int, withdrawAddress: String, masterSecret: BigInt, isAlice: Boolean, fullMixBoxId: String, currentRound: Int, halfMixBoxId: String, optEmissionBoxId: Option[String], tokenBoxId: String, withdrawStatus: String, mixingTokenId: String) = networkUtils.usingClient { implicit ctx =>
+  private def processFullMix(mixId: String, maxRounds: Int, withdrawAddress: String, masterSecret: BigInt, isAlice: Boolean, fullMixBoxId: String, currentRound: Int, halfMixBoxId: String, optEmissionBoxId: Option[String], tokenBoxId: String, withdrawStatus: String, mixingTokenId: String): Unit = networkUtils.usingClient { implicit ctx =>
 
     // If all is ok then the following should be true:
     //  1. halfMixBoxId must have minConfirmations
@@ -160,7 +160,7 @@ class FullMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils
 
           val wallet = new Wallet(masterSecret)
           val secret = wallet.getSecret(currentRound)
-          if (numTokens < 2 || withdrawStatus.equals(WithdrawRequested.value)) {
+          if (numTokens < 2 || withdrawStatus.equals(WithdrawRequested.value) || (currentRound >= maxRounds && Configs.stopMixingWhenReachedThreshold)) {
             if (withdrawAddress.nonEmpty) {
               val optFeeEmissionBoxId = getRandomValidBoxId(getFeeBoxes.map(_.id).filterNot(id => spentFeeEmissionBoxTable.exists(boxIdCol === id)))
               if (shouldWithdraw(mixId, fullMixBoxId) && optFeeEmissionBoxId.nonEmpty) {
@@ -216,6 +216,12 @@ class FullMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils
               }
 
               if (optHalfMixBoxId.isEmpty) {
+                // do nothing
+                if (Configs.mixOnlyAsBob) {
+                  logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] --> Ignored because mixOnlyAsBob is set to true and no half-box is available currently!")
+                  return
+                }
+
                 nextAlice
               } else {
                 nextBob(optHalfMixBoxId.get)
