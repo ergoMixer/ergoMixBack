@@ -20,8 +20,8 @@ import scala.collection.mutable
 import scala.collection.JavaConverters._
 
 @Singleton
-class CovertMixer @Inject() (tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
-                             ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtils, explorer: BlockExplorer) {
+class CovertMixer @Inject()(tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
+                            ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtils, explorer: BlockExplorer) {
   private val logger: Logger = Logger(this.getClass)
 
   import tables._
@@ -57,7 +57,9 @@ class CovertMixer @Inject() (tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: A
               box.tokens.foreach(token => realDeposits(token.getId.toString) = realDeposits.getOrElse(token.getId.toString, 0L) + token.getValue)
               box
             } else null
-          }).filter(_ != null).filter(box => {!spent.contains(box.id)}).toList
+          }).filter(_ != null).filter(box => {
+            !spent.contains(box.id)
+          }).toList
 
           realDeposits.foreach(dep => {
             if ((supported ++ unsupported).exists(_.tokenId == dep._1)) {
@@ -202,15 +204,15 @@ class CovertMixer @Inject() (tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: A
                 case None =>
                   spendingTxId = ""
               }
-              if ((!spendingTxId.isEmpty && spendingTxId != req.id) || outputs.contains(boxId)){
+              if ((!spendingTxId.isEmpty && spendingTxId != req.id) || outputs.contains(boxId)) {
                 false
               }
               else true
             })
-            if(boxStatus){
+            if (boxStatus) {
               logger.error(s"  transaction got refused by the node! potential reason: node does not support chain transactions. waiting...")
             }
-            else{
+            else {
               outputs = outputs ++ signedTx.getOutputsToSpend.asScala.map(box => {
                 box.getId.toString
               })

@@ -148,6 +148,13 @@ class NewMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils:
       } else {
         // half-mix box does not exist... behave as Alice
         // get a random token emission box
+
+        // do nothing
+        if (Configs.mixOnlyAsBob) {
+          logger.info(s" [NEW:$id] --> Ignored because mixOnlyAsBob is set to true and no half-box is available currently!")
+          return
+        }
+
         val tx = aliceOrBob.createHalfMixBox(secret, inputBoxIds :+ optTokenBoxId.get, Configs.startFee,
           depositAddress, Array(dLogSecret), broadCast = false, poolAmount, numFeeToken, mixRequest.tokenId, mixRequest.mixingTokenAmount)
         tables.insertHalfMix(mixRequest.id, round = 0, time = currentTime, tx.getHalfMixBox.id, isSpent = false)

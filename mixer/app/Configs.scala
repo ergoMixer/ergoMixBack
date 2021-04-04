@@ -22,6 +22,7 @@ object Configs extends ConfigHelper {
   lazy val maxIns: Int = readKey("maxInputs").toInt
 
   lazy val distributeFee: Long = readKey("fees.distributeTx").toLong
+  lazy val ageusdFee: Long = readKey("fees.ageusd", "5000000").toLong
   lazy val startFee: Long = readKey("fees.startTx").toLong
   lazy val defaultHalfFee: Long = readKey("fees.halfTx").toLong
   lazy val defaultFullFee: Long = readKey("fees.fullTx").toLong
@@ -48,4 +49,9 @@ object Configs extends ConfigHelper {
   var tokenPrices: Option[Map[Int, Long]] = None
   var entranceFee: Option[Int] = None
   var ringStats = mutable.Map.empty[String, mutable.Map[Long, mutable.Map[String, Long]]]
+
+
+  lazy val mixOnlyAsBob: Boolean = readKey("mixOnlyAsBob", "false").toBoolean
+  lazy val stopMixingWhenReachedThreshold: Boolean = readKey("stopMixingWhenReachedThreshold", "true").toBoolean
+
 }

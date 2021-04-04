@@ -41,6 +41,12 @@ GET         /covert/:covertId/asset            controllers.ApiController.covertA
 POST        /covert/:covertId/address          controllers.ApiController.setCovertAddresses(covertId: String)
 GET         /covert/:covertId/address          controllers.ApiController.getCovertAddresses(covertId: String)
 
+GET         /ageusd/height                     controllers.ApiController.currentHeight()
+GET         /ageusd/fee                        controllers.ApiController.ageusdFee()
+POST        /ageusd/mint                       controllers.ApiController.mint()
+GET         /ageusd/oracle/:tokenId            controllers.ApiController.oracleBox(tokenId: String)
+GET         /ageusd/bank/:tokenId              controllers.ApiController.bankBox(tokenId: String)
+
 
 GET         /dashboard                         controllers.ApiController.dashboard
 GET         /dashboard/*file                   controllers.ApiController.assetOrDefault(file)

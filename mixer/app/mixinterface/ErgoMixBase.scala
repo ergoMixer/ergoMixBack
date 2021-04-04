@@ -20,6 +20,8 @@ package object ErgoMixBase {
     def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxIds: Array[String], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT])(implicit ctx: BlockchainContext): SignedTransaction =
       spendFullMixBox(f, endBoxes, feeAmount, ctx.getBoxesById(otherInputBoxIds: _*), changeAddress, changeBoxRegs, additionalDlogSecrets, additionalDHTuples)
 
+    def getProver(f: FullMixBox): ErgoProver
+
     def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT]): SignedTransaction
 
     /**

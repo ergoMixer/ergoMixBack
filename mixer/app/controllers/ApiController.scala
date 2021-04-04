@@ -3,32 +3,40 @@ package controllers
 import java.nio.file.Paths
 
 import app.Configs
+import db.Columns.{mixIdCol, withdrawAddressCol}
+import db.Tables
 import helpers.ErgoMixerUtils
 import info.BuildInfo
 import io.circe.Json
 import io.circe.syntax._
 import javax.inject._
 import mixer.ErgoMixer
-import models.Models.MixBoxList
-import network.NetworkUtils
-import org.ergoplatform.appkit.RestApiErgoClient
+import models.Models.{MixBoxList, WithdrawTx}
+import network.{BlockExplorer, NetworkUtils}
+import org.ergoplatform.appkit.{ErgoValue, InputBox, RestApiErgoClient}
 import play.api.Logger
 import play.api.libs.json._
 import play.api.mvc._
-import com.zaxxer.hikari.HikariDataSource
 import org.apache.commons.lang3._
 import play.api.db.Database
 import helpers.TrayUtils.showNotification
+import mixinterface.AliceOrBob
+import models.Models.MixWithdrawStatus.{AgeUSDRequested, WithdrawRequested}
+import wallet.{Wallet, WalletHelper}
+
 import scala.concurrent.ExecutionContext
 import scala.io.Source
 
 /**
  * A controller inside of Mixer controller.
  */
-class ApiController @Inject()(assets: Assets, controllerComponents: ControllerComponents, db: Database, ergoMixerUtils: ErgoMixerUtils,
-                              ergoMixer: ErgoMixer, networkUtils: NetworkUtils
+class ApiController @Inject()(assets: Assets, controllerComponents: ControllerComponents, dbs: Database, ergoMixerUtils: ErgoMixerUtils,
+                              ergoMixer: ErgoMixer, networkUtils: NetworkUtils, explorer: BlockExplorer, aliceOrBob: AliceOrBob,
+                              tables: Tables
                              )(implicit ec: ExecutionContext) extends AbstractController(controllerComponents) {
+
   import networkUtils._
+  import tables._
 
   private val logger: Logger = Logger(this.getClass)
 
@@ -138,7 +146,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    */
   def backup: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     try {
-      if (SystemUtils.IS_OS_WINDOWS) db.shutdown()
+      if (SystemUtils.IS_OS_WINDOWS) dbs.shutdown()
       val res = ergoMixerUtils.backup()
       Ok.sendFile(new java.io.File(res))
 
@@ -156,12 +164,12 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
     try {
       val path = System.getProperty("user.home")
       request.body.file("myFile").map { backup =>
-          db.shutdown()
-          backup.ref.copyTo(Paths.get(s"$path/ergoMixer/ergoMixerRestore.zip"), replace = true)
-          ergoMixerUtils.restore()
-          System.exit(0)
-          Ok("Backup restored")
-        }
+        dbs.shutdown()
+        backup.ref.copyTo(Paths.get(s"$path/ergoMixer/ergoMixerRestore.zip"), replace = true)
+        ergoMixerUtils.restore()
+        System.exit(0)
+        Ok("Backup restored")
+      }
         .getOrElse {
           BadRequest(s"""{"success": false, "message": "No uploaded backup found."}""").as("application/json")
         }
@@ -288,18 +296,18 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
   def covertChangeName(covertId: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
     val name: String = js.hcursor.downField("nameCovert").as[String].getOrElse("")
-      try {
-        ergoMixer.handleNameCovert(covertId, name)
-        Ok(
-          s"""{
-             |  "success": true
-             |}""".stripMargin
-        ).as("application/json")
-      } catch {
-        case e: Throwable =>
-          logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
-          BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
-      }
+    try {
+      ergoMixer.handleNameCovert(covertId, name)
+      Ok(
+        s"""{
+           |  "success": true
+           |}""".stripMargin
+      ).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
   }
 
   /**
@@ -368,13 +376,14 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
   /**
    * A get endpoint which returns list of a covert's assets
    */
-  def covertAssetList(covertId: String) = Action {
+  def covertAssetList(covertId: String): Action[AnyContent] = Action {
     try {
       val assets = ergoMixer.getCovertAssets(covertId)
       val curMixing = ergoMixer.getCovertCurrentMixing(covertId)
+      val curRunning = ergoMixer.getCovertRunningMixing(covertId)
       Ok(
         s"""
-           |${ergoMixer.getCovertById(covertId).toJson(assets, currentMixing = curMixing)}
+           |${ergoMixer.getCovertById(covertId).toJson(assets, currentMixing = curMixing, runningMixing = curRunning)}
            |""".stripMargin
       ).as("application/json")
     } catch {
@@ -389,9 +398,14 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    */
   def covertList: Action[AnyContent] = Action {
     try {
+      val coverts = ergoMixer.getCovertList.map(covert => {
+        val curMixing = ergoMixer.getCovertCurrentMixing(covert.id)
+        val curRunning = ergoMixer.getCovertRunningMixing(covert.id)
+        covert.toJson(ergoMixer.getCovertAssets(covert.id), curMixing, curRunning)
+      }).mkString(",")
       Ok(
         s"""
-           |[${ergoMixer.getCovertList.map(covert => covert.toJson(ergoMixer.getCovertAssets(covert.id))).mkString(",")}]
+           |[$coverts]
            |""".stripMargin
       ).as("application/json")
     } catch {
@@ -467,15 +481,15 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
           withdrawTxId = mix.withdraw.get.txId
         }
         val lastMixTime = {
-          if (mix.fullMix.isDefined) ergoMixerUtils.prettyDate(mix.fullMix.get.createdTime)
-          else if (mix.halfMix.isDefined) ergoMixerUtils.prettyDate(mix.halfMix.get.createdTime)
+          if (mix.fullMix.isDefined) mix.fullMix.get.createdTime
+          else if (mix.halfMix.isDefined) mix.halfMix.get.createdTime
           else "None"
         }
 
         s"""
            |{
            |  "id": "${mix.mixRequest.id}",
-           |  "createdDate": "${mix.mixRequest.creationTimePrettyPrinted}",
+           |  "createdDate": ${mix.mixRequest.createdTime},
            |  "amount": ${mix.mixRequest.amount},
            |  "rounds": ${mix.mixState.map(s => s.round).getOrElse(0)},
            |  "status": "${mix.mixRequest.mixStatus.value}",
@@ -488,7 +502,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
         }",
            |  "withdrawStatus": "${mix.mixRequest.withdrawStatus}",
            |  "withdrawTxId": "$withdrawTxId",
-           |  "lastMixTime": "$lastMixTime",
+           |  "lastMixTime": $lastMixTime,
            |  "mixingTokenId": "${mix.mixRequest.tokenId}",
            |  "mixingTokenAmount": ${mix.mixRequest.mixingTokenAmount}
            |}""".stripMargin
@@ -605,6 +619,125 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
 
   def assetOrDefault(resource: String): Action[AnyContent] = {
     if (resource.contains(".")) assets.at(resource) else dashboard
+  }
+
+  /**
+   * returns current blockchain height
+   */
+  def currentHeight(): Action[AnyContent] = Action {
+    try {
+      networkUtils.usingClient(ctx => {
+        val res =
+          s"""{
+             |  "height": ${ctx.getHeight}
+             |}""".stripMargin
+        Ok(res).as("application/json")
+      })
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
+   * returns current oracle box
+   */
+  def oracleBox(tokenId: String): Action[AnyContent] = Action {
+    try {
+      val oracle = explorer.getBoxByTokenId(tokenId)
+      Ok((oracle \\ "items").head.asArray.get(0).noSpaces).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
+   * returns current bank box - unconfirmed if available
+   */
+  def bankBox(tokenId: String): Action[AnyContent] = Action {
+    try {
+      val bank = explorer.getBoxByTokenId(tokenId)
+      Ok((bank \\ "items").head.asArray.get(0).noSpaces).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
+   * returns tx fee needed for ageUSD minting
+   */
+  def ageusdFee(): Action[AnyContent] = Action {
+    try {
+      val res =
+        s"""{
+           |  "fee": ${Configs.ageusdFee}
+           |}""".stripMargin
+      Ok(res).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
+   * A POST Api minting AgeUSD (sigusd, sigrsv)
+   *
+   * returns minting tx json
+   */
+  def mint: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
+      val prev = js.hcursor.downField("oldTransaction").as[Json].getOrElse(Json.Null)
+      val req = js.hcursor.downField("request").as[Json].getOrElse(Json.Null)
+      val mixId = js.hcursor.downField("boxId").as[String].getOrElse(throw new Exception("mixId is required"))
+      val bankId = req.hcursor.downField("inputs").as[Seq[String]].getOrElse(Seq()).head
+
+      val address = ergoMixer.getWithdrawAddress(mixId)
+      val boxId = ergoMixer.getFullBoxId(mixId)
+      val isAlice = ergoMixer.getIsAlice(mixId)
+      val wallet = new Wallet(ergoMixer.getMasterSecret(mixId))
+      val secret = wallet.getSecret(ergoMixer.getRoundNum(mixId))
+
+      networkUtils.usingClient(ctx => {
+        var prevBank: InputBox = null
+        if (!prev.isNull) prevBank = ctx.signedTxFromJson(prev.noSpaces).getOutputsToSpend.get(0)
+        else prevBank = ctx.getBoxesById(bankId).head
+        val tx = aliceOrBob.mint(boxId, secret.bigInteger, isAlice, address, req, prevBank, true) // TODO send true must be true for releasing
+
+        // finding first bank box and tx in the chain
+        val mintTxsChain = getMintingTxs
+        var inBank = prevBank.getId.toString
+        var firstTxId: String = tx.getId
+        var endOfChain = false
+        while (!endOfChain) {
+          val prevTxInChain = mintTxsChain.find(tx => tx.getOutputs.exists(_.equals(inBank)))
+          if (prevTxInChain.isEmpty) {
+            endOfChain = true
+          } else {
+            inBank = prevTxInChain.get.getInputs.head
+            firstTxId = prevTxInChain.get.txId
+          }
+        }
+        val additionalInfo = s"$inBank,$firstTxId"
+        val inps = tx.getInputBoxes.map(inp => inp.boxId.toString).mkString(",")
+        val txBytes = tx.toJson(false).getBytes("utf-16")
+        implicit val insertReason: String = "Minting AgeUSD"
+        insertWithdraw(mixId, tx.getId, WalletHelper.now, inps, txBytes, AgeUSDRequested.value, additionalInfo)
+
+        Ok(tx.toJson(false)).as("application/json")
+      })
+
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
   }
 }
 

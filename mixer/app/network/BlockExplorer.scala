@@ -107,6 +107,14 @@ class BlockExplorer() {
   }
 
   /**
+   * @param tokenId token id
+   * @return box as OutBox
+   */
+  def getBoxByTokenId(tokenId: String): Json = {
+    GetURL.get(s"https://api.ergoplatform.com/api/v1/boxes/unspent/byTokenId/$tokenId")
+  }
+
+  /**
    * @param boxId box id
    * @return spending tx of box id if spent at all
    */
@@ -199,6 +207,15 @@ class BlockExplorer() {
     GetURL.getStr(txUrl + "unconfirmed?limit=200") // just check 200 pool txs, decrease the chance of double spend anyway
   } catch {
     case a: Throwable => ""
+  }
+
+  /**
+   * @return unconfirmed txs in mempool for a particular address
+   */
+  def getUnconfirmedTxsFor(address: String): Json = try {
+    GetURL.get(txUrl + s"unconfirmed/byAddress/$address")
+  } catch {
+    case a: Throwable => Json.Null
   }
 }
 

@@ -169,4 +169,18 @@ class BobImpl(y: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit c
 
     (FullMixTx(bob.sign(txToSign)), bit)
   }
+
+  override def getProver(f: FullMixBox): ErgoProver = {
+    val additionalDHTuples: Array[DHT] = Seq().toArray
+    val additionalDlogSecrets: Array[BigInteger] = Seq().toArray
+    additionalDHTuples.foldLeft(
+      additionalDlogSecrets.foldLeft(
+        ctx.newProverBuilder().withDLogSecret(y)
+      )(
+        (ergoProverBuilder, bigInteger) => ergoProverBuilder.withDLogSecret(bigInteger)
+      )
+    )(
+      (ergoProverBuilder, dh) => ergoProverBuilder.withDHTData(dh.gv, dh.hv, dh.uv, dh.vv, dh.x)
+    ).build()
+  }
 }

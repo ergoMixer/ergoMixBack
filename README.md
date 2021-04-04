@@ -57,6 +57,16 @@
 
 ErgoMixer is a web application for mixing ergs and tokens based on Ergo platform. ErgoMixer is completely serverless; It only needs to connect to the explorer and a node (any node! no api_key is needed). For more information on how it works see [here](https://github.com/ergoMixer/ergoMixBack/wiki/How-it-works-ergoMixer).
 
+## Contents
+NOTE: If you want to use pre-built binaries and just run the ErgoMixer skip all steps to [`Run Mixer`](#run-mixer).
+- [Ergo Mixer](#ergo-mixer)
+  - [Contents](#contents)
+  - [Setup](#setup)
+    - [Prerequisites](#prerequisites)
+    - [Build the ErgoMixer:](#build-the-ergomixer)
+  - [Run mixer](#run-mixer)
+  - [Docker Quick Start](#docker-quick-start)
+  - [Notes](#notes)
 
 ![ErgoMixer Screen Shot](data/screenshot.png)
 
@@ -165,7 +175,7 @@ Also to run the ErgoMixer with a custom config file use:
 ```shell
 $ java -jar -D"config.file"=<path-your-config>/customConfig.conf ergoMixer-*.jar
 ```
-You can use this [config file](mixer/sample.conf) and change it as you want.
+You can use this [config file](mixer/reference.conf) and change it as you want.
 
 The database will be saved in your home directory. This database contains all the information and secrets being used by the mixer, So, take good care of it.
 

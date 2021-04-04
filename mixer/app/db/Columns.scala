@@ -15,6 +15,7 @@ object Columns {
   val createdTimeCol = Col("created_time", ULONG) // unsigned long, epoch time millis
 
   val boxIdCol = Col("box_id", STR)
+  val additional_info = Col("additional_info", STR)
   val inputsCol = Col("inputs", BIGSTR)
   val tokenIdCol = Col("token_id", STR)
   val amountCol = Col("amount", ULONG)

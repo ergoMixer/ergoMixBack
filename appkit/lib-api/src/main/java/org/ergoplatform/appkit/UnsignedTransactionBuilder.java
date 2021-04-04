@@ -17,6 +17,17 @@ import java.util.List;
  */
 public interface UnsignedTransactionBuilder {
     /**
+     * Specifies boxes that will be used as data-inputs by the transaction when it will be included in a block.
+     *
+     * @param boxes list of boxes to be used as data-inputs by the transaction. The boxes can either be
+     *              {@link BlockchainContext#getBoxesById(String...) obtained} from context of created from
+     *               scratch
+     *              as {@link OutBox} and then {@link OutBox#convertToInputWith(String, short) converted} to
+     *              {@link InputBox}.
+     */
+    UnsignedTransactionBuilder withDataInputs(List<InputBox> boxes);
+
+    /**
      * Specifies boxes that will be spent by the transaction when it will be included in a block.
      *
      * @param boxes list of boxes to be spent by the transaction. The boxes can either be

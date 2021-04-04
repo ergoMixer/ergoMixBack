@@ -3,12 +3,20 @@ package mixinterface
 
 import java.math.BigInteger
 
+import app.Configs
+import io.circe.Json
 import mixinterface.ErgoMixBase._
 import javax.inject.{Inject, Singleton}
 import network.NetworkUtils
 import org.ergoplatform.appkit._
 import models.Models.{EndBox, FullMixBox, FullMixTx, HalfMixBox, HalfMixTx}
+import org.ergoplatform.ErgoBox
+import org.ergoplatform.ErgoBox.NonMandatoryRegisterId
 import org.ergoplatform.appkit.impl.ErgoTreeContract
+import org.ergoplatform.appkit.impl.ScalaBridge.AdditionalRegisters
+import sigmastate.SType
+import sigmastate.Values.{Constant, EvaluatedValue}
+import sigmastate.serialization.DataJsonEncoder.decodeWithTpe
 import wallet.WalletHelper
 
 import scala.collection.JavaConverters._
@@ -132,6 +140,52 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils) {
       }
     }
     transactions.asScala.toList
+  }
+
+  /**
+   */
+  def mint(ourIn: String, secret: BigInteger, isAlice: Boolean, withdrawAddr: String, req: Json, prevBank: InputBox, sendTx: Boolean): SignedTransaction = {
+    usingClient { implicit ctx =>
+      val txB = ctx.newTxBuilder()
+      val dataInput = ctx.getBoxesById(req.hcursor.downField("dataInputs").as[Seq[String]].getOrElse(Seq()).head)
+      val inputs: Seq[InputBox] = prevBank +: ctx.getBoxesById(ourIn)
+
+      val prover = getProver(secret, isAlice).getProver(FullMixBox(inputs.last))
+
+      val fee = req.hcursor.downField("fee").as[Long].getOrElse(Configs.ageusdFee)
+      var reqs = req.hcursor.downField("requests").as[Seq[Json]].getOrElse(Seq())
+      reqs = reqs.take(2) ++ reqs.drop(3)
+
+      val insm = inputs.map(_.getValue.longValue()).sum
+      val outsm = reqs.map(_.hcursor.downField("value").as[Long].getOrElse(0L)).sum + fee
+
+      val outs: Seq[OutBox] = reqs.map(out => {
+        var value = out.hcursor.downField("value").as[Long].getOrElse(throw new Exception("value is required"))
+        val addr = out.hcursor.downField("address").as[String].getOrElse(throw new Exception("address is required"))
+        if (addr == withdrawAddr) value += insm - (outsm)
+        val tokens = out.hcursor.downField("assets").as[Seq[Json]].getOrElse(Seq()).map(tok => {
+          new ErgoToken(tok.hcursor.downField("tokenId").as[String].getOrElse(""), tok.hcursor.downField("amount").as[Long].getOrElse(0L))
+        })
+        val regs = out.hcursor.downField("registers").as[mutable.HashMap[String, String]].getOrElse(mutable.HashMap.empty)
+          .toList.reverse.map(reg => ErgoValue.fromHex(reg._2))
+        var outB = txB.outBoxBuilder()
+        outB = outB.value(value)
+        outB = outB.contract(new ErgoTreeContract(Address.create(addr).getErgoAddress.script))
+        if (tokens.nonEmpty) outB = outB.tokens(tokens: _*)
+        if (regs.nonEmpty) outB = outB.registers(regs: _*)
+        outB.build()
+      })
+
+      val tx = txB.boxesToSpend(inputs.toList.asJava)
+        .fee(fee)
+        .outputs(outs: _*)
+        .sendChangeTo(Address.create(withdrawAddr).getErgoAddress)
+        .withDataInputs(dataInput.toList.asJava)
+        .build()
+      val signed = prover.sign(tx)
+      if (sendTx) ctx.sendTransaction(signed)
+      return signed
+    }
   }
 
   /**
