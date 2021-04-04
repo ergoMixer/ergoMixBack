@@ -12,12 +12,13 @@
 curl -s "https://get.sdkman.io" | bash
 source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk install java $(sdk list java | grep -o "8\.[0-9]*\.[0-9]*\.hs-adpt" | head -1)
-sdk install sbt
+
 
 
 
 
 if  [[ $1 = "-s" ]]; then
+    sdk install sbt
     # ErgoMixer
     git clone https://github.com/ergoMixer/ergoMixBack.git
     cd ergoMixBack/appkit/
