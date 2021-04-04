@@ -104,7 +104,7 @@ When you open the Mixer, the home page displays information about the system and
 Open your favourite terminal and enter the following to download and run the `.jar`:
 
 ```
-curl -s https://raw.githubusercontent.com/ergoMixer/ergoMixBack/master/install.sh | bash
+curl -s https://raw.githubusercontent.com/ergoMixer/ergoMixBack/master/sh/install.sh | bash
 ```
 
 Alternatively, you can build from source by appending the `-s` suffix.
