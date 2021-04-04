@@ -5,6 +5,7 @@
 # The command:
 # curl -s "https://getmixer.ergonaut.space/install.sh" | bash
 # Should build the ErgoMixer on all Unix systems
+# Windows will require WSL, Cygwin or some other bash solution 
 
 
 # SDKMAN
@@ -13,36 +14,38 @@ source "$HOME/.sdkman/bin/sdkman-init.sh"
 sdk install java $(sdk list java | grep -o "8\.[0-9]*\.[0-9]*\.hs-adpt" | head -1)
 sdk install sbt
 
-# Graal
-wget https://github.com/oracle/graal/archive/refs/tags/vm-21.0.0.2.zip
-unzip vm-21.0.0.2.zip
-export GRAAL_HOME=$HOME/zkt/graal-vm-21.0.0.2
-echo "GRAAL_HOME set to..." $GRAAL_HOME
-export PATH=$PATH:${GRAAL_HOME}/bin
 
-# TODO: Generalise this for the latest version / cross-platform for Graal
-#curl -sL https://api.github.com/repos/graalvm/graalvm-ce-builds/releases/latest | jq -r '.assets[].browser_download_url'
-#curl -L https://github.com/graalvm/graalvm-ce-builds/releases/latest/download/graalvm-ce-java8-linux-amd64tar.gz
 
-# ErgoMixer
-git clone https://github.com/ergoMixer/ergoMixBack.git
-cd ergoMixBack/appkit/
 
-echo "Building AppKit..."
-sbt publishLocal
+if  [[ $1 = "-s" ]]; then
+    # ErgoMixer
+    git clone https://github.com/ergoMixer/ergoMixBack.git
+    cd ergoMixBack/appkit/
 
-echo "Building Frontend"
-cd ..
-git submodule update --init
-cd ergoMixFront/
-npm install
-npm run build
+    echo "Building AppKit..."
+    sbt publishLocal
 
-cd ..
-mv ergoMixFront/build/ mixer/public
+    echo "Building Frontend"
+    cd ..
+    git submodule update --init
+    cd ergoMixFront/
+    npm install
+    npm run build
 
-echo "Building Backend"
-cd mixer/
-sbt assembly
-cd target/scala-2.12/
+    cd ..
+    mv ergoMixFront/build/ mixer/public
+
+    echo "Building Backend"
+    cd mixer/
+    sbt assembly
+    cd target/scala-2.12/
+    
+else
+   # TODO: Generalise this for the latest version / cross-platform for Graal
+   mkdir mixer
+   cd mixer
+   wget https://github.com/ergoMixer/ergoMixBack/releases/download/3.3.0/ergoMixer-3.3.0.jar
+
+fi
+
 java -jar ergoMixer-*.jar
