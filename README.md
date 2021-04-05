@@ -58,29 +58,28 @@ ErgoMixer is a web application for mixing ergs and tokens based on Ergo platform
 
 ![ErgoMixer Screen Shot](data/screenshot.png)
 
-
-
 <!-- GETTING STARTED -->
 ## Getting Started
 
 To get the Mixer up and running you have a few options:
 
-1. <a href="#Quick-Start-Shell-Script">Quick-Start Shell Script</a> - builds from source (UNIX systems)
+1. <a href="#quick-start-shell-script">Quick Start Shell Script</a> - builds from source (UNIX systems)
 2. <a href="#docker-quick-start">Docker Quick Start</a>
 3. <a href="#run-mixer">Download the latest `.jar`</a>
 4. <a href="#manual-installation">Build from source</a>
 
 
+<!-- USAGE EXAMPLES -->
+## Usage
 
-<!-- GETTING STARTED -->
-## Getting Started
+When you open the Mixer, the home page displays information about the system and how each component works. ErgoMixer will also be available from your menu bar. 
 
-To get the Mixer up and running you have a few options:
+![ErgoMixerMenu](data/menu.png)
 
-1. <a href="#Quick-Start-Shell-Script">Quick-Start Shell Script</a> - builds from source (UNIX systems)
-2. <a href="#docker-quick-start">Docker Quick Start</a>
-3. <a href="#run-mixer">Download the latest `.jar`</a>
-4. <a href="#manual-installation">Build from source</a>
+## Video Tutorial
+  * [ErgoMixer Tutorial Installation - Windows, Mac, JVM & Docker - Version 3.0.1 & Above](https://www.youtube.com/watch?v=iIHLlIZ-47Q)
+  * [ErgoMixer Tutorial Usage - Taking Fire - Version 3.0.1 & Above](https://www.youtube.com/watch?v=Cc3n8CjaGPE)
+
 
 ## Installation
 ### Quick Start Shell Script
