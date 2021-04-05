@@ -90,11 +90,11 @@ Open your favourite terminal and enter the following to download and run the `.j
 $ curl -s https://raw.githubusercontent.com/ergoMixer/ergoMixBack/master/sh/install.sh | bash
 ```
 
-#Alternatively, you can build from source by appending the `-s` suffix.
+<!-- Alternatively, you can build from source by appending the `-s` suffix. -->
 
-#```
-#$ curl -s https://raw.githubusercontent.com/ergoMixer/ergoMixBack/master/sh/install.sh -s | bash
-#```
+<!-- ```
+$ curl -s https://raw.githubusercontent.com/ergoMixer/ergoMixBack/master/sh/install.sh -s | bash
+``` -->
 
 If you encounter any permission errors when attempting to run the script, please run `chmod +x install.sh` from within the same directory. 
 
