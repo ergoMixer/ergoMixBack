@@ -45,7 +45,7 @@ else
    # TODO: Generalise this for the latest version / cross-platform for Graal
    mkdir mixer
    cd mixer
-   wget https://github.com/ergoMixer/ergoMixBack/releases/download/3.3.0/ergoMixer-3.3.0.jar
+   wget https://github.com/ergoMixer/ergoMixBack/releases/download/3.3.1/ergoMixer-3.3.1.jar
 
 fi
 

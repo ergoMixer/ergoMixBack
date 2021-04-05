@@ -222,7 +222,7 @@ class Tables @Inject() (playDB: Database, networkUtils: NetworkUtils, explorer: 
   val withdrawTable = Tab.withName("withdraw").withCols(mixIdCol, txIdCol, createdTimeCol, boxIdCol, txCol, additional_info).withPriKey(mixIdCol)
   private val withdrawArchiveTable = Tab.withName("withdraw_archived").withCols(mixIdCol, txIdCol, createdTimeCol, fullMixBoxIdCol, txCol, additional_info, insertReasonCol).withPriKey()
 
-  def insertWithdraw(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte], withdrawStat: String = WithdrawRequested.value, additionalInfo: String = null)(implicit insertReason: String) = {
+  def insertWithdraw(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte], withdrawStat: String = WithdrawRequested.value, additionalInfo: String = "")(implicit insertReason: String) = {
     withdrawTable.deleteWhere(mixIdCol === mixId)
     withdrawTable.insert(mixId, txId, time, boxId, txBytes, additionalInfo)
     withdrawArchiveTable.insert(mixId, txId, time, boxId, txBytes, additionalInfo, insertReason)
