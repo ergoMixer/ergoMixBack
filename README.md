@@ -84,10 +84,12 @@ When you open the Mixer, the home page displays information about the system and
 ## Installation
 ### Quick Start Shell Script
 
-Open your favourite terminal and enter the following to download and run the `.jar`:
+Open your favourite terminal and enter the following to build from source or download and run the latest `.jar`:
 
 ```
-$ curl -s https://raw.githubusercontent.com/ergoMixer/ergoMixBack/master/sh/install.sh | bash
+wget https://raw.githubusercontent.com/ergoMixer/ergoMixBack/master/sh/install.sh
+chmod +x install.sh
+./install.sh
 ```
 
 <!-- Alternatively, you can build from source by appending the `-s` suffix. -->
