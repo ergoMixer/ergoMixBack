@@ -63,7 +63,7 @@ ErgoMixer is a web application for mixing ergs and tokens based on Ergo platform
 
 To get the Mixer up and running you have a few options:
 
-1. <a href="#quick-start-shell-script">Quick Start Shell Script</a> - builds from source (UNIX systems)
+1. <a href="#quick-start-shell-script">Quick Start Shell Script</a> - Build from source or run the latest jar. (UNIX systems)
 2. <a href="#docker-quick-start">Docker Quick Start</a>
 3. <a href="#run-mixer">Download the latest `.jar`</a>
 4. <a href="#manual-installation">Build from source</a>
@@ -72,7 +72,7 @@ To get the Mixer up and running you have a few options:
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-When you open the Mixer, the home page displays information about the system and how each component works. ErgoMixer will also be available from your menu bar. 
+When you open the Mixer, the home page displays information about the system and how each component works. There will also be a ErgoMixer dropdown available from your menu bar when running. 
 
 ![ErgoMixerMenu](data/menu.png)
 
@@ -132,7 +132,7 @@ NOTE: The `/path/on/host/to/ergo/database_and_logfile` directory must have `777`
   * #### SBT 1.2.7
     Depending on your OS, you can follow instructions in [this](https://www.scala-sbt.org/1.0/docs/Setup.html) page to install sbt.
 
-  * ### GraalVM
+  * #### GraalVM
     GraalVM is not strictly necessary to run Appkit, unless you really use Graal features like running JavaScript.
 
     1) You may for some reason like JS and want to develop Ergo dApps using Node.js, then you can use Appkit from Node.js. 
@@ -158,7 +158,7 @@ NOTE: The `/path/on/host/to/ergo/database_and_logfile` directory must have `777`
         $ export GRAAL_HOME=<your/directory/with/downloaded/graal>/graalvm-ce-java8-19.3.1/Contents/Home
         $ export PATH=$PATH:${GRAAL_HOME}/bin
         ```
-  * #### Build the Appkit project
+### Build the Appkit project
     There is a slightly modified version of appkit in this repository. So, in order to build the mixer you first need to publish appkit locally in the Ivy repository:
     ```shell
     $ cd <your_directory_clone_project>/mixer/appkit
