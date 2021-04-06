@@ -60,7 +60,7 @@ do
             chmod 777 $PWD/ergo/db_log.txt
             docker run -p 127.0.0.1:9000:9000 \
                 --restart=always \
-                -v /$PWD/ergo/db_log.txt:/home/ergo/ergoMixer \
+                -v /$PWD/ergo/db_log.txt:/$PWD/ergo/ergoMixer \
                 -d ergomixer/mixer:latest 
             ;;
         "Quit")
