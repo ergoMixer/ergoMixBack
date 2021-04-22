@@ -229,7 +229,8 @@ object GetURL {
   import scala.io.Source
 
   val requestProperties = Map(
-    "User-Agent" -> "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.0)"
+    "User-Agent" -> "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.0)",
+    "Accept"-> "application/json"
   )
 
   private def is2Str(is: InputStream) = {
