@@ -73,6 +73,7 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
       val unspentBoxes = getUnspentBoxes(tokenErgoMix.get.halfMixAddress.toString)
       unspentBoxes.filter(box => {
         (!considerPool || !txPool.contains(s""""${box.id.toString}","txId"""")) && // not already in mempool
+          box.registers.contains("R4") &&
           !WalletHelper.poisonousHalfs.contains(box.ge("R4")) // not poisonous
       }).toList
     }
