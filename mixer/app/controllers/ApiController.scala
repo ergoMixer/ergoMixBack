@@ -502,7 +502,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
         }",
            |  "withdrawStatus": "${mix.mixRequest.withdrawStatus}",
            |  "withdrawTxId": "$withdrawTxId",
-           |  "lastMixTime": $lastMixTime,
+           |  "lastMixTime": "$lastMixTime",
            |  "mixingTokenId": "${mix.mixRequest.tokenId}",
            |  "mixingTokenAmount": ${mix.mixRequest.mixingTokenAmount}
            |}""".stripMargin
