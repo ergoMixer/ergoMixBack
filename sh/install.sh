@@ -55,12 +55,11 @@ do
             ;;
         "Docker Quick Build")
             echo "you chose choice $REPLY which is $opt"
-            mkdir $PWD/ergo
-            touch $PWD/ergo/db_log.txt
-            chmod 777 $PWD/ergo/db_log.txt
+            mkdir -p $PWD/ergo/mixer_data
+            chmod -R 777 $PWD/ergo/mixer_data
             docker run -p 127.0.0.1:9000:9000 \
                 --restart=always \
-                -v /$PWD/ergo/db_log.txt:/$PWD/ergo/ergoMixer \
+                -v /$PWD/ergo/mixer_data:/$PWD/ergo/ergoMixer \
                 -d ergomixer/mixer:latest 
             ;;
         "Quit")
