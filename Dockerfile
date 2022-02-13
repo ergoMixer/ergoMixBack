@@ -1,9 +1,9 @@
 FROM node:12.14 as builder-front
 WORKDIR /usr/src/app
-COPY ./ergomixfront/package.json ./
-COPY ./ergomixfront/ageusd/ ./ageusd/
+COPY ./ergoMixFront/package.json ./
+COPY ./ergoMixFront/ageusd/ ./ageusd/
 RUN npm install
-COPY ./ergomixfront ./
+COPY ./ergoMixFront ./
 RUN npm run build
 
 FROM openjdk:8u181-jdk-slim as builder
