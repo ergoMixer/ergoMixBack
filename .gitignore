@@ -9,7 +9,7 @@
 *.gz
 *.bak
 *.old
-*.json
+
 *.orig
 *.zip
 *.log
@@ -47,4 +47,4 @@ spam-tests/
 junk/
 *.db
 mixer/public/*
-sh/mixer/ergoMixer-3.3.0.jar
+logs

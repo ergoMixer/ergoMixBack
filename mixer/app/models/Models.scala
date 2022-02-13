@@ -3,12 +3,11 @@ package models
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
-
 import app.Configs
-import db.core.DataStructures.anyToAny
 import io.circe.generic.auto._
+import io.circe.generic.semiauto.deriveDecoder
 import io.circe.syntax._
-import io.circe.{Encoder, Json, parser}
+import io.circe.{Decoder, Encoder, HCursor, Json, parser}
 import mixinterface.TokenErgoMix
 import org.ergoplatform.appkit.{ErgoToken, ErgoValue, InputBox, SignedTransaction}
 import play.api.libs.json._
@@ -18,7 +17,8 @@ import special.collection.Coll
 import special.sigma.GroupElement
 import wallet.WalletHelper
 
-import scala.jdk.CollectionConverters._
+import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 object Models {
 
@@ -72,6 +72,18 @@ object Models {
     private def all = Seq(Queued, Running, Complete)
 
     def fromString(s: String): MixStatus = all.find(_.value == s).getOrElse(throw new Exception(s"Invalid status $s"))
+
+    implicit val decodeMixStatus: Decoder[MixStatus] = (c: HCursor) => for {
+      status <- c.as[String]
+    } yield {
+      MixStatus.fromString(status)
+    }
+  }
+
+  implicit val decodeBigInt: Decoder[BigInt] = (c: HCursor) => for {
+    bi <- c.as[String]
+  } yield {
+    BigInt(bi)
   }
 
   sealed abstract class GroupMixStatus(val value: String)
@@ -121,26 +133,98 @@ object Models {
     override def toString: String = this.asJson.toString
   }
 
-  object MixRequest {
+  object CreateMixRequest {
     def apply(a: Array[Any]): MixRequest = {
       val i = a.toIterator
       new MixRequest(
-        i.next().as[String],
-        i.next().as[String],
-        i.next().as[Long],
-        i.next().as[Int],
-        MixStatus.fromString(i.next().as[String]),
-        i.next().as[Long],
-        i.next().as[String], // withdraw address
-        i.next().as[String], // deposit address
-        i.next().as[Boolean],
-        i.next().as[Long], // needed
-        i.next().as[Int], // token
-        i.next().as[String], // withdraw status
-        i.next().as[Long], // mixing token amount
-        i.next().as[Long], // needed tokens
-        i.next().as[String] // token id
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[Int],
+        MixStatus.fromString(i.next().asInstanceOf[String]),
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[String], // withdraw address
+        i.next().asInstanceOf[String], // deposit address
+        i.next().asInstanceOf[Boolean],
+        i.next().asInstanceOf[Long], // needed
+        i.next().asInstanceOf[Int], // token
+        i.next().asInstanceOf[String], // withdraw status
+        i.next().asInstanceOf[Long], // mixing token amount
+        i.next().asInstanceOf[Long], // needed tokens
+        i.next().asInstanceOf[String] // token id
       )
+    }
+  }
+
+  // The only difference between this class and MixRequest is masterKey
+  case class MixingRequest(
+                              id: String,
+                              groupId: String,
+                              amount: Long,
+                              numRounds: Int,
+                              mixStatus: MixStatus,
+                              createdTime: Long,
+                              withdrawAddress: String,
+                              depositAddress: String,
+                              depositCompleted: Boolean,
+                              neededAmount: Long,
+                              numToken: Int,
+                              withdrawStatus: String,
+                              mixingTokenAmount: Long,
+                              neededTokenAmount: Long,
+                              tokenId: String,
+                              masterKey: BigInt,
+                          ) {
+
+    def toMixRequest: MixRequest = MixRequest(
+      id,
+      groupId,
+      amount,
+      numRounds,
+      mixStatus,
+      createdTime,
+      withdrawAddress,
+      depositAddress,
+      depositCompleted,
+      neededAmount,
+      numToken,
+      withdrawStatus,
+      mixingTokenAmount,
+      neededTokenAmount,
+      tokenId
+    )
+  }
+
+  object CreateMixingRequest {
+    def apply(a: Array[Any]): MixingRequest = {
+      val i = a.toIterator
+      new MixingRequest(
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[Int],
+        MixStatus.fromString(i.next().asInstanceOf[String]),
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[String], // withdraw address
+        i.next().asInstanceOf[String], // deposit address
+        i.next().asInstanceOf[Boolean],
+        i.next().asInstanceOf[Long], // needed
+        i.next().asInstanceOf[Int], // token
+        i.next().asInstanceOf[String], // withdraw status
+        i.next().asInstanceOf[Long], // mixing token amount
+        i.next().asInstanceOf[Long], // needed tokens
+        i.next().asInstanceOf[String], // token id
+        i.next().asInstanceOf[BigInt] // master secret key
+      )
+    }
+
+    implicit val mixingRequestDecoder: Decoder[MixingRequest] = deriveDecoder[MixingRequest]
+
+    def apply(jsonString: String): MixingRequest = {
+      parser.decode[MixingRequest](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing MixingRequest from Json: $e")
+        case Right(req) => req
+      }
     }
   }
 
@@ -176,18 +260,27 @@ object Models {
     }
   }
 
-  object MixCovertRequest {
+  object CreateMixCovertRequest {
     def apply(a: Array[Any]): MixCovertRequest = {
       val iterator = a.toIterator
       new MixCovertRequest(
-        iterator.next().as[String], // name Covert
-        iterator.next().as[String], // id
-        iterator.next().as[Long], // created time
-        iterator.next().as[String], // deposit address
-        iterator.next().as[Int], // num rounds
-        iterator.next().as[Boolean], // isManualCovert
-        iterator.next.as[BigDecimal].toBigInt() // master secret
+        iterator.next().asInstanceOf[String], // name Covert
+        iterator.next().asInstanceOf[String], // id
+        iterator.next().asInstanceOf[Long], // created time
+        iterator.next().asInstanceOf[String], // deposit address
+        iterator.next().asInstanceOf[Int], // num rounds
+        iterator.next().asInstanceOf[Boolean], // isManualCovert
+        iterator.next.asInstanceOf[BigDecimal].toBigInt() // master secret
       )
+    }
+
+    implicit val mixCovertDecoder: Decoder[MixCovertRequest] = deriveDecoder[MixCovertRequest]
+
+    def apply(jsonString: String): MixCovertRequest = {
+      parser.decode[MixCovertRequest](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing MixCovertRequest from Json: $e")
+        case Right(req) => req
+      }
     }
   }
 
@@ -214,16 +307,25 @@ object Models {
 
   }
 
-  object CovertAsset {
+  object CreateCovertAsset {
     def apply(a: Array[Any]): CovertAsset = {
       val i = a.toIterator
       new CovertAsset(
-        i.next().as[String],
-        i.next().as[String],
-        i.next().as[Long],
-        i.next().as[Long],
-        i.next().as[Long]
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[Long]
       )
+    }
+
+    implicit val covertAssetDecoder: Decoder[CovertAsset] = deriveDecoder[CovertAsset]
+
+    def apply(jsonString: String): CovertAsset = {
+      parser.decode[CovertAsset](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing CovertAsset from Json: $e")
+        case Right(asset) => asset
+      }
     }
   }
 
@@ -251,23 +353,32 @@ object Models {
     }
   }
 
-  object MixGroupRequest {
+  object CreateMixGroupRequest {
     def apply(a: Array[Any]): MixGroupRequest = {
       val iterator = a.toIterator
       new MixGroupRequest(
-        iterator.next().as[String], // id
-        iterator.next().as[Long], // amount
-        iterator.next().as[String], // mix status
-        iterator.next().as[Long], // created time
-        iterator.next().as[String], // deposit address
-        iterator.next().as[Long], // done deposit
-        iterator.next().as[Long], // token done deposit
-        iterator.next().as[Long], // mixing amount
-        iterator.next().as[Long], // mixing token amount
-        iterator.next().as[Long], // needed tokens
-        iterator.next().as[String], // token id
-        iterator.next.as[BigDecimal].toBigInt() // master secret
+        iterator.next().asInstanceOf[String], // id
+        iterator.next().asInstanceOf[Long], // amount
+        iterator.next().asInstanceOf[String], // mix status
+        iterator.next().asInstanceOf[Long], // created time
+        iterator.next().asInstanceOf[String], // deposit address
+        iterator.next().asInstanceOf[Long], // done deposit
+        iterator.next().asInstanceOf[Long], // token done deposit
+        iterator.next().asInstanceOf[Long], // mixing amount
+        iterator.next().asInstanceOf[Long], // mixing token amount
+        iterator.next().asInstanceOf[Long], // needed tokens
+        iterator.next().asInstanceOf[String], // token id
+        iterator.next.asInstanceOf[BigDecimal].toBigInt() // master secret
       )
+    }
+
+    implicit val mixGroupRequestDecoder: Decoder[MixGroupRequest] = deriveDecoder[MixGroupRequest]
+
+    def apply(jsonString: String): MixGroupRequest = {
+      parser.decode[MixGroupRequest](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing MixGroupRequest from Json: $e")
+        case Right(asset) => asset
+      }
     }
   }
 
@@ -282,14 +393,23 @@ object Models {
     override def toString: String = this.asJson.toString
   }
 
-  object MixState {
+  object CreateMixState {
     def apply(a: Array[Any]): MixState = {
       val i = a.toIterator
       new MixState(
-        i.next().as[String],
-        i.next().as[Int],
-        i.next().as[Boolean]
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Int],
+        i.next().asInstanceOf[Boolean]
       )
+    }
+
+    implicit val mixStateDecoder: Decoder[MixState] = deriveDecoder[MixState]
+
+    def apply(jsonString: String): MixState = {
+      parser.decode[MixState](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing MixState from Json: $e")
+        case Right(asset) => asset
+      }
     }
   }
 
@@ -297,19 +417,19 @@ object Models {
     override def toString: String = this.asJson.toString
   }
 
-  object MixHistory {
+  object CreateMixHistory {
     def apply(a: Array[Any]): MixHistory = {
       val i = a.toIterator
       new MixHistory(
-        i.next().as[String],
-        i.next().as[Int],
-        i.next().as[Boolean],
-        i.next().as[Long]
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Int],
+        i.next().asInstanceOf[Boolean],
+        i.next().asInstanceOf[Long]
       )
     }
   }
 
-  case class WithdrawTx(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte], additionalInfo: String) {
+  case class WithdrawTx(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte], additionalInfo: String = "") {
     override def toString: String = new String(txBytes, StandardCharsets.UTF_16)
 
     def getFeeBox: Option[String] = { // returns fee box used in this tx if available
@@ -336,17 +456,32 @@ object Models {
     }
   }
 
-  object WithdrawTx {
+  implicit val decodeArrayByte: Decoder[Array[Byte]] = (c: HCursor) => for {
+    s <- c.as[String]
+  } yield {
+    s.getBytes("utf-16")
+  }
+
+  object CreateWithdrawTx {
     def apply(a: Array[Any]): WithdrawTx = {
       val i = a.toIterator
       new WithdrawTx(
-        i.next().as[String],
-        i.next().as[String],
-        i.next().as[Long],
-        i.next().as[String],
-        i.next().as[Array[Byte]],
-        i.next().as[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Array[Byte]],
+        i.next().asInstanceOf[String],
       )
+    }
+
+    implicit val withdrawTxDecoder: Decoder[WithdrawTx] = deriveDecoder[WithdrawTx]
+
+    def apply(jsonString: String): WithdrawTx = {
+      parser.decode[WithdrawTx](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing WithdrawTx from Json: $e")
+        case Right(asset) => asset
+      }
     }
   }
 
@@ -354,13 +489,13 @@ object Models {
     override def toString: String = new String(txBytes, StandardCharsets.UTF_16)
   }
 
-  object MixTransaction {
+  object CreateMixTransaction {
     def apply(a: Array[Any]): MixTransaction = {
       val i = a.toIterator
       new MixTransaction(
-        i.next().as[String],
-        i.next().as[String],
-        i.next().as[Array[Byte]]
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Array[Byte]]
       )
     }
   }
@@ -369,16 +504,16 @@ object Models {
     override def toString: String = new String(txBytes, StandardCharsets.UTF_16)
   }
 
-  object DistributeTx {
+  object CreateDistributeTx {
     def apply(a: Array[Any]): DistributeTx = {
       val i = a.toIterator
       new DistributeTx(
-        i.next().as[String],
-        i.next().as[String],
-        i.next().as[Int],
-        i.next().as[Long],
-        i.next().as[Array[Byte]],
-        i.next().as[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Int],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[Array[Byte]],
+        i.next().asInstanceOf[String],
       )
     }
   }
@@ -387,15 +522,42 @@ object Models {
     override def toString: String = this.asJson.toString
   }
 
-  object Deposit {
+  object CreateDeposit {
     def apply(a: Array[Any]): Deposit = {
       val i = a.toIterator
       new Deposit(
-        i.next().as[String],
-        i.next().as[String],
-        i.next().as[Long],
-        i.next().as[Long],
-        i.next().as[Long]
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[Long]
+      )
+    }
+  }
+
+  case class SpentDeposit(address: String,
+                          boxId: String,
+                          amount: Long,
+                          createdTime: Long,
+                          tokenAmount: Long,
+                          txId: String,
+                          spentTime: Long,
+                          purpose: String) {
+    override def toString: String = this.asJson.toString
+  }
+
+  object CreateSpentDeposit {
+    def apply(a: Array[Any]): SpentDeposit = {
+      val i = a.toIterator
+      new SpentDeposit(
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[String]
       )
     }
   }
@@ -414,16 +576,25 @@ object Models {
     override def toString: String = this.asJson.toString
   }
 
-  object HalfMix {
+  object CreateHalfMix {
     def apply(a: Array[Any]): HalfMix = {
       val i = a.toIterator
       new HalfMix(
-        i.next().as[String],
-        i.next().as[Int],
-        i.next().as[Long],
-        i.next().as[String],
-        i.next().as[Boolean]
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Int],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Boolean]
       )
+    }
+
+    implicit val halfMixDecoder: Decoder[HalfMix] = deriveDecoder[HalfMix]
+
+    def apply(jsonString: String): HalfMix = {
+      parser.decode[HalfMix](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing HalfMix from Json: $e")
+        case Right(asset) => asset
+      }
     }
   }
 
@@ -442,16 +613,25 @@ object Models {
     override def toString: String = this.asJson.toString
   }
 
-  object FullMix {
+  object CreateFullMix {
     def apply(a: Array[Any]): FullMix = {
       val i = a.toIterator
       new FullMix(
-        i.next().as[String],
-        i.next().as[Int],
-        i.next().as[Long],
-        i.next().as[String],
-        i.next().as[String]
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Int],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String]
       )
+    }
+
+    implicit val fullMixDecoder: Decoder[FullMix] = deriveDecoder[FullMix]
+
+    def apply(jsonString: String): FullMix = {
+      parser.decode[FullMix](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing FullMix from Json: $e")
+        case Right(asset) => asset
+      }
     }
   }
 
@@ -466,15 +646,15 @@ object Models {
     override def toString: String = this.asJson.toString
   }
 
-  object Withdraw {
+  object CreateWithdraw {
     def apply(a: Array[Any]): Withdraw = {
       val i = a.toIterator
       new Withdraw(
-        i.next().as[String],
-        i.next().as[String],
-        i.next().as[Long],
-        i.next().as[String],
-        parser.parse(new String(i.next().as[Array[Byte]], "utf-16")).right.get
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[String],
+        parser.parse(new String(i.next().asInstanceOf[Array[Byte]], "utf-16")).right.get
       )
     }
   }
@@ -496,16 +676,16 @@ object Models {
     override def toString: String = this.asJson.toString
   }
 
-  object PendingRescan {
+  object CreatePendingRescan {
     def apply(a: Array[Any]): PendingRescan = {
       val i = a.toIterator
       new PendingRescan(
-        i.next().as[String],
-        i.next().as[Long],
-        i.next().as[Int],
-        i.next().as[Boolean],
-        i.next().as[Boolean],
-        i.next().as[String]
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[Int],
+        i.next().asInstanceOf[Boolean],
+        i.next().asInstanceOf[Boolean],
+        i.next().asInstanceOf[String]
       )
     }
   }
@@ -524,7 +704,7 @@ object Models {
   object EntityInfo {
     def apply(box: InputBox): EntityInfo = {
       val name = new String(box.getRegisters.get(0).getValue.asInstanceOf[Coll[Byte]].toArray, StandardCharsets.UTF_8)
-      val id = new String(box.getRegisters.get(1).getValue.asInstanceOf[Coll[Byte]].toArray, StandardCharsets.UTF_8)
+      val id = new String(box.getRegisters.get(1).getValue.asInstanceOf[Coll[Byte]].toArray, StandardCharsets.UTF_8).toLowerCase
       val rings = box.getRegisters.get(2).getValue.asInstanceOf[Coll[Long]]
       val decimals = if (box.getRegisters.size() >= 4) box.getRegisters.get(3).getValue.asInstanceOf[Int] else 0
       val dynamicFeeRate = if (box.getRegisters.size() >= 5) box.getRegisters.get(4).getValue.asInstanceOf[Long] else 1000L // 1000 for 1e6 nano erg / byte
@@ -558,6 +738,15 @@ object Models {
       assert(tokenPrice != -1)
       val ergVal = if (rate > 0 && rate < 1000000) ergRing / rate else 0
       (ergRing + Configs.startFee + tokenPrice + ergVal, getTokenPrice(tokenRing))
+    }
+
+    implicit val mixingBoxDecoder: Decoder[MixingBox] = deriveDecoder[MixingBox]
+
+    def apply(jsonString: String): MixingBox = {
+      parser.decode[MixingBox](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing MixingBox from Json: $e")
+        case Right(asset) => asset
+      }
     }
   }
 
@@ -623,6 +812,63 @@ object Models {
       case (c1: GroupElement, c2: GroupElement, gX: GroupElement) => (c1, c2, gX) //Values.GroupElementConstant(c1), Values.GroupElementConstant(c2)) => (c1, c2)
       case (r4, r5, r6) => throw new Exception(s"Invalid registers R4:$r4, R5:$r5, R6:$r6")
     }
+  }
+
+  case class CovertAssetWithdrawTx(covertId: String, tokenId: String, withdrawAddress: String, createdTime: Long, withdrawStatus: String, txId: String, tx: Array[Byte]) {
+    override def toString: String = new String(tx, StandardCharsets.UTF_16)
+
+    def getJson: Json = io.circe.parser.parse(toString).getOrElse(Json.Null)
+  }
+
+  object CreateCovertAssetWithdrawTx {
+    def apply(a: Array[Any]): CovertAssetWithdrawTx = {
+      val i = a.toIterator
+      CovertAssetWithdrawTx(
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Array[Byte]]
+      )
+    }
+  }
+
+  sealed abstract class CovertAssetWithdrawStatus(val value: String)
+
+  object CovertAssetWithdrawStatus {
+
+    object NoWithdrawYet extends CovertAssetWithdrawStatus("nothing")
+
+    object Requested extends CovertAssetWithdrawStatus("requested")
+
+    object Complete extends CovertAssetWithdrawStatus("complete")
+
+    private def all = Seq(NoWithdrawYet, Requested, Complete)
+
+    def fromString(s: String): CovertAssetWithdrawStatus = all.find(_.value == s).getOrElse(throw new Exception(s"Invalid status $s"))
+  }
+
+  class TokenMap {
+    val tokens = mutable.Map.empty[String, Long]
+
+    def add(token: ErgoToken): Unit = {
+      val tokenId = token.getId.toString
+      val value = token.getValue
+      if (tokens.contains(tokenId)) tokens(tokenId) += value
+      else tokens(tokenId) = value
+    }
+
+    def toJavaArray: java.util.ArrayList[ErgoToken] = {
+      val tokenList = new java.util.ArrayList[ErgoToken]()
+      tokens.keys.foreach(tokenId => {
+        tokenList.add(new ErgoToken(tokenId, tokens(tokenId)))
+      })
+      tokenList
+    }
+
+    def isEmpty: Boolean = tokens.isEmpty
   }
 
 

@@ -2,17 +2,12 @@ package helpers
 
 import java.io._
 import java.security.SecureRandom
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.zip.{ZipEntry, ZipInputStream, ZipOutputStream}
 
 import app.Configs
-import io.circe.Json
 import javax.inject.Inject
 import network.NetworkUtils
 import play.api.Logger
-import sigmastate.SType
-import sigmastate.lang.SigmaParser
 
 class ErgoMixerUtils @Inject()(networkUtils: NetworkUtils) {
   private val logger: Logger = Logger(this.getClass)
@@ -50,7 +45,7 @@ class ErgoMixerUtils @Inject()(networkUtils: NetworkUtils) {
     }
   }
 
-  def getRandom(seq: Seq[String]) = networkUtils.usingClient { implicit ctx =>
+  def getRandom(seq: Seq[String]): Option[String] = networkUtils.usingClient { implicit ctx =>
     val random = new SecureRandom()
     new scala.util.Random(random).shuffle(seq).headOption
   }
@@ -104,4 +99,5 @@ class ErgoMixerUtils @Inject()(networkUtils: NetworkUtils) {
       throw new Exception("No uploaded backup found")
     }
   }
+
 }

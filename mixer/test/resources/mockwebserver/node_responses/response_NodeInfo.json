@@ -1,0 +1,34 @@
+
+{
+  "name": "mainnet-seed-node-frankfurt",
+  "appVersion": "3.1.4",
+  "fullHeight": 123414,
+  "headersHeight": 123414,
+  "bestFullHeaderId": "8d87fd4a7372877462ff7ecb52a6063207ffda2689f4de3254cc9a2877953f4f",
+  "previousFullHeaderId": "0895a4a3dddbfd8faee6d9f957c42b64ee328714221809ad20d8fa4d036e1bf9",
+  "bestHeaderId": "8d87fd4a7372877462ff7ecb52a6063207ffda2689f4de3254cc9a2877953f4f",
+  "stateRoot": "25ff1da6e5bf14304196c19461a4bd24f8ce6c493153baea3c3d6efe17d4bda814",
+  "stateType": "utxo",
+  "stateVersion": "8d87fd4a7372877462ff7ecb52a6063207ffda2689f4de3254cc9a2877953f4f",
+  "isMining": false,
+  "peersCount": 30,
+  "unconfirmedCount": 2,
+  "difficulty": 128274315345920,
+  "currentTime": 1576789157261,
+  "launchTime": 1576504334661,
+  "headersScore": 17353496201374203904,
+  "fullBlocksScore": 17353496201374203904,
+  "genesisBlockId": "b0244dfc267baca974a4caee06120321562784303a8a688976ae56170e4d175b",
+  "parameters": {
+    "height": 122880,
+    "storageFeeFactor": 1250000,
+    "minValuePerByte": 360,
+    "maxBlockSize": 524288,
+    "maxBlockCost": 1000000,
+    "blockVersion": 1,
+    "tokenAccessCost": 100,
+    "inputCost": 2000,
+    "dataInputCost": 100,
+    "outputCost": 100
+  }
+}

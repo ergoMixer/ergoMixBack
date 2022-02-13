@@ -9,26 +9,28 @@ import org.ergoplatform.appkit.{BlockchainContext, ErgoClient, InputBox}
 import play.api.Logger
 import wallet.WalletHelper
 
+import scala.collection.mutable
+
 @Singleton
 class NetworkUtils @Inject()(explorer: BlockExplorer) {
   private val logger: Logger = Logger(this.getClass)
 
-  var allClients: Seq[ErgoClient] = Seq()
-  var prunedClients: Seq[ErgoClient] = Seq()
+  var allClients: mutable.Map[String, ErgoClient] = mutable.Map.empty[String, ErgoClient]
+  var prunedClients: mutable.Map[String, ErgoClient] = mutable.Map.empty[String, ErgoClient]
   var tokenErgoMix: Option[TokenErgoMix] = None
 
   def pruneClients(): Unit = {
     val explorerHeight = explorer.getHeight
-    prunedClients = allClients.filter(client => {
+    allClients.foreach(client => {
       try {
-        client.execute(ctx => {
+        val validClient = client._2.execute(ctx => {
           val nodeHeight = ctx.getHeight
           explorerHeight - nodeHeight <= 2
         })
+        if (validClient) prunedClients(client._1) = client._2
       } catch {
         case e: Throwable =>
           logger.error(s"will ignore this node. ${e.getMessage}")
-          false
       }
     })
 
@@ -36,7 +38,7 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
 
   def usingClient[T](f: BlockchainContext => T): T = {
     if (prunedClients.isEmpty) throw new Exception("There are no available nodes to connect to")
-    val rndClient = prunedClients(WalletHelper.randInt(prunedClients.size))
+    val rndClient = prunedClients.toSeq(WalletHelper.randInt(prunedClients.size))._2
     rndClient.execute { ctx =>
       f(ctx)
     }
@@ -72,7 +74,7 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
       if (considerPool) txPool = explorer.getPoolTransactionsStr
       val unspentBoxes = getUnspentBoxes(tokenErgoMix.get.halfMixAddress.toString)
       unspentBoxes.filter(box => {
-        (!considerPool || !txPool.contains(s""""${box.id.toString}","txId"""")) && // not already in mempool
+        (!considerPool || !txPool.contains(s""""${box.id.toString}","transactionId"""")) && // not already in mempool
           box.registers.contains("R4") &&
           !WalletHelper.poisonousHalfs.contains(box.ge("R4")) // not poisonous
       }).toList

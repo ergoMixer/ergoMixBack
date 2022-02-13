@@ -1,3 +1,5 @@
+package services
+
 import com.google.inject.AbstractModule
 import services._
 

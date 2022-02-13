@@ -41,7 +41,7 @@ object TrayUtils {
       openLogs.addActionListener((_: ActionEvent) => {
         java.awt.Desktop.getDesktop.open(new File(System.getProperty("user.home") + "/ergoMixer/"))
       })
-      var configFile = new File(getClass.getResource("/application.conf").getPath)
+      var configFile = new File(getClass.getResource("/application.conf").toURI)
       val custom = System.getProperty("config.file", null)
       if (custom != null) configFile = new File(custom)
       openConfigFile.addActionListener((_: ActionEvent) => {

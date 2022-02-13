@@ -1,42 +1,42 @@
 package controllers
 
-import java.nio.file.Paths
+import akka.util.ByteString
 
+import java.nio.file.Paths
 import app.Configs
-import db.Columns.{mixIdCol, withdrawAddressCol}
-import db.Tables
 import helpers.ErgoMixerUtils
 import info.BuildInfo
 import io.circe.Json
 import io.circe.syntax._
+
 import javax.inject._
-import mixer.ErgoMixer
+import mixer.{CovertMixer, ErgoMixer}
 import models.Models.{MixBoxList, WithdrawTx}
 import network.{BlockExplorer, NetworkUtils}
-import org.ergoplatform.appkit.{ErgoValue, InputBox, RestApiErgoClient}
+import org.ergoplatform.appkit.InputBox
 import play.api.Logger
 import play.api.libs.json._
 import play.api.mvc._
 import org.apache.commons.lang3._
-import play.api.db.Database
 import helpers.TrayUtils.showNotification
 import mixinterface.AliceOrBob
-import models.Models.MixWithdrawStatus.{AgeUSDRequested, WithdrawRequested}
+import models.Models.MixWithdrawStatus.AgeUSDRequested
 import wallet.{Wallet, WalletHelper}
-
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 import scala.io.Source
+import dao.{DAOUtils, WithdrawDAO}
+import play.api.http.HttpEntity
 
 /**
  * A controller inside of Mixer controller.
  */
-class ApiController @Inject()(assets: Assets, controllerComponents: ControllerComponents, dbs: Database, ergoMixerUtils: ErgoMixerUtils,
+class ApiController @Inject()(assets: Assets, controllerComponents: ControllerComponents, ergoMixerUtils: ErgoMixerUtils,
                               ergoMixer: ErgoMixer, networkUtils: NetworkUtils, explorer: BlockExplorer, aliceOrBob: AliceOrBob,
-                              tables: Tables
+                              daoUtils: DAOUtils, withdrawDAO: WithdrawDAO, covertMixer: CovertMixer
                              )(implicit ec: ExecutionContext) extends AbstractController(controllerComponents) {
 
   import networkUtils._
-  import tables._
 
   private val logger: Logger = Logger(this.getClass)
 
@@ -146,10 +146,9 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    */
   def backup: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     try {
-      if (SystemUtils.IS_OS_WINDOWS) dbs.shutdown()
+      if (SystemUtils.IS_OS_WINDOWS) daoUtils.shutdown
       val res = ergoMixerUtils.backup()
       Ok.sendFile(new java.io.File(res))
-
     } catch {
       case e: Throwable =>
         logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
@@ -164,7 +163,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
     try {
       val path = System.getProperty("user.home")
       request.body.file("myFile").map { backup =>
-        dbs.shutdown()
+        daoUtils.shutdown
         backup.ref.copyTo(Paths.get(s"$path/ergoMixer/ergoMixerRestore.zip"), replace = true)
         ergoMixerUtils.restore()
         System.exit(0)
@@ -194,7 +193,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
     val nodes = Configs.nodes.map(url =>
       s"""{
          |  "url": "$url",
-         |  "canConnect": ${prunedClients.map(_.asInstanceOf[RestApiErgoClient].getNodeUrl).contains(url)}
+         |  "canConnect": ${prunedClients.contains(url)}
          |}""".stripMargin)
     Ok(
       s"""
@@ -711,7 +710,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
         val tx = aliceOrBob.mint(boxId, secret.bigInteger, isAlice, address, req, prevBank, true) // TODO send true must be true for releasing
 
         // finding first bank box and tx in the chain
-        val mintTxsChain = getMintingTxs
+        val mintTxsChain = daoUtils.awaitResult(withdrawDAO.getMintings)
         var inBank = prevBank.getId.toString
         var firstTxId: String = tx.getId
         var endOfChain = false
@@ -725,10 +724,11 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
           }
         }
         val additionalInfo = s"$inBank,$firstTxId"
-        val inps = tx.getInputBoxes.map(inp => inp.boxId.toString).mkString(",")
+        val inps = tx.getSignedInputs.asScala.map(inp => inp.getId.toString).mkString(",")
         val txBytes = tx.toJson(false).getBytes("utf-16")
         implicit val insertReason: String = "Minting AgeUSD"
-        insertWithdraw(mixId, tx.getId, WalletHelper.now, inps, txBytes, AgeUSDRequested.value, additionalInfo)
+        val new_withdraw = WithdrawTx(mixId, tx.getId, WalletHelper.now, inps, txBytes, additionalInfo)
+        withdrawDAO.updateById(new_withdraw, AgeUSDRequested.value)
 
         Ok(tx.toJson(false)).as("application/json")
       })
@@ -739,5 +739,77 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
         BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
     }
   }
+
+  /**
+   * A GET endpoint to download the covert private keys from database
+   */
+  def covertKeys: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      val keys = ergoMixer.covertKeys
+      Result(
+        header = ResponseHeader(OK, Map(CONTENT_DISPOSITION → "attachment; filename=covertKeys.csv")),
+        body = HttpEntity.Strict(ByteString(keys.mkString("\n")), Some("text/csv"))
+      )
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
+   * returns the private key and address of the corresponding covert
+   *
+   * @param covertId covert id
+   * @return whether the processs was successful or not
+   */
+  def getCovertPrivateKey(covertId: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      val covertInfo = ergoMixer.covertInfoById(covertId)
+      Ok(
+        s"""{
+           |  "address": "${covertInfo._1}",
+           |  "privateKey": "${covertInfo._2.toString(16)}"
+           |}""".stripMargin
+      ).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+
+  }
+
+  /**
+   * A post endpoint to withdraw a covert's assets
+   * example input:
+   * {
+   * "tokenIds": [  // Seq[String]
+   *     "",
+   *     ""
+   *  ],
+   *  "withdrawAddress": "" // String
+   * }
+   *
+   * @param covertId covert id
+   */
+  def withdrawCovertAsset(covertId: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
+      val tokenIds: Seq[String] = js.hcursor.downField("tokenIds").as[Seq[String]].getOrElse(throw new Exception(s"tokenIds is required"))
+      val withdrawAddress: String = js.hcursor.downField("withdrawAddress").as[String].getOrElse(throw new Exception(s"withdrawAddress is required"))
+      covertMixer.queueWithdrawAsset(covertId, tokenIds, withdrawAddress)
+      Ok(
+        s"""{
+           |  "success": true
+           |}""".stripMargin
+      ).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
 }
 

@@ -3,7 +3,6 @@ package services
 import akka.actor._
 import app.Configs
 import network.Client
-import db.Tables
 import helpers.TrayUtils
 import javax.inject._
 import mixer.ErgoMixer

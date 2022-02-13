@@ -7,16 +7,18 @@ import mixinterface.TokenErgoMix
 import org.ergoplatform.ErgoAddressEncoder
 import org.ergoplatform.appkit._
 import org.ergoplatform.appkit.impl.ErgoTreeContract
-import org.scalatest.{Matchers, PropSpec}
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.propspec.AnyPropSpec
 import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
 import sigmastate.eval._
 import sigmastate.interpreter.CryptoConstants
+import special.collection.Coll
 import special.sigma.GroupElement
 import wallet.WalletHelper
 
 import scala.collection.JavaConverters._
 
-class TokenContractsSpec extends PropSpec with Matchers
+class TokenContractsSpec extends AnyPropSpec with Matchers
   with ScalaCheckDrivenPropertyChecks
   with HttpClientTesting {
 
@@ -31,12 +33,13 @@ class TokenContractsSpec extends PropSpec with Matchers
   val tokenId: String = TokenErgoMix.tokenId
   val trashAddress: Address = Address.create("3WyYs2kRTWnzgJRwegG9kRks2Stw41VLM8s87JTdhRmwuZr71fTg")
   val poolValue = 3000000
-  val batchPrices = new util.HashMap[Integer, java.lang.Long]()
   val batchSize = 60
   val batchPrice: Long = batchSize * Configs.defaultFullFee
+  val batchPrices: Array[(Int, Long)] = Seq(Tuple2(batchSize, batchPrice)).toArray
   val mixToken: String = ""
   val mixTokenVal: Long = 1000
-  batchPrices.put(batchSize, batchPrice)
+
+  val batchPricesValue: ErgoValue[Coll[(Int, Long)]] = ErgoValue.of(batchPrices, ErgoType.pairType(ErgoType.integerType(), ErgoType.longType()))
 
   def convertBytesToHex(bytes: Seq[Byte]): String = {
     val sb = new StringBuilder
@@ -106,7 +109,7 @@ class TokenContractsSpec extends PropSpec with Matchers
       val tokenBox = ctx.newTxBuilder.outBoxBuilder
         .tokens(new ErgoToken(tokenId, 200))
         .value(1000000).contract(tokenEmissionContract)
-        .registers(ErgoValue.of(batchPrices), ErgoValue.of(200))
+        .registers(batchPricesValue, ErgoValue.of(200))
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
 
@@ -159,7 +162,7 @@ class TokenContractsSpec extends PropSpec with Matchers
       val mix = new TokenErgoMix(ctx)
       val tokenBox = ctx.newTxBuilder.outBoxBuilder
         .tokens(new ErgoToken(tokenId, 200))
-        .registers(ErgoValue.of(batchPrices), ErgoValue.of(20))
+        .registers(batchPricesValue, ErgoValue.of(20))
         .value(1000000)
         .contract(mix.tokenEmissionContract)
         .build()
@@ -234,7 +237,7 @@ class TokenContractsSpec extends PropSpec with Matchers
       val mix = new TokenErgoMix(ctx)
       val tokenBox = ctx.newTxBuilder.outBoxBuilder
         .tokens(new ErgoToken(tokenId, 200))
-        .registers(ErgoValue.of(batchPrices), ErgoValue.of(20))
+        .registers(batchPricesValue, ErgoValue.of(20))
         .value(1000000).contract(mix.tokenEmissionContract)
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
@@ -470,7 +473,7 @@ class TokenContractsSpec extends PropSpec with Matchers
       val mix = new TokenErgoMix(ctx)
       val tokenBox = ctx.newTxBuilder.outBoxBuilder
         .tokens(new ErgoToken(tokenId, 200))
-        .registers(ErgoValue.of(batchPrices), ErgoValue.of(20))
+        .registers(batchPricesValue, ErgoValue.of(20))
         .value(1000000)
         .contract(mix.tokenEmissionContract)
         .build()
@@ -548,7 +551,7 @@ class TokenContractsSpec extends PropSpec with Matchers
       val mix = new TokenErgoMix(ctx)
       val tokenBox = ctx.newTxBuilder.outBoxBuilder
         .tokens(new ErgoToken(tokenId, 200))
-        .registers(ErgoValue.of(batchPrices), ErgoValue.of(20))
+        .registers(batchPricesValue, ErgoValue.of(20))
         .value(1000000).contract(mix.tokenEmissionContract)
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)

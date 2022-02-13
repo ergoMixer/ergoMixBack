@@ -3,7 +3,6 @@ package wallet
 import java.math.BigInteger
 
 import app.Configs
-import network.NetworkUtils
 import org.ergoplatform.{ErgoAddress, ErgoAddressEncoder}
 import org.ergoplatform.appkit.{BlockchainContext, ConstantsBuilder, JavaHelpers, NetworkType}
 import sigmastate.eval._

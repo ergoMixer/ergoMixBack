@@ -641,6 +641,99 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /covert/keys:
+    get:
+      summary: downloads a file containing name, address and private key of all coverts
+      operationId: covertKeys
+      tags:
+        - covert
+      responses:
+        '200':
+          description: download the covertKeys
+          content:
+            text/csv:
+              schema:
+                type: string
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /covert/{covertId}/key:
+    get:
+      summary: returns the address and private key of a covert
+      operationId: getCovertPrivateKey
+      tags:
+        - covert
+      parameters:
+        - in: path
+          name: covertId
+          required: true
+          description: ID of a wanted covert
+          schema:
+            type: string
+      responses:
+        '200':
+          description: the address and private key of corresponding covert
+          content:
+            application/json:
+              schema:
+                items:
+                  example: {
+                    "address": "9f7nfgc48ytASi6RB6rfGsCBVzsGxdsbMfx6rLdVhcEmb69yqp1",
+                    "privateKey": "1db0b06b6bc8a1b25a03fcdad7b9e05c72c3b886a7ea1f27e4d3843064395565"
+                  }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /covert/{covertId}/withdraw:
+    post:
+      summary: adds list of tokens to withdraw from the covert
+      operationId: withdrawCovertAsset
+      tags:
+        - covert
+      parameters:
+        - in: path
+          name: covertId
+          required: true
+          description: ID of a wanted covert
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: withdraw request for some tokens of the covert
+              type: object
+              required:
+                - tokenIds
+                - withdrawAddress
+              example: {
+                "tokenIds": [
+                    "a3faf2cb326571cbf0458d91b9f2e9021bb6c046afbefbe2824aaafe9252b4f",
+                    "4d612894187117f139929f0cab093f5b62e1bc7709f88949285d043c5c4dd15"
+                ],
+                "withdrawAddress": "9g1p6UU8XoAeU4yGPLpbTHYiG8aBHwfCFzQqJZrfzuLnmF3zb7P"
+              }
+      responses:
+        '200':
+          description: Status of operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccess'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
 
   /ageusd/height :
     get:

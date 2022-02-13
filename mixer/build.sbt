@@ -2,22 +2,21 @@ import sbt.Keys.{publishMavenStyle, scalaVersion}
 
 name := "ergoMixer"
 
-lazy val sonatypePublic = "Sonatype Public" at "https://oss.sonatype.org/content/groups/public/"
-lazy val sonatypeReleases = "Sonatype Releases" at "https://oss.sonatype.org/content/repositories/releases/"
 lazy val sonatypeSnapshots = "Sonatype Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/"
 
 libraryDependencies += filters
-libraryDependencies ++= Seq(evolutions, jdbc)
 
 lazy val commonSettings = Seq(
   organization := "ergoMixer",
-  version := "3.3.5",
+  version := "4.0.0",
   scalaVersion := "2.12.10",
-  resolvers ++= Seq(sonatypeReleases,
-    "SonaType" at "https://oss.sonatype.org/content/groups/public",
-    "Typesafe maven releases" at "https://dl.bintray.com/typesafe/maven-releases/",
-    sonatypeSnapshots,
-    Resolver.mavenCentral),
+  resolvers ++= Seq(
+    Resolver.sonatypeRepo("public"),
+    Resolver.sonatypeRepo("releases"),
+    Resolver.sonatypeRepo("snapshots"),
+    Resolver.typesafeRepo("releases"),
+    Resolver.mavenCentral
+  ),
   description := "Ergo Mixer Web Application",
   publishArtifact in (Compile, packageSrc) := true,
   publishArtifact in (Compile, packageDoc) := true,
@@ -26,8 +25,9 @@ lazy val commonSettings = Seq(
 )
 
 val testingDependencies = Seq(
-  "org.scalatest" %% "scalatest" % "3.0.8" % "test",
-  "org.scalacheck" %% "scalacheck" % "1.14.+" % "test"
+  "org.scalatest" %% "scalatest" % "3.2.9" % "test",
+  "org.scalatestplus" %% "scalacheck-1-15" % "3.2.9.0" % "test",
+  "org.scalatestplus" %% "mockito-3-4" % "3.2.9.0" % "test"
 )
 
 lazy val testSettings = Seq(
@@ -38,13 +38,6 @@ lazy val testSettings = Seq(
   publishArtifact in(Test, packageSrc) := true,
   publishArtifact in(Test, packageDoc) := false,
   test in assembly := {})
-
-lazy val allResolvers = Seq(
-  sonatypePublic,
-  sonatypeReleases,
-  sonatypeSnapshots,
-  Resolver.mavenCentral
-)
 
 publishArtifact in Compile := true
 publishArtifact in Test := true
@@ -69,10 +62,12 @@ libraryDependencies ++= Seq(
   mockWebServer,
   "org.scalatestplus.play" %% "scalatestplus-play" % "4.0.3" % Test,
   "com.h2database" % "h2" % "1.4.199",
-  "org.ergoplatform" %% "ergo-appkit" % "mixer-appkit-SNAPSHOT",
+  "org.ergoplatform" %% "ergo-appkit" % "4.0.6",
   "org.mockito" % "mockito-core" % "3.3.0",
   "org.apache.commons" % "commons-lang3" % "3.11",
-  "org.webjars" % "swagger-ui" % "3.38.0"
+  "org.webjars" % "swagger-ui" % "3.38.0",
+  "com.typesafe.play" %% "play-slick" % "4.0.0",
+  "com.typesafe.play" %% "play-slick-evolutions" % "4.0.0"
 )
 
 enablePlugins(JDKPackagerPlugin)
@@ -89,3 +84,5 @@ lazy val root = (project in file("."))
   )
 
 Compile / unmanagedResourceDirectories += baseDirectory.value / "resources"
+
+javaOptions in test += "-Dlogger.resource=test/resources/logback-test.xml"

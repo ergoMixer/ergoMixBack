@@ -32,13 +32,9 @@ do
             sdk install sbt
             
             git clone https://github.com/ergoMixer/ergoMixBack.git
-            cd ergoMixBack/appkit/
-
-            echo "Building AppKit..."
-            sbt publishLocal
+            cd ergoMixBack/
 
             echo "Building Frontend"
-            cd ..
             git submodule update --init
             cd ergoMixFront/
             npm install
@@ -68,7 +64,3 @@ do
         *) echo "invalid option $REPLY";;
     esac
 done
-
-
-
-

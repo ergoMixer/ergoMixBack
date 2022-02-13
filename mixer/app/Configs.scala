@@ -34,7 +34,7 @@ object Configs extends ConfigHelper {
   var dynamicFeeRate: Long = 1000L
 
   val ergRing: Long = 1e6.toLong // erg ring used in mixing tokens
-  val minPossibleErgInBox: Long = 1e4.toLong
+  val minPossibleErgInBox: Long = 1e6.toLong
 
   // proxy config
   val proxyUrl: String = readKey("proxy.url", "")

@@ -2,43 +2,50 @@ package mixer
 
 import app.Configs
 import mixinterface.AliceOrBob
-import db.Columns._
-import db.ScalaDB._
-import db.Tables
-import db.core.DataStructures.anyToAny
 import helpers.ErgoMixerUtils
+
 import javax.inject.{Inject, Singleton}
-import models.Models.{CovertAsset, DistributeTx, EndBox, MixCovertRequest, OutBox}
+import models.Models.{CovertAsset, CovertAssetWithdrawStatus, CovertAssetWithdrawTx, DistributeTx, EndBox, MixCovertRequest, OutBox}
 import network.{BlockExplorer, NetworkUtils}
 import org.ergoplatform.ErgoAddressEncoder
-import org.ergoplatform.appkit.impl.ScalaBridge
-import org.ergoplatform.appkit.{Address, ErgoToken, InputBox}
+import org.ergoplatform.appkit.{Address, ErgoToken, ErgoTreeTemplate}
 import play.api.Logger
 import wallet.{Wallet, WalletHelper}
 
 import scala.collection.mutable
 import scala.collection.JavaConverters._
+import dao.{CovertAddressesDAO, CovertDefaultsDAO, DAOUtils, DistributeTransactionsDAO, MixingCovertRequestDAO, MixingRequestsDAO, WithdrawCovertTokenDAO}
+import scorex.crypto.hash.Sha256
+import scorex.util.encode.Base16
+import sigmastate.Values.ErgoTree
+import wallet.WalletHelper.okAddresses
+
+import java.nio.charset.StandardCharsets
 
 @Singleton
-class CovertMixer @Inject()(tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
-                            ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtils, explorer: BlockExplorer) {
+class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
+                            ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtils, explorer: BlockExplorer, daoUtils: DAOUtils,
+                            mixingCovertRequestDAO: MixingCovertRequestDAO,
+                            covertDefaultsDAO: CovertDefaultsDAO,
+                            distributeTransactionsDAO: DistributeTransactionsDAO,
+                            covertAddressesDAO: CovertAddressesDAO,
+                            mixingRequestsDAO: MixingRequestsDAO,
+                            withdrawCovertTokenDAO: WithdrawCovertTokenDAO) {
   private val logger: Logger = Logger(this.getClass)
-
-  import tables._
 
   /**
    * processes covert addresses, i.e. handle deposits, merges input boxes, initiate mixing.
    */
   def processCovert(): Unit = {
     networkUtils.usingClient { implicit ctx =>
-      mixCovertTable.selectStar.as(arr => MixCovertRequest(arr)).foreach(req => {
+      daoUtils.awaitResult(mixingCovertRequestDAO.all).foreach(req => {
         try {
           logger.info(s"[covert: ${req.id}] processing deposits...")
-          val assets = covertDefaultsTable.selectStar.where(mixGroupIdCol === req.id).as(CovertAsset(_))
+          val assets = daoUtils.awaitResult(covertDefaultsDAO.selectAllAssetsByMixGroupId(req.id))
           val supported = assets.filter(_.ring > 0)
           val unsupported = assets.filter(_.ring == 0)
           // zero chainOrder means tx is confirmed! no need to consider it here.
-          val spent = distributeTxsTable.select(inputsCol).where(mixGroupIdCol === req.id, chainOrderCol > 0).as(_.toIterator.next().as[String]).mkString(",")
+          val spent = daoUtils.awaitResult(distributeTransactionsDAO.selectSpentTransactionsInputs(req.id)).mkString(",")
           val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
           val deposits = mutable.Map.empty[String, Long] // considers txs in mempool so avoids counting those boxes we already trying to spend
           val realDeposits = mutable.Map.empty[String, Long] // doesn't consider current txs in mempool
@@ -64,7 +71,7 @@ class CovertMixer @Inject()(tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: Al
           realDeposits.foreach(dep => {
             if ((supported ++ unsupported).exists(_.tokenId == dep._1)) {
               if ((supported ++ unsupported).filter(_.tokenId == dep._1).head.confirmedDeposit != dep._2) {
-                covertDefaultsTable.update(depositCol <-- dep._2, lastActivityCol <-- WalletHelper.now).where(mixGroupIdCol === req.id, tokenIdCol === dep._1)
+                covertDefaultsDAO.updateConfirmedDeposit(req.id, dep._1, dep._2, WalletHelper.now)
                 var name = dep._1
                 if (name.isEmpty) name = "erg"
                 logger.info(s"  processed confirmed deposits, $name: ${dep._2}")
@@ -72,7 +79,7 @@ class CovertMixer @Inject()(tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: Al
             } else {
               logger.info(s"  processed confirmed unsupported deposits, ${dep._1}: ${dep._2}")
               ergoMixer.handleCovertSupport(req.id, dep._1, 0L)
-              covertDefaultsTable.update(depositCol <-- dep._2, lastActivityCol <-- WalletHelper.now).where(mixGroupIdCol === req.id, tokenIdCol === dep._1)
+              covertDefaultsDAO.updateConfirmedDeposit(req.id, dep._1, dep._2, WalletHelper.now)
             }
           })
 
@@ -90,6 +97,11 @@ class CovertMixer @Inject()(tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: Al
             logger.error(ergoMixerUtils.getStackTraceStr(a))
         }
       })
+
+      // process current withdrawals of coverts tokens
+      daoUtils.awaitResult(withdrawCovertTokenDAO.selectRequestedWithdraws).foreach(req => processRequestedWithdrawAsset(req.covertId, req.tokenId, req.txId, req.tx))
+      // process new requests to withdraw coverts tokens
+      processNotWithdrawnAssets(daoUtils.awaitResult(withdrawCovertTokenDAO.selectNotProcessedWithdraws))
     }
   }
 
@@ -102,7 +114,7 @@ class CovertMixer @Inject()(tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: Al
    * @param deposit   current deposits of this address
    */
   def enterMixing(req: MixCovertRequest, inputs: Seq[OutBox], supported: Seq[CovertAsset], deposit: mutable.Map[String, Long]): Unit = networkUtils.usingClient { implicit ctx =>
-    val addresses = covertAddressesTable.select(addressCol).where(mixGroupIdCol === req.id).as(res => res.toIterator.next().as[String])
+    val addresses = daoUtils.awaitResult(covertAddressesDAO.selectAllAddressesByCovertId(req.id))
     var endBoxes = Seq[EndBox]()
     supported.filter(_.tokenId.nonEmpty).foreach(toMix => { // try to mix anything but erg!
       var possible = true
@@ -155,7 +167,7 @@ class CovertMixer @Inject()(tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: Al
         deposit(endBoxes.last.tokens.last.getId.toString) += endBoxes.last.tokens.last.getValue
       }
       val addr = new ErgoAddressEncoder(ctx.getNetworkType.networkPrefix).fromProposition(endBoxes.last.receiverBoxScript).toString
-      mixRequestsTable.deleteWhere(withdrawAddressCol === addr)
+      mixingRequestsDAO.deleteByWithdrawAddress(addr)
       endBoxes = endBoxes.dropRight(1)
       if (endBoxes.isEmpty) {
         logger.info("  no other box to mix.")
@@ -171,8 +183,9 @@ class CovertMixer @Inject()(tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: Al
     val transactions = aliceOrBob.distribute(inputs.map(_.id).toArray, endBoxes.toArray, Array(secret), Configs.distributeFee, req.depositAddress, Configs.maxOuts)
     for (i <- transactions.indices) {
       val tx = transactions(i)
-      val inputs = tx.getInputBoxes.map(ScalaBridge.isoErgoTransactionInput.from(_).getBoxId).mkString(",")
-      distributeTxsTable.insert(req.id, tx.getId, i + 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputs)
+      val inputs = tx.getSignedInputs.asScala.map(_.getId).mkString(",")
+      val new_tx = DistributeTx(req.id, tx.getId, i + 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputs)
+      distributeTransactionsDAO.insert(new_tx)
       val sendRes = ctx.sendTransaction(tx)
       if (sendRes == null) {
         logger.error(s"  transaction got refused by the node! maybe it doesn't support chained transactions, waiting... consider updating your node for a faster mixing experience.")
@@ -187,7 +200,7 @@ class CovertMixer @Inject()(tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: Al
    */
   def processTx(req: MixCovertRequest): Unit = networkUtils.usingClient { implicit ctx =>
     var outputs: Array[String] = Array()
-    distributeTxsTable.selectStar.where(mixGroupIdCol === req.id, chainOrderCol > 0).as(DistributeTx(_))
+    daoUtils.awaitResult(distributeTransactionsDAO.selectSpentTransactions(req.id))
       .sortBy(_.order)
       .foreach(tx => {
         val confNum = explorer.getTxNumConfirmations(tx.txId)
@@ -216,13 +229,13 @@ class CovertMixer @Inject()(tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: Al
               outputs = outputs ++ signedTx.getOutputsToSpend.asScala.map(box => {
                 box.getId.toString
               })
-              distributeTxsTable.update(chainOrderCol <-- 0).where(txIdCol === tx.txId)
+              distributeTransactionsDAO.setOrderToZeroByTxId(tx.txId)
               logger.info(s"  tx ${tx.txId} has a box spent or has a wrong box")
             }
           }
         } else if (confNum >= Configs.numConfirmation) { // confirmed enough
           logger.info(s"  tx ${tx.txId} is confirmed.")
-          distributeTxsTable.update(chainOrderCol <-- 0).where(txIdCol === tx.txId)
+          distributeTransactionsDAO.setOrderToZeroByTxId(tx.txId)
         } else {
           logger.info(s"  tx ${tx.txId} is mined, waiting for enough confirmations...")
         }
@@ -249,9 +262,106 @@ class CovertMixer @Inject()(tables: Tables, ergoMixer: ErgoMixer, aliceOrBob: Al
       })
       val out = EndBox(Address.create(req.depositAddress).getErgoAddress.script, Seq(), ergSum - Configs.distributeFee, curTokens.map(tok => new ErgoToken(tok._1, tok._2)).toSeq)
       val tx = aliceOrBob.mergeBoxes(curInputs.map(_.id).toArray, out, secret, Configs.distributeFee, req.depositAddress)
-      val inputIds = tx.getInputBoxes.map(ScalaBridge.isoErgoTransactionInput.from(_).getBoxId).mkString(",")
-      distributeTxsTable.insert(req.id, tx.getId, 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputIds)
+      val inputIds = tx.getSignedInputs.asScala.map(_.getId).mkString(",")
+      val new_tx = DistributeTx(req.id, tx.getId, 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputIds)
+      distributeTransactionsDAO.insert(new_tx)
       logger.info(s"  merging inputs with tx ${tx.getId}...")
     })
   }
+
+  /**
+   * process withdraw request of a covert's asset
+   *
+   */
+  def processRequestedWithdrawAsset(covertId: String, tokenId: String, txId: String, tx: Array[Byte]): Unit = {
+    logger.info(s"[covert: ${covertId}] processing withdraw request of token ${tokenId}...")
+    if (txId != "") {
+      // check confirmation
+      val confNum = explorer.getTxNumConfirmations(txId)
+      if (confNum == -1) {
+        networkUtils.usingClient {ctx =>
+          // not mined yet, broadcast tx again!
+          val signedTx = ctx.signedTxFromJson(new String(tx, StandardCharsets.UTF_16))
+          val res = ctx.sendTransaction(signedTx)
+          logger.info(s"  broadcasting tx $txId, response: $res...")
+
+          if (res == null) {
+            logger.error(s"  transaction got refused by the node! removing transaction from db...")
+            daoUtils.awaitResult(withdrawCovertTokenDAO.resetRequest(covertId, tokenId))
+          }
+        }
+      }
+      else if (confNum >= Configs.numConfirmation) { // confirmed enough
+        logger.info(s"  tx $txId is confirmed.")
+        withdrawCovertTokenDAO.setRequestComplete(covertId, tokenId)
+        covertDefaultsDAO.deleteIfRingIsEmpty(covertId, tokenId)
+      }
+      else {
+        logger.info(s"  tx $txId is mined, waiting for enough confirmations...")
+      }
+    }
+    else {
+      logger.error(s"  withdraw status is requested but it has not transaction")
+    }
+  }
+
+  /**
+   * withdraw a covert's assets
+   *
+   */
+  def processNotWithdrawnAssets(covertAssetWithdraws: Seq[CovertAssetWithdrawTx]): Unit = {
+    val requests = mutable.Map.empty[(String, String), Seq[String]]
+    covertAssetWithdraws.foreach(req => {
+      val key = (req.covertId, req.withdrawAddress)
+      if (requests.contains(key)) requests(key) = requests(key) :+ req.tokenId
+      else requests(key) = Seq(req.tokenId)
+    })
+
+    requests.keys.foreach(key => withdrawAsset(key._1, key._2, requests(key)))
+  }
+
+  /**
+   * withdraw a covert's assets
+   *
+   */
+  def withdrawAsset(covertId: String, withdrawAddress: String, tokenIds: Seq[String]): Unit = {
+    logger.info(s"[covert: ${covertId}] processing withdraw request of token list [${tokenIds.mkString(",")}]...")
+    val covertInfo = ergoMixer.covertInfoById(covertId)
+    val depositAddress = covertInfo._1
+    val proverDlogSecrets = covertInfo._2.bigInteger
+
+    val ergoTree: ErgoTree = Address.create(depositAddress).getErgoAddress.script
+    val ergoTreeTemplateHash = Base16.encode(Sha256(ErgoTreeTemplate.fromErgoTree(ergoTree).getBytes))
+
+    val inputs: Seq[String] = tokenIds.flatMap(tokenId => explorer.getUnspentBoxIdsWithAsset(ergoTreeTemplateHash, tokenId)).distinct
+    // if any of the boxes are in distribute transactions (i.e. a deposit is in progress), don't try to withdraw token in this job
+    var depositInProgress: Boolean = false
+    val txPoolInputs = daoUtils.awaitResult(distributeTransactionsDAO.selectInputsByMixGroupId(covertId)).mkString(",")
+    inputs.foreach(boxId => if (txPoolInputs.contains(boxId)) depositInProgress = true)
+    if (depositInProgress) {
+      logger.warn("  an inputBox is in mempool. Ignoring withdraw request for now...")
+      return
+    }
+
+    val tx = aliceOrBob.withdrawToken(proverDlogSecrets, inputs, tokenIds, withdrawAddress, depositAddress)
+    val res = networkUtils.usingClient {ctx => ctx.sendTransaction(tx)}
+    logger.info((s"  withdraw token list [${tokenIds.mkString(",")}] from covert $covertId requested with txId ${tx.getId}, response: $res"))
+    withdrawCovertTokenDAO.updateTx(covertId, tokenIds, tx.getId, tx.toJson(false).getBytes("utf-16"))
+  }
+
+  /**
+   * add withdraw request of a covert's assets
+   *
+   */
+  def queueWithdrawAsset(covertId: String, tokenIds: Seq[String], withdrawAddress: String): Unit = {
+    okAddresses(Seq(withdrawAddress))
+    tokenIds.foreach(tokenId => {
+      if (daoUtils.awaitResult(withdrawCovertTokenDAO.isActiveRequest(covertId, tokenId))) throw new Exception(s"request for withdraw of $tokenId in $covertId is already in process")
+      val asset = daoUtils.awaitResult(covertDefaultsDAO.selectByGroupAndTokenId(covertId, tokenId)).getOrElse(throw new Exception(s"asset $tokenId not exists in covert $covertId"))
+      if (asset.confirmedDeposit == 0) throw new Exception(s"asset $tokenId has 0 value in covert $covertId")
+
+      withdrawCovertTokenDAO.insert(CovertAssetWithdrawTx(covertId, tokenId, withdrawAddress, WalletHelper.now, CovertAssetWithdrawStatus.NoWithdrawYet.value, "", Array.empty[Byte]))
+    })
+  }
+
 }

@@ -40,6 +40,9 @@ GET         /covert/list                       controllers.ApiController.covertL
 GET         /covert/:covertId/asset            controllers.ApiController.covertAssetList(covertId: String)
 POST        /covert/:covertId/address          controllers.ApiController.setCovertAddresses(covertId: String)
 GET         /covert/:covertId/address          controllers.ApiController.getCovertAddresses(covertId: String)
+GET         /covert/keys                       controllers.ApiController.covertKeys
+GET         /covert/:covertId/key              controllers.ApiController.getCovertPrivateKey(covertId: String)
+POST        /covert/:covertId/withdraw         controllers.ApiController.withdrawCovertAsset(covertId: String)
 
 GET         /ageusd/height                     controllers.ApiController.currentHeight()
 GET         /ageusd/fee                        controllers.ApiController.ageusdFee()

@@ -26,10 +26,11 @@
   <logger name="play" level="INFO" />
   <logger name="application" level="DEBUG" />
 
-
   <logger name="com.zaxxer.hikari.pool.HikariPool" level="INFO" />
   <logger name="com.zaxxer.hikari.pool.PoolBase" level="INFO" />
   <logger name="akka" level="INFO" />
+
+  <logger name="slick" level="WARN" />
 
   <root level="DEBUG">
     <appender-ref ref="ASYNCFILE" />
