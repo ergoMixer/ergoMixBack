@@ -71,7 +71,14 @@ libraryDependencies ++= Seq(
 )
 
 enablePlugins(JDKPackagerPlugin)
-(antPackagerTasks in JDKPackager) := Some(file(sys.env.getOrElse("ANT_PATH", "/usr/lib/jvm/java-8-oracle/lib/ant-javafx.jar")))
+(antPackagerTasks in JDKPackager) := (antPackagerTasks in JDKPackager).value orElse {
+  for {
+    f <- System.getProperty("os.name").toLowerCase match { 
+         case win if win.contains("win")  => Some(file(sys.env("JAVA_HOME") ++ "\\lib\\ant-javafx.jar"))
+         case osName => Some(file(sys.env("JAVA_HOME") ++ "/lib/ant-javafx.jar"))
+         } if f.exists()
+  } yield f
+}
 
 lazy val root = (project in file("."))
   .enablePlugins(PlayScala, BuildInfoPlugin)

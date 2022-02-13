@@ -44,4 +44,5 @@ jobs:
 
       - name: Runs tests
         run: |
+          cd ./mixer
           sbt ++${{ matrix.scala }} test

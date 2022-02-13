@@ -55,7 +55,7 @@ class ErgoMixer @Inject()(
       val mixId = UUID.randomUUID().toString
       val lastErgRing = Configs.params.filter(_._1.isEmpty).head._2.rings.last
       val req: MixCovertRequest = MixCovertRequest(nameCovert, mixId, now, depositAddress, numRounds, privateKey.nonEmpty, masterSecret)
-      mixingCovertRequestDAO.insert(req)
+      daoUtils.awaitResult(mixingCovertRequestDAO.insert(req))
       addCovertWithdrawAddress(mixId, addresses)
       handleCovertSupport(mixId, "", lastErgRing)
       logger.info(s"covert address $mixId is created, addr: $depositAddress. you can add supported asset for it.")
