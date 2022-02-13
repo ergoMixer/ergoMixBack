@@ -25,12 +25,11 @@ class BobImpl(y: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit c
    * @param otherInputBoxes       other inputs like fee-box, half-box
    * @param changeAddress         change address
    * @param changeBoxRegs         change address registers
-   * @param burnTokens            tokens that need to be burned
    * @param additionalDlogSecrets secrets to spend inputs
    * @param additionalDHTuples    dh tuples
    * @return transaction spending full-box as bob
    */
-  def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], burnTokens: Seq[ErgoToken], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT]): SignedTransaction = {
+  def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT]): SignedTransaction = {
     val txB = ctx.newTxBuilder
     val outBoxes: Seq[OutBox] = endBoxes.map { endBox =>
       var outBoxBuilder = txB.outBoxBuilder().value(endBox.value).contract(new ErgoTreeContract(endBox.receiverBoxScript))
@@ -48,11 +47,11 @@ class BobImpl(y: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit c
       inputs.add(0, f.inputBox)
     }
 
-    val preTxB = txB.boxesToSpend(inputs)
+    val txToSign = txB.boxesToSpend(inputs)
       .outputs(outBoxes: _*)
       .fee(feeAmount)
       .sendChangeTo(getAddress(changeAddress))
-    val txToSign = if (burnTokens.nonEmpty) preTxB.tokensToBurn(burnTokens: _*).build() else preTxB.build()
+      .build()
 
     val bob: ErgoProver = additionalDHTuples.foldLeft(
       additionalDlogSecrets.foldLeft(
@@ -147,17 +146,16 @@ class BobImpl(y: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit c
     val payBox = if (tokenCommission != null && tokenCommission.getValue > 0) payBoxB.tokens(tokenCommission).build()
     else payBoxB.build()
 
-    val distrBurnToken = halfBoxNumTokens + numToken - (distributeAmount * 2)
     val inputs = new java.util.ArrayList[InputBox]()
 
     inputs.add(halfMixBox.inputBox)
     inputs.addAll(inputBoxes.toList.asJava)
 
-    val preTxB = txB.boxesToSpend(inputs)
+    val txToSign = txB.boxesToSpend(inputs)
       .outputs(firstOutBox, secondOutBox, payBox, tokenCp)
       .fee(fee)
       .sendChangeTo(getAddress(changeAddress))
-    val txToSign = if (distrBurnToken > 0) preTxB.tokensToBurn(new ErgoToken(TokenErgoMix.tokenId, distrBurnToken)).build() else preTxB.build()
+      .build()
 
     val bob: ErgoProver = additionalDHTuples.foldLeft(
       additionalDlogSecrets.foldLeft(

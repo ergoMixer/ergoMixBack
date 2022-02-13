@@ -4,10 +4,12 @@ import akka.util.ByteString
 
 import java.nio.file.Paths
 import app.Configs
+import buildinfo.BuildInfo
 import helpers.ErgoMixerUtils
-import info.BuildInfo
-import io.circe.Json
+import io.circe.{Decoder, Encoder, Json, parser}
+import io.circe.parser.{parse => circeParse}
 import io.circe.syntax._
+import io.circe.generic.auto._
 
 import javax.inject._
 import mixer.{CovertMixer, ErgoMixer}
@@ -22,18 +24,28 @@ import helpers.TrayUtils.showNotification
 import mixinterface.AliceOrBob
 import models.Models.MixWithdrawStatus.AgeUSDRequested
 import wallet.{Wallet, WalletHelper}
+
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 import scala.io.Source
 import dao.{DAOUtils, WithdrawDAO}
+import helpers.ErrorHandler._
+import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
+import models.StealthModel.{StealthAddressModel, StealthSpendAddress}
+import org.ergoplatform.ErgoBox
+import org.ergoplatform.wallet.serialization.JsonCodecsWrapper
 import play.api.http.HttpEntity
+import sigmastate.eval.SigmaDsl
+import stealth.{NodeProcess, StealthContract}
+
+import scala.util.{Failure, Success}
 
 /**
  * A controller inside of Mixer controller.
  */
 class ApiController @Inject()(assets: Assets, controllerComponents: ControllerComponents, ergoMixerUtils: ErgoMixerUtils,
                               ergoMixer: ErgoMixer, networkUtils: NetworkUtils, explorer: BlockExplorer, aliceOrBob: AliceOrBob,
-                              daoUtils: DAOUtils, withdrawDAO: WithdrawDAO, covertMixer: CovertMixer
+                              daoUtils: DAOUtils, withdrawDAO: WithdrawDAO, covertMixer: CovertMixer, stealthContract: StealthContract
                              )(implicit ec: ExecutionContext) extends AbstractController(controllerComponents) {
 
   import networkUtils._
@@ -290,7 +302,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    * "name": ""
    * }
    *
-   * @param covertId covert id
+   * @param covertId covert id9
    */
   def covertChangeName(covertId: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
@@ -785,10 +797,10 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    * example input:
    * {
    * "tokenIds": [  // Seq[String]
-   *     "",
-   *     ""
-   *  ],
-   *  "withdrawAddress": "" // String
+   * "",
+   * ""
+   * ],
+   * "withdrawAddress": "" // String
    * }
    *
    * @param covertId covert id
@@ -811,5 +823,111 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
     }
   }
 
+  def createStealthAddress(): Action[JsValue] = Action(parse.json) { implicit request =>
+    try {
+      var result: Json = Json.Null
+      circeParse(request.body.toString).toTry match {
+        case Success(stealthJs) =>
+          val stealthName = stealthJs.hcursor.downField("stealthName").as[String].getOrElse(throw new Exception("stealthName is required"))
+          val secret = stealthJs.hcursor.downField("secret").as[String].getOrElse("")
+          val (pk, name, stealthId) = stealthContract.createStealthAddressByStealthName(stealthName, secret)
+          result = Json.fromFields(List(
+            ("pk", Json.fromString(pk)),
+            ("stealthName", Json.fromString(name)),
+            ("stealthId", Json.fromString(stealthId))
+          ))
+        case Failure(e) => throw new Exception(e)
+      }
+      Ok(result.asJson.toString()).as("application/json")
+    }
+    catch {
+      case m: NotFoundException => notFoundResponse(m.getMessage)
+      case e: Exception => errorResponse(e)
+    }
+  }
+
+  def getStealthAddresses(): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      var result: Json = Json.Null
+      val addresses = stealthContract.getStealthAddresses()
+      implicit val StealthAddressEncoder: Encoder[StealthAddressModel] = Encoder.instance({ stealthAddress: StealthAddressModel =>
+        Map(
+          "stealthId" -> stealthAddress.stealthId.asJson,
+          "stealthName" -> stealthAddress.stealthName.asJson,
+          "pk" -> stealthAddress.address.asJson,
+          "value" -> stealthAddress.value.asJson,
+        ).asJson
+      })
+      result = Json.obj("stealthAddresses" -> addresses.asJson)
+      Ok(result.toString()).as("application/json")
+    }
+    catch {
+      case m: NotFoundException => notFoundResponse(m.getMessage)
+      case e: Exception => errorResponse(e)
+    }
+  }
+
+  def getStealthAddress(stealthId: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      var result: Json = Json.Null
+      val stealthAddress = stealthContract.getStealthAddress(stealthId)
+      result = Json.fromFields(List(
+        "stealthId" -> stealthAddress.stealthId.asJson,
+        "stealthName" -> stealthAddress.stealthName.asJson,
+        "pk" -> stealthAddress.address.asJson,
+        "value" -> stealthAddress.value.asJson,
+      ))
+      Ok(result.asJson.toString()).as("application/json")
+    }
+    catch {
+      case m: NotFoundException => notFoundResponse(m.getMessage)
+      case e: Exception => errorResponse(e)
+    }
+  }
+
+  def getUnspentBoxes(stealthId: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      val unspentBoxes = stealthContract.getUnspentBoxes(stealthId)
+      implicit val boxDecoder: Encoder[ErgoBox] = JsonCodecsWrapper.ergoBoxEncoder
+      Ok(unspentBoxes.asJson.toString()).as("application/json")
+    }
+    catch {
+      case m: NotFoundException => notFoundResponse(m.getMessage)
+      case e: Exception => errorResponse(e)
+    }
+  }
+
+  def setSpendAddress(stealthId: String): Action[JsValue] = Action(parse.json) { implicit request =>
+    try {
+      var result: Json = Json.Null
+      implicit val stealthWithdrawAddressDecoder = Decoder[List[StealthSpendAddress]].prepare(
+        _.downField("data")
+      )
+      parser.decode(request.body.toString)(stealthWithdrawAddressDecoder).toTry match {
+        case Success(data) =>
+          stealthContract.setSpendAddress(stealthId, data)
+          result = Json.obj("status" -> Json.fromString("Done!"))
+        case Failure(e) => throw new Exception(e)
+      }
+      Ok(result.toString()).as("application/json")
+    }
+    catch {
+      case m: NotFoundException => notFoundResponse(m.getMessage)
+      case e: Exception => errorResponse(e)
+    }
+  }
+
+  def generateStealthAddress(pk: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      var result: Json = Json.Null
+      result = Json.fromFields(List(("address", Json.fromString(stealthContract.createStealthAddressByStealthPK(pk)))))
+
+      Ok(result.toString()).as("application/json")
+    }
+    catch {
+      case m: NotFoundException => notFoundResponse(m.getMessage)
+      case e: Exception => errorResponse(e)
+    }
+  }
 }
 

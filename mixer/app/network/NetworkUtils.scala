@@ -1,15 +1,19 @@
 package network
 
 import app._
+import io.circe.parser.parse
+
 import javax.inject.{Inject, Singleton}
 import mixinterface.TokenErgoMix
 import models.Models
 import models.Models.OutBox
 import org.ergoplatform.appkit.{BlockchainContext, ErgoClient, InputBox}
 import play.api.Logger
+import scalaj.http.{Http, HttpOptions}
 import wallet.WalletHelper
 
 import scala.collection.mutable
+import scala.util.{Failure, Success}
 
 @Singleton
 class NetworkUtils @Inject()(explorer: BlockExplorer) {
@@ -202,5 +206,4 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
       }
     }
   }.getOrElse(false)
-
 }

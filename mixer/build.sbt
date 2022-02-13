@@ -8,7 +8,7 @@ libraryDependencies += filters
 
 lazy val commonSettings = Seq(
   organization := "ergoMixer",
-  version := "4.0.0",
+  version := "3.3.5",
   scalaVersion := "2.12.10",
   resolvers ++= Seq(
     Resolver.sonatypeRepo("public"),
@@ -67,7 +67,15 @@ libraryDependencies ++= Seq(
   "org.apache.commons" % "commons-lang3" % "3.11",
   "org.webjars" % "swagger-ui" % "3.38.0",
   "com.typesafe.play" %% "play-slick" % "4.0.0",
-  "com.typesafe.play" %% "play-slick-evolutions" % "4.0.0"
+  "com.typesafe.play" %% "play-slick-evolutions" % "4.0.0",
+  ("org.ergoplatform" %% "ergo" % "v4.0.13-5251a78b-SNAPSHOT")
+    .excludeAll(
+      ExclusionRule(organization = "com.typesafe.akka"),
+      ExclusionRule(organization = "ch.qos.logback"),
+      ExclusionRule(organization = "org.ethereum"),
+      ExclusionRule(organization = "javax.xml.bind"),
+    ).force(),
+  "org.scalaj" %% "scalaj-http" % "2.3.0",
 )
 
 enablePlugins(JDKPackagerPlugin)

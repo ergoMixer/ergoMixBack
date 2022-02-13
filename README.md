@@ -63,7 +63,7 @@ ErgoMixer is a web application for mixing ergs and tokens based on Ergo platform
 
 To get the Mixer up and running you have a few options:
 
-1. <a href="#quick-start-shell-script">Quick Start Shell Script</a> - Build from source or run the latest jar. (UNIX systems)
+1. <a href="#quick-start-shell-script">Quick Start Shell Script</a> - builds from source (UNIX systems)
 2. <a href="#docker-quick-start">Docker Quick Start</a>
 3. <a href="#run-mixer">Download the latest `.jar`</a>
 4. <a href="#manual-installation">Build from source</a>
@@ -72,7 +72,7 @@ To get the Mixer up and running you have a few options:
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-When you open the Mixer, the home page displays information about the system and how each component works. There will also be a ErgoMixer dropdown available from your menu bar when running. 
+When you open the Mixer, the home page displays information about the system and how each component works. ErgoMixer will also be available from your menu bar. 
 
 ![ErgoMixerMenu](data/menu.png)
 
@@ -84,12 +84,16 @@ When you open the Mixer, the home page displays information about the system and
 ## Installation
 ### Quick Start Shell Script
 
-Open your favourite terminal and enter the following to build from source or download and run the latest `.jar`:
+Open your favourite terminal and enter the following to download and run the `.jar`:
 
 ```
-wget https://raw.githubusercontent.com/ergoMixer/ergoMixBack/master/sh/install.sh
-chmod +x install.sh
-./install.sh
+$ curl -s https://raw.githubusercontent.com/ergoMixer/ergoMixBack/master/sh/install.sh | bash
+```
+
+Alternatively, you can build from source by appending the `-s` suffix.
+
+```
+$ curl -s https://raw.githubusercontent.com/ergoMixer/ergoMixBack/master/sh/install.sh -s | bash
 ```
 
 If you encounter any permission errors when attempting to run the script, please run `chmod +x install.sh` from within the same directory. 

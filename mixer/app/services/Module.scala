@@ -19,5 +19,6 @@ class Module extends AbstractModule {
     // We bind the implementation to the interface (trait) as an eager singleton,
     // which means it is bound immediately when the application starts.
     bind(classOf[ErgoMixHooks]).to(classOf[ErgomixHooksImpl]).asEagerSingleton()
+    bind(classOf[StealthStartupServiceHooks]).to(classOf[StealthStartupService]).asEagerSingleton()
   }
 }

@@ -2,11 +2,11 @@ package services
 
 import java.text.SimpleDateFormat
 import java.util.Date
-
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import app.Configs
 import app.Configs.readKey
 import helpers.TrayUtils
+
 import javax.inject.Inject
 import mixer._
 import models.Models.EntityInfo
@@ -16,7 +16,6 @@ import services.ScheduledJobs.{RefreshMixingStats, RefreshPoolStats}
 
 import scala.collection.mutable
 import scala.util.Try
-
 import dao.Prune
 
 
@@ -100,4 +99,29 @@ object ScheduledJobs {
 
   case object RefreshPoolStats
 
+}
+
+object StealthJobsInfo {
+  val InitBestBlockInDb = "store best block in db"
+  val blockChainScan = "block scanned"
+  val spendStealth = "spend stealth boxes"
+}
+
+class StealthJobs(scanner: ScannerTask, initBestBlock: InitBestBlockTask) extends Actor with ActorLogging {
+  private val logger: Logger = Logger(this.getClass)
+
+  /**
+   * periodically start scanner, task.
+   */
+  def receive: PartialFunction[Any, Unit] = {
+    case StealthJobsInfo.InitBestBlockInDb =>
+      logger.info("Start job Store Best Block task.")
+      Try(initBestBlock.store_block())
+    case StealthJobsInfo.blockChainScan =>
+      logger.info("Start job scanner task.")
+      Try(scanner.start())
+    case StealthJobsInfo.spendStealth =>
+      logger.info("Start spending stealth boxes.")
+      Try(scanner.spendStealth())
+  }
 }

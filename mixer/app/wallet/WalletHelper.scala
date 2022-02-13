@@ -1,13 +1,15 @@
 package wallet
 
 import java.math.BigInteger
-
 import app.Configs
 import org.ergoplatform.{ErgoAddress, ErgoAddressEncoder}
 import org.ergoplatform.appkit.{BlockchainContext, ConstantsBuilder, JavaHelpers, NetworkType}
+import scorex.util.encode.Base16
 import sigmastate.eval._
 import sigmastate.interpreter.CryptoConstants
 import special.sigma.GroupElement
+
+import scala.util.matching.Regex
 
 object WalletHelper {
   val secureRandom = new java.security.SecureRandom
@@ -55,5 +57,18 @@ object WalletHelper {
         case _: Throwable => throw new Exception("Invalid withdraw address")
       }
     })
+  }
+
+  def toHexString(array: Array[Byte]): String = Base16.encode(array)
+
+  def randomId(): String = {
+    val randomBytes = Array.fill(32)((scala.util.Random.nextInt(256) - 128).toByte)
+    randomBytes.map("%02x" format _).mkString
+  }
+}
+
+object RegexUtils {
+  implicit class RichRegex(val underlying: Regex) extends AnyVal {
+    def matches(s: String): Boolean = underlying.pattern.matcher(s).matches
   }
 }

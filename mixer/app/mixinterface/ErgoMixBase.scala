@@ -17,12 +17,12 @@ import scala.collection.JavaConverters._
 package object ErgoMixBase {
 
   trait FullMixBoxSpender {
-    def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxIds: Array[String], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], burnTokens: Seq[ErgoToken], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT])(implicit ctx: BlockchainContext): SignedTransaction =
-      spendFullMixBox(f, endBoxes, feeAmount, ctx.getBoxesById(otherInputBoxIds: _*), changeAddress, changeBoxRegs, burnTokens, additionalDlogSecrets, additionalDHTuples)
+    def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxIds: Array[String], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT])(implicit ctx: BlockchainContext): SignedTransaction =
+      spendFullMixBox(f, endBoxes, feeAmount, ctx.getBoxesById(otherInputBoxIds: _*), changeAddress, changeBoxRegs, additionalDlogSecrets, additionalDHTuples)
 
     def getProver(f: FullMixBox): ErgoProver
 
-    def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], burnTokens: Seq[ErgoToken], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT]): SignedTransaction
+    def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT]): SignedTransaction
 
     /**
      * mix as alice, will potentially sign twice if dynamicFee is set to true
@@ -42,12 +42,11 @@ package object ErgoMixBase {
     def spendFullMixBoxNextAlice(f: FullMixBox, nextX: BigInteger, feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT], dynamicFee: Boolean = true)(implicit ctx: BlockchainContext, networkUtils: NetworkUtils): HalfMixTx = {
       implicit val ergoMix: TokenErgoMix = networkUtils.tokenErgoMix.get
       val fullBoxToken = f.inputBox.getTokens.get(0).getValue
-      val fullBoxBurnToken = new ErgoToken(TokenErgoMix.tokenId,1)
-      var tokens = Seq(new ErgoToken(TokenErgoMix.tokenId, fullBoxToken - fullBoxBurnToken.getValue))
+      var tokens = Seq(new ErgoToken(TokenErgoMix.tokenId, fullBoxToken - 1))
       if (f.inputBox.getTokens.size() > 1) tokens = tokens :+ f.inputBox.getTokens.get(1)
       val endBox = EndBox(ergoMix.halfMixContract.getErgoTree, Seq(ErgoValue.of(WalletHelper.g.exp(nextX))), f.inputBox.getValue, tokens)
       val feeCp = EndBox(ergoMix.feeEmissionContract.getErgoTree, otherInputBoxes(0).getRegisters.asScala, otherInputBoxes(0).getValue - feeAmount)
-      val signedTransaction = spendFullMixBox(f, Seq(endBox, feeCp), feeAmount, otherInputBoxes, changeAddress, changeBoxRegs, Seq(fullBoxBurnToken), additionalDlogSecrets, additionalDHTuples)
+      val signedTransaction = spendFullMixBox(f, Seq(endBox, feeCp), feeAmount, otherInputBoxes, changeAddress, changeBoxRegs, additionalDlogSecrets, additionalDHTuples)
       val expectedFee = ErgoLikeTransaction.serializer.toBytes(signedTransaction.asInstanceOf[SignedTransactionImpl].getTx).length * Configs.dynamicFeeRate
       if (expectedFee != feeAmount && dynamicFee) {
         return spendFullMixBoxNextAlice(f, nextX, expectedFee, otherInputBoxes, changeAddress, changeBoxRegs, additionalDlogSecrets, additionalDHTuples, dynamicFee = false)
@@ -79,9 +78,7 @@ package object ErgoMixBase {
      */
     def spendFullMixBoxNextBob(f: FullMixBox, h: HalfMixBox, nextY: BigInteger, feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT], dynamicFee: Boolean = true)(implicit ctx: BlockchainContext, networkUtils: NetworkUtils): (FullMixTx, Boolean) = {
       implicit val ergoMix: TokenErgoMix = networkUtils.tokenErgoMix.get
-      val totalInpDistroToken = f.inputBox.getTokens.get(0).getValue + h.inputBox.getTokens.get(0).getValue
-      val distrToken: Long = (totalInpDistroToken - 1) / 2
-      val distrBurnToken = new ErgoToken(TokenErgoMix.tokenId, totalInpDistroToken - (distrToken * 2))
+      val distrToken: Long = (f.inputBox.getTokens.get(0).getValue + h.inputBox.getTokens.get(0).getValue - 1) / 2
       var tokens = Seq(new ErgoToken(TokenErgoMix.tokenId, distrToken))
       if (f.inputBox.getTokens.size() > 1) tokens = tokens :+ f.inputBox.getTokens.get(1)
       val inputBoxes: Array[InputBox] = h.inputBox +: otherInputBoxes
@@ -94,7 +91,7 @@ package object ErgoMixBase {
       val outBox2 = EndBox(ergoMix.fullMixScriptErgoTree, Seq(ErgoValue.of(c2), ErgoValue.of(c1), ErgoValue.of(gX), ErgoValue.of(ergoMix.halfMixScriptHash)), f.inputBox.getValue, tokens)
       val feeCp = EndBox(ergoMix.feeEmissionContract.getErgoTree, otherInputBoxes(0).getRegisters.asScala, otherInputBoxes(0).getValue - feeAmount)
       val endBoxes = Seq(outBox1, outBox2, feeCp)
-      val tx: SignedTransaction = spendFullMixBox(f, endBoxes, feeAmount, inputBoxes, changeAddress, changeBoxRegs, Seq(distrBurnToken), additionalDlogSecrets, DHT(WalletHelper.g, gX, gY, gXY, nextY) +: additionalDHTuples)
+      val tx: SignedTransaction = spendFullMixBox(f, endBoxes, feeAmount, inputBoxes, changeAddress, changeBoxRegs, additionalDlogSecrets, DHT(WalletHelper.g, gX, gY, gXY, nextY) +: additionalDHTuples)
       val expectedFee = ErgoLikeTransaction.serializer.toBytes(tx.asInstanceOf[SignedTransactionImpl].getTx).length * Configs.dynamicFeeRate
       if (expectedFee != feeAmount && dynamicFee) {
         return spendFullMixBoxNextBob(f, h, nextY, expectedFee, otherInputBoxes, changeAddress, changeBoxRegs, additionalDlogSecrets, additionalDHTuples, dynamicFee = false)

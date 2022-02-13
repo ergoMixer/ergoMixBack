@@ -54,4 +54,7 @@ object Configs extends ConfigHelper {
   lazy val mixOnlyAsBob: Boolean = readKey("mixOnlyAsBob", "false").toBoolean
   lazy val stopMixingWhenReachedThreshold: Boolean = readKey("stopMixingWhenReachedThreshold", "true").toBoolean
 
+  lazy val bestBlockId: String = readKey("bestBlockId")
+  lazy val stealthImplementorFee: Long = readKey("stealthImplementorFee").toLong
+  lazy val stealthStaticFee: Double = readKey("stealthStaticFee").toDouble
 }

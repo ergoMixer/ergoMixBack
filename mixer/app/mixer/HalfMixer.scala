@@ -143,67 +143,61 @@ class HalfMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
 
         // here we check if transaction is missing from mempool and also not mined. if so, we rebroadcast it!
         val prevTx = daoUtils.awaitResult(mixTransactionsDAO.selectByBoxId(halfMixBoxId)).getOrElse(throw new Exception(s"halfMixBoxId $halfMixBoxId not found in MixTransactions"))
-        try {
-          val res = ctx.sendTransaction(ctx.signedTxFromJson(prevTx.toString))
-          logger.info(s"  broadcasted tx ${prevTx.txId}, response: $res")
-        }
-        catch {
-          case e: Throwable =>
-            logger.info(s"  broadcasted tx ${prevTx.txId}, failed (probably due to double spent or fork)")
-            logger.debug(s"  Exception: ${e.getMessage}")
-            optEmissionBoxId match {
-              case Some(emissionBoxId) =>
-                // we are here, thus; there was a fee emission box used and so this is a remix transaction
-                if (networkUtils.isDoubleSpent(emissionBoxId, halfMixBoxId)) {
-                  // logger.info(s"    [HalfMix $mixId] Zero conf. halfMixBoxId: $halfMixBoxId, currentRound: $currentRound while emissionBoxId $emissionBoxId spent")
-                  // the emissionBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
-                  try {
-                    allMixDAO.undoMixStep(mixId, currentRound, halfMixBoxId, false)
-                    logger.info(s" [HALF:$mixId ($currentRound)] <-- (undo) [half:$halfMixBoxId not spent while fee:$emissionBoxId spent]")
-                  } catch {
-                    case a: Throwable =>
-                      logger.error(getStackTraceStr(a))
-                  }
-                } else {
-                  // if emission box is ok, lets now check if the input does not exist, if so then this is a fork
-                  // the input is a full mix box (since this is a remix)
-                  daoUtils.awaitResult(fullMixDAO.selectBoxId(mixId, currentRound - 1)).map { fullMixBoxId =>
-                    explorer.doesBoxExist(fullMixBoxId) match {
-                      case Some(true) =>
-                      case Some(false) =>
-                        logger.error(s" [HALF:$mixId ($currentRound)] [ERROR] Rescanning [full:$fullMixBoxId disappeared]")
-                        Thread.currentThread().getStackTrace foreach println
-                        val new_scan = PendingRescan(mixId, now, currentRound, goBackward = true, isHalfMixTx = true, halfMixBoxId)
-                        rescanDAO.updateById(new_scan)
-                      case _ =>
-                    }
-                  }
-                }
-              case _ => {
-                // no emission box, so this is an entry.
-                // token emission box double spent check
-                if (networkUtils.isDoubleSpent(tokenBoxId, halfMixBoxId)) {
-                  try {
-                    allMixDAO.undoMixStep(mixId, currentRound, halfMixBoxId, false)
-                    logger.info(s" [HALF:$mixId ($currentRound)] <-- (undo) [half:$halfMixBoxId not spent while token:$tokenBoxId spent]")
-                  } catch {
-                    case a: Throwable =>
-                      logger.error(getStackTraceStr(a))
-                  }
-                } else {
-                  // token emission box is ok
-                  // Need to check for fork by checking if any of the deposits have suddenly disappeared
-                  daoUtils.awaitResult(spentDepositsDAO.selectBoxIdByPurpose(mixId)).find { depositBoxId =>
-                    explorer.doesBoxExist(depositBoxId).contains(false) // deposit has disappeared, so need to rescan
-                  }.map { depositBoxId =>
-                    logger.error(s" [HALF:$mixId ($currentRound)] [ERROR] Rescanning [deposit:$depositBoxId disappeared]")
+        val res = ctx.sendTransaction(ctx.signedTxFromJson(prevTx.toString))
+        logger.info(s"  broadcasted tx ${prevTx.txId}, response: $res")
+
+        optEmissionBoxId match {
+          case Some(emissionBoxId) =>
+            // we are here, thus; there was a fee emission box used and so this is a remix transaction
+            if (networkUtils.isDoubleSpent(emissionBoxId, halfMixBoxId)) {
+              // logger.info(s"    [HalfMix $mixId] Zero conf. halfMixBoxId: $halfMixBoxId, currentRound: $currentRound while emissionBoxId $emissionBoxId spent")
+              // the emissionBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
+              try {
+                allMixDAO.undoMixStep(mixId, currentRound, halfMixBoxId, false)
+                logger.info(s" [HALF:$mixId ($currentRound)] <-- (undo) [half:$halfMixBoxId not spent while fee:$emissionBoxId spent]")
+              } catch {
+                case a: Throwable =>
+                  logger.error(getStackTraceStr(a))
+              }
+            } else {
+              // if emission box is ok, lets now check if the input does not exist, if so then this is a fork
+              // the input is a full mix box (since this is a remix)
+              daoUtils.awaitResult(fullMixDAO.selectBoxId(mixId, currentRound - 1)).map { fullMixBoxId =>
+                explorer.doesBoxExist(fullMixBoxId) match {
+                  case Some(true) =>
+                  case Some(false) =>
+                    logger.error(s" [HALF:$mixId ($currentRound)] [ERROR] Rescanning [full:$fullMixBoxId disappeared]")
                     Thread.currentThread().getStackTrace foreach println
                     val new_scan = PendingRescan(mixId, now, currentRound, goBackward = true, isHalfMixTx = true, halfMixBoxId)
                     rescanDAO.updateById(new_scan)
-                  }
+                  case _ =>
                 }
               }
             }
+          case _ => {
+            // no emission box, so this is an entry.
+            // token emission box double spent check
+            if (networkUtils.isDoubleSpent(tokenBoxId, halfMixBoxId)) {
+              try {
+                allMixDAO.undoMixStep(mixId, currentRound, halfMixBoxId, false)
+                logger.info(s" [HALF:$mixId ($currentRound)] <-- (undo) [half:$halfMixBoxId not spent while token:$tokenBoxId spent]")
+              } catch {
+                case a: Throwable =>
+                  logger.error(getStackTraceStr(a))
+              }
+            } else {
+              // token emission box is ok
+              // Need to check for fork by checking if any of the deposits have suddenly disappeared
+              daoUtils.awaitResult(spentDepositsDAO.selectBoxIdByPurpose(mixId)).find { depositBoxId =>
+                explorer.doesBoxExist(depositBoxId).contains(false) // deposit has disappeared, so need to rescan
+              }.map { depositBoxId =>
+                logger.error(s" [HALF:$mixId ($currentRound)] [ERROR] Rescanning [deposit:$depositBoxId disappeared]")
+                Thread.currentThread().getStackTrace foreach println
+                val new_scan = PendingRescan(mixId, now, currentRound, goBackward = true, isHalfMixTx = true, halfMixBoxId)
+                rescanDAO.updateById(new_scan)
+              }
+            }
+          }
         }
       }
     }

@@ -397,15 +397,10 @@ class ErgoMixer @Inject()(
    * returns list of all covert addresses with their private keys
    *
    */
-  def covertKeys: Seq[String] = {
-    val header = "name, address, private key"
-    val keys = daoUtils.awaitResult(mixingCovertRequestDAO.all).map(req => {
+  def covertKeys: Seq[String] = daoUtils.awaitResult(mixingCovertRequestDAO.all).map(req => {
       val wallet = new Wallet(req.masterKey)
-      val nameCovert = if (req.nameCovert.nonEmpty) req.nameCovert else "No Name"
-      s"$nameCovert, ${req.depositAddress}, ${wallet.getSecret(-1, req.isManualCovert).toString(16)}"
+      s"${req.depositAddress}, ${wallet.getSecret(-1, req.isManualCovert).toString(16)}"
     })
-    Seq(header) ++ keys
-  }
 
   /**
    * returns the private key and address of a covert

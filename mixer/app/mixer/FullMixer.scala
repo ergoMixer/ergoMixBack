@@ -222,50 +222,44 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
       if (fullMixBoxConfirmations == 0) { // 0 confirmations for fullMixBoxId
         // here we check if transaction is missing from mempool and also not mined. if so, we rebroadcast it!
         val prevTx = daoUtils.awaitResult(mixTransactionsDAO.selectByBoxId(fullMixBoxId))
-        try {
-          if (prevTx.nonEmpty) {
-            val res = ctx.sendTransaction(ctx.signedTxFromJson(prevTx.get.toString))
-            logger.info(s"  broadcasted tx ${prevTx.get.txId}, response: $res")
-          }
+        if (prevTx.nonEmpty) {
+          val res = ctx.sendTransaction(ctx.signedTxFromJson(prevTx.get.toString))
+          logger.info(s"  broadcasted tx ${prevTx.get.txId}, response: $res")
         }
-        catch {
-          case e: Throwable =>
-            logger.info(s"  broadcasted tx ${prevTx.get.txId}, failed (probably due to double spent or fork)")
-            logger.debug(s"  Exception: ${e.getMessage}")
-            // first check the fork condition. If the halfMixBoxId is not confirmed then there is a fork
-            explorer.doesBoxExist(halfMixBoxId) match {
-              case Some(false) =>
-                // halfMixBoxId is no longer confirmed. This indicates a fork. We need to rescan
-                logger.error(s"  [FULL:$mixId ($currentRound) ${str(isAlice)}] [ERROR] Rescanning [half:$halfMixBoxId disappeared]")
-                Thread.currentThread().getStackTrace foreach println
-                val new_scan = PendingRescan(mixId, now, currentRound, goBackward = true, isHalfMixTx = false, fullMixBoxId)
-                rescanDAO.updateById(new_scan)
-              case Some(true) =>
-                if (networkUtils.isDoubleSpent(halfMixBoxId, fullMixBoxId) || (currentRound == 0 && networkUtils.isDoubleSpent(tokenBoxId, fullMixBoxId))) {
-                  // the halfMixBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
+
+        // first check the fork condition. If the halfMixBoxId is not confirmed then there is a fork
+        explorer.doesBoxExist(halfMixBoxId) match {
+          case Some(false) =>
+            // halfMixBoxId is no longer confirmed. This indicates a fork. We need to rescan
+            logger.error(s"  [FULL:$mixId ($currentRound) ${str(isAlice)}] [ERROR] Rescanning [half:$halfMixBoxId disappeared]")
+            Thread.currentThread().getStackTrace foreach println
+            val new_scan = PendingRescan(mixId, now, currentRound, goBackward = true, isHalfMixTx = false, fullMixBoxId)
+            rescanDAO.updateById(new_scan)
+          case Some(true) =>
+            if (networkUtils.isDoubleSpent(halfMixBoxId, fullMixBoxId) || (currentRound == 0 && networkUtils.isDoubleSpent(tokenBoxId, fullMixBoxId))) {
+              // the halfMixBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
+              try {
+                logger.info(s"  [FULL:$mixId ($currentRound) ${str(isAlice)}] <-- Bob (undo). [full: $fullMixBoxId not spent while half: $halfMixBoxId or token: $tokenBoxId spent]")
+                  allMixDAO.undoMixStep(mixId, currentRound, fullMixBoxId, true)
+              } catch {
+                case a: Throwable =>
+                  logger.error(getStackTraceStr(a))
+              }
+            } else {
+              optEmissionBoxId.map { emissionBoxId =>
+                if (networkUtils.isDoubleSpent(emissionBoxId, fullMixBoxId)) {
+                  // the emissionBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
                   try {
-                    logger.info(s"  [FULL:$mixId ($currentRound) ${str(isAlice)}] <-- Bob (undo). [full: $fullMixBoxId not spent while half: $halfMixBoxId or token: $tokenBoxId spent]")
+                    logger.info(s"  [FULL:$mixId ($currentRound) ${str(isAlice)}] <-- Bob (undo). [full:$fullMixBoxId not spent while fee:$emissionBoxId spent]")
                     allMixDAO.undoMixStep(mixId, currentRound, fullMixBoxId, true)
                   } catch {
                     case a: Throwable =>
                       logger.error(getStackTraceStr(a))
                   }
-                } else {
-                  optEmissionBoxId.map { emissionBoxId =>
-                    if (networkUtils.isDoubleSpent(emissionBoxId, fullMixBoxId)) {
-                      // the emissionBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
-                      try {
-                        logger.info(s"  [FULL:$mixId ($currentRound) ${str(isAlice)}] <-- Bob (undo). [full:$fullMixBoxId not spent while fee:$emissionBoxId spent]")
-                        allMixDAO.undoMixStep(mixId, currentRound, fullMixBoxId, true)
-                      } catch {
-                        case a: Throwable =>
-                          logger.error(getStackTraceStr(a))
-                      }
-                    }
-                  }
                 }
-              case _ =>
+              }
             }
+          case _ =>
         }
       }
     }

@@ -4,6 +4,7 @@ import akka.actor._
 import app.Configs
 import network.Client
 import helpers.TrayUtils
+
 import javax.inject._
 import mixer.ErgoMixer
 import play.api.Logger
@@ -55,6 +56,58 @@ class ErgomixHooksImpl @Inject()(appLifecycle: ApplicationLifecycle, implicit va
   override def onShutdown(): Unit = {
     system.stop(jobsActor)
     logger.info("Shutdown preparation done")
+  }
+
+  appLifecycle.addStopHook { () =>
+    onShutdown()
+    Future.successful(())
+  }
+
+  onStart()
+}
+
+trait StealthStartupServiceHooks {
+  def onStart(): Unit
+
+  def onShutdown(): Unit
+}
+
+@Singleton
+class StealthStartupService @Inject()(appLifecycle: ApplicationLifecycle,
+                               system: ActorSystem, scannerTask: ScannerTask, initBestBlockTask: InitBestBlockTask)
+                              (implicit ec: ExecutionContext) extends StealthStartupServiceHooks{
+
+  private val logger: Logger = Logger(this.getClass)
+
+  logger.info("Scanner started!")
+
+
+  val jobs: ActorRef = system.actorOf(Props(new StealthJobs(scannerTask, initBestBlockTask)), "scheduler")
+
+  override def onStart(): Unit ={
+    system.scheduler.scheduleAtFixedRate(
+      initialDelay = 10.seconds,
+      interval = 60.seconds,
+      receiver = jobs,
+      message = StealthJobsInfo.blockChainScan
+    )
+
+    system.scheduler.scheduleOnce(
+      delay = 0.seconds,
+      receiver = jobs,
+      message = StealthJobsInfo.InitBestBlockInDb
+    )
+
+    system.scheduler.scheduleOnce(
+      delay = 60.seconds,
+      receiver = jobs,
+      message = StealthJobsInfo.spendStealth
+    )
+  }
+
+  override def onShutdown(): Unit = {
+    system.stop(jobs)
+    logger.info("Scanner stopped")
   }
 
   appLifecycle.addStopHook { () =>
