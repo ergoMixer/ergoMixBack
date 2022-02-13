@@ -1,28 +1,34 @@
 package mixer
 
 import java.util.UUID
-
 import app.Configs
-import db.Columns._
-import db.ScalaDB._
-import db.Tables
 import wallet.WalletHelper._
-import db.core.DataStructures.anyToAny
+
 import javax.inject.Inject
 import models.Models.MixStatus.{Complete, Queued, Running}
 import models.Models.MixWithdrawStatus.{NoWithdrawYet, WithdrawRequested, Withdrawn}
-import models.Models.{CovertAsset, FullMix, GroupMixStatus, HalfMix, Mix, MixCovertRequest, MixGroupRequest, MixRequest, MixState, MixStatus, MixWithdrawStatus, MixingBox, Withdraw}
+import models.Models._
 import network.NetworkUtils
 import play.api.Logger
 import wallet.{Wallet, WalletHelper}
 
 import scala.collection.mutable
+import dao.{AllMixDAO, CovertAddressesDAO, CovertDefaultsDAO, DAOUtils, FullMixDAO, MixStateDAO, MixingCovertRequestDAO, MixingGroupRequestDAO, MixingRequestsDAO, WithdrawDAO}
 
 
-class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
+class ErgoMixer @Inject()(
+                             networkUtils: NetworkUtils,
+                             daoUtils: DAOUtils,
+                             allMixDAO: AllMixDAO,
+                             mixingCovertRequestDAO: MixingCovertRequestDAO,
+                             covertDefaultsDAO: CovertDefaultsDAO,
+                             covertAddressesDAO: CovertAddressesDAO,
+                             mixingRequestsDAO: MixingRequestsDAO,
+                             mixingGroupRequestDAO: MixingGroupRequestDAO,
+                             mixStateDAO: MixStateDAO,
+                             fullMixDAO: FullMixDAO,
+                             withdrawDAO: WithdrawDAO) {
   private val logger: Logger = Logger(this.getClass)
-
-  import tables._
 
   /**
    * creates a covert address
@@ -39,7 +45,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
       }
       else {
         masterSecret = BigInt(privateKey, 16)
-        if (mixCovertTable.exists(masterSecretGroupCol === masterSecret)) {
+        if (daoUtils.awaitResult(mixingCovertRequestDAO.existsByMasterKey(masterSecret))) {
           throw new Exception("this private key exist")
         }
       }
@@ -48,7 +54,8 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
       val depositAddress = WalletHelper.getProveDlogAddress(depositSecret, ctx)
       val mixId = UUID.randomUUID().toString
       val lastErgRing = Configs.params.filter(_._1.isEmpty).head._2.rings.last
-      mixCovertTable.insert(nameCovert, mixId, now, depositAddress, numRounds, privateKey.nonEmpty, masterSecret)
+      val req: MixCovertRequest = MixCovertRequest(nameCovert, mixId, now, depositAddress, numRounds, privateKey.nonEmpty, masterSecret)
+      mixingCovertRequestDAO.insert(req)
       addCovertWithdrawAddress(mixId, addresses)
       handleCovertSupport(mixId, "", lastErgRing)
       logger.info(s"covert address $mixId is created, addr: $depositAddress. you can add supported asset for it.")
@@ -63,11 +70,11 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @param nameCovert name for covert
    */
   def handleNameCovert(covertId: String, nameCovert: String): Unit = {
-    if (!mixCovertTable.exists(mixGroupIdCol === covertId)) {
+    if (!daoUtils.awaitResult(mixingCovertRequestDAO.existsById(covertId))) {
       logger.info("no such covert id!")
       throw new Exception("no such covert id!")
     } else {
-      mixCovertTable.update(nameCovertCol <-- nameCovert).where(mixGroupIdCol === covertId)
+      mixingCovertRequestDAO.updateNameCovert(covertId, nameCovert)
     }
   }
 
@@ -79,15 +86,16 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @param ring     ring of the asset
    */
   def handleCovertSupport(covertId: String, tokenId: String, ring: Long): Unit = {
-    if (!mixCovertTable.exists(mixGroupIdCol === covertId)) {
+    if (!daoUtils.awaitResult(mixingCovertRequestDAO.existsById(covertId))) {
       logger.info("no such covert id!")
       throw new Exception("no such covert id!")
     }
-    if (covertDefaultsTable.exists(mixGroupIdCol === covertId, tokenIdCol === tokenId)) {
-      covertDefaultsTable.update(mixingTokenAmount <-- ring).where(mixGroupIdCol === covertId, tokenIdCol === tokenId)
+    if (daoUtils.awaitResult(covertDefaultsDAO.exists(covertId, tokenId))) {
+      covertDefaultsDAO.updateRing(covertId, tokenId, ring)
       logger.info(s"asset $tokenId updated, new ring: $ring")
     } else {
-      covertDefaultsTable.insert(covertId, tokenId, ring, 0L, now)
+      val asset = CovertAsset(covertId, tokenId, ring, 0L, now)
+      covertDefaultsDAO.insert(asset)
       logger.info(s"asset created for covert address, id: $tokenId, ring: $ring")
     }
   }
@@ -100,12 +108,12 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    */
   def addCovertWithdrawAddress(covertId: String, addresses: Seq[String]): Unit = {
     okAddresses(addresses)
-    if (!mixCovertTable.exists(mixGroupIdCol === covertId)) {
+    if (!daoUtils.awaitResult(mixingCovertRequestDAO.existsById(covertId))) {
       throw new Exception("Invalid covert id")
     }
-    covertAddressesTable.deleteWhere(mixGroupIdCol === covertId)
+    covertAddressesDAO.delete(covertId)
     addresses.foreach(address => {
-      covertAddressesTable.insert(covertId, address)
+      covertAddressesDAO.insert(covertId, address)
     })
   }
 
@@ -116,7 +124,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    */
   def updateMixWithdrawAddress(mixId: String, address: String): Unit = {
     okAddresses(Seq(address))
-    mixRequestsTable.update(withdrawAddressCol <-- address).where(mixIdCol === mixId)
+    mixingRequestsDAO.updateAddress(mixId, address)
   }
 
   /**
@@ -125,7 +133,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @param mixId mix id
    */
   def getWithdrawAddress(mixId: String): String = {
-    mixRequestsTable.select(withdrawAddressCol).where(mixIdCol === mixId).firstAsT[String].head
+    daoUtils.awaitResult(mixingRequestsDAO.selectByMixId(mixId)).getOrElse(throw new Exception("mixId not found")).withdrawAddress
   }
 
   /**
@@ -134,7 +142,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @param mixId mix id
    */
   def getMasterSecret(mixId: String): BigInt = {
-    mixRequestsTable.select(masterSecretCol).where(mixIdCol === mixId).firstAsT[BigDecimal].head.toBigInt()
+    daoUtils.awaitResult(mixingRequestsDAO.selectMasterKey(mixId)).getOrElse(throw new Exception("mixId not found"))
   }
 
   /**
@@ -143,11 +151,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @param mixId mix id
    */
   def getRoundNum(mixId: String): Int = {
-    mixStateTable.select(
-      roundCol
-    ).where(
-      mixIdCol === mixId,
-    ).firstAsT[Int].head
+    daoUtils.awaitResult(mixStateDAO.selectByMixId(mixId)).getOrElse(throw new Exception("mixId not found")).round
   }
 
   /**
@@ -156,11 +160,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @param mixId mix id
    */
   def getIsAlice(mixId: String): Boolean = {
-    mixStateTable.select(
-      isAliceCol
-    ).where(
-      mixIdCol === mixId,
-    ).firstAsT[Boolean].head
+    daoUtils.awaitResult(mixStateDAO.selectByMixId(mixId)).getOrElse(throw new Exception("mixId not found")).isAlice
   }
 
   /**
@@ -169,13 +169,10 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @param mixId mix id
    */
   def getFullBoxId(mixId: String): String = {
-    fullMixTable.select(
-      fullMixBoxIdCol of fullMixTable,
-    ).where(
-      (mixIdCol of fullMixTable) === mixId,
-      (mixIdCol of mixStateTable) === mixId,
-      (roundCol of fullMixTable) === (roundCol of mixStateTable),
-    ).firstAsT[String].head
+    daoUtils.awaitResult(fullMixDAO.selectFullBoxIdByMixId(mixId)).getOrElse({
+      logger.warn(s"mixId $mixId not found in FullMix")
+      ""
+    })
   }
 
   /**
@@ -184,10 +181,9 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @param mixId mix id
    */
   def withdrawMixNow(mixId: String): Unit = {
-    val address = mixRequestsTable.select(withdrawAddressCol).where(mixIdCol === mixId).firstAsT[String].head
+    val address = getWithdrawAddress(mixId)
     if (address.nonEmpty) {
-      mixRequestsTable.update(mixWithdrawStatusCol <-- WithdrawRequested.value).where(mixIdCol === mixId)
-
+      mixingRequestsDAO.updateWithdrawStatus(mixId, WithdrawRequested.value)
     } else throw new Exception("Set a valid withdraw address first!")
   }
 
@@ -196,7 +192,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @return assets of the covert id
    */
   def getCovertAssets(covertId: String): Seq[CovertAsset] = {
-    covertDefaultsTable.selectStar.where(mixGroupIdCol === covertId).as(CovertAsset(_))
+    daoUtils.awaitResult(covertDefaultsDAO.selectAllAssetsByMixGroupId(covertId))
   }
 
   /**
@@ -207,7 +203,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    */
   def getCovertCurrentMixing(covertId: String): Map[String, Long] = {
     val mp = mutable.Map.empty[String, Long]
-    val mixBoxes = mixRequestsTable.selectStar.where(mixGroupIdCol === covertId, mixWithdrawStatusCol === NoWithdrawYet.value).as(MixRequest(_))
+    val mixBoxes = daoUtils.awaitResult(mixingRequestsDAO.selectAllByWithdrawStatus(covertId, NoWithdrawYet.value))
     mixBoxes.foreach(box => mp(box.tokenId) = mp.getOrElse(box.tokenId, 0L) + box.getAmount)
     mp.toMap
   }
@@ -220,8 +216,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    */
   def getCovertRunningMixing(covertId: String): Map[String, Long] = {
     val mp = mutable.Map.empty[String, Long]
-    val mixBoxes = mixRequestsTable.selectStar.where(mixGroupIdCol === covertId, mixStatusCol === Running.value,
-      mixWithdrawStatusCol === NoWithdrawYet.value).as(MixRequest(_))
+    val mixBoxes = daoUtils.awaitResult(mixingRequestsDAO.selectAllByMixAndWithdrawStatus(covertId, Running, NoWithdrawYet.value))
     mixBoxes.foreach(box => mp(box.tokenId) = mp.getOrElse(box.tokenId, 0L) + box.getAmount)
     mp.toMap
   }
@@ -231,21 +226,21 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @return list of covert addresses
    */
   def getCovertAddresses(covertId: String): Seq[String] = {
-    covertAddressesTable.select(addressCol).where(mixGroupIdCol === covertId).as(it => it.toIterator.next().as[String])
+    daoUtils.awaitResult(covertAddressesDAO.selectAllAddressesByCovertId(covertId))
   }
 
   /**
    * @return list of covert addresses
    */
   def getCovertList: Seq[MixCovertRequest] = {
-    mixCovertTable.selectStar.as(MixCovertRequest(_))
+    daoUtils.awaitResult(mixingCovertRequestDAO.all)
   }
 
   /**
    * @return covert request
    */
   def getCovertById(covertId: String): MixCovertRequest = {
-    mixCovertTable.selectStar.where(mixGroupIdCol === covertId).as(MixCovertRequest(_)).head
+    daoUtils.awaitResult(mixingCovertRequestDAO.selectCovertRequestByMixGroupId(covertId)).getOrElse(throw new Exception(s"covertId $covertId not found in MixingCovertRequest"))
   }
 
   /**
@@ -268,7 +263,8 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
       val depositSecret = wallet.getSecret(-1)
       val depositAddress = WalletHelper.getProveDlogAddress(depositSecret, ctx)
       val mixId = UUID.randomUUID().toString
-      mixRequestsTable.insert(mixId, topId, ergRing, numRounds, Queued.value, now, withdrawAddress, depositAddress, false, ergNeeded, numRounds, NoWithdrawYet.value, tokenRing, tokenNeeded, mixingTokenId, masterSecret)
+      val req = MixingRequest(mixId, topId, ergRing, numRounds, MixStatus.fromString(Queued.value), now, withdrawAddress, depositAddress, false, ergNeeded, numRounds, NoWithdrawYet.value, tokenRing, tokenNeeded, mixingTokenId, masterSecret)
+      mixingRequestsDAO.insert(req)
       depositAddress
     }
   }
@@ -305,7 +301,8 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
         mixingTokenId = mixBox.mixingTokenId
         this.newMixRequest(mixBox.withdraw, mixBox.token, mixBox.amount, price._1, mixBox.mixingTokenAmount, price._2, mixBox.mixingTokenId, mixId)
       })
-      mixRequestsGroupTable.insert(mixId, totalNeededErg, GroupMixStatus.Queued.value, now, depositAddress, 0L, 0L, mixingAmount, mixingTokenAmount, totalNeededToken, mixingTokenId, masterSecret)
+      val req = MixGroupRequest(mixId, totalNeededErg, GroupMixStatus.Queued.value, now, depositAddress, 0L, 0L, mixingAmount, mixingTokenAmount, totalNeededToken, mixingTokenId, masterSecret)
+      mixingGroupRequestDAO.insert(req)
       if (mixingTokenId.isEmpty) {
         logger.info(s"Please deposit $totalNeededErg nanoErgs to $depositAddress")
       } else {
@@ -319,15 +316,14 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @return returns group mixes
    */
   def getMixRequestGroups = {
-    mixRequestsGroupTable.select(mixGroupReqCols :+ masterSecretGroupCol: _*).as(MixGroupRequest(_))
+    daoUtils.awaitResult(mixingGroupRequestDAO.all)
   }
 
   /**
    * @return returns not completed group mixes
    */
   def getMixRequestGroupsActive = {
-    mixRequestsGroupTable.select(mixGroupReqCols :+ masterSecretGroupCol: _*)
-      .where(mixStatusCol <> GroupMixStatus.Complete.value).as(MixGroupRequest(_))
+    daoUtils.awaitResult(mixingGroupRequestDAO.active)
   }
 
   /**
@@ -337,10 +333,10 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @return (total, completed, withdrawn) numbers of this group
    */
   def getFinishedForGroup(groupId: String): (Long, Long, Long) = {
-    val withdrawn = mixRequestsTable.countWhere(mixWithdrawStatusCol === MixWithdrawStatus.Withdrawn.value, mixGroupIdCol === groupId)
-    val finished = mixRequestsTable.countWhere(mixStatusCol === Complete.value, mixGroupIdCol === groupId)
-    val all = mixRequestsTable.countWhere(mixGroupIdCol === groupId)
-    (all, finished, withdrawn)
+    val withdrawn = mixingRequestsDAO.countWithdrawn(groupId, MixWithdrawStatus.Withdrawn.value)
+    val finished = mixingRequestsDAO.countFinished(groupId, Complete)
+    val all = mixingRequestsDAO.countAll(groupId)
+    (daoUtils.awaitResult(all).toLong, daoUtils.awaitResult(finished).toLong, daoUtils.awaitResult(withdrawn).toLong)
   }
 
   /**
@@ -351,11 +347,10 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    */
   def getProgressForGroup(groupId: String): (Long, Long) = {
     var mixDesired = 0
-    val done = mixRequestsTable.select(mixReqCols: _*).where(mixGroupIdCol === groupId, mixStatusCol === MixStatus.Running.value).as(MixRequest(_)).map { req =>
-      val mixState = mixStateTable.selectStar.where(mixIdCol === req.id).as(MixState(_)).head
-      mixDesired += req.numRounds
-      Math.min(mixState.round, req.numRounds)
-    }.sum
+    val done = daoUtils.awaitResult(mixingRequestsDAO.groupRequestsProgress(groupId, MixStatus.Running)).map( tuple => {
+        mixDesired += tuple._1
+        Math min(tuple._1, tuple._2)
+    }).sum
     (mixDesired, done)
   }
 
@@ -363,8 +358,7 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @return all group mixes
    */
   def getMixRequestGroupsComplete = {
-    mixRequestsGroupTable.select(mixGroupReqCols :+ masterSecretGroupCol: _*)
-      .where(mixStatusCol === GroupMixStatus.Complete.value).as(MixGroupRequest(_))
+    daoUtils.awaitResult(mixingGroupRequestDAO.completed)
   }
 
   /**
@@ -374,17 +368,53 @@ class ErgoMixer @Inject()(tables: Tables, networkUtils: NetworkUtils) {
    * @return mix box info list of a specific group, whether it is half or full box, and whether it is withdrawn or not including tx id
    */
   def getMixes(id: String, status: String) = {
-    val boxes = {
-      if (status == "all") mixRequestsTable.select(mixReqCols: _*).where(mixGroupIdCol === id).as(MixRequest(_))
-      else if (status == "active") mixRequestsTable.select(mixReqCols: _*).where(mixGroupIdCol === id, mixWithdrawStatusCol <> Withdrawn.value).as(MixRequest(_))
-      else mixRequestsTable.select(mixReqCols: _*).where(mixGroupIdCol === id, mixWithdrawStatusCol === Withdrawn.value).as(MixRequest(_))
-    }
+    val boxes: Seq[MixRequest] = daoUtils.awaitResult({
+      if (status == "all") mixingRequestsDAO.selectByMixGroupId(id)
+      else if (status == "active") mixingRequestsDAO.selectActiveRequests(id, Withdrawn.value)
+      else mixingRequestsDAO.selectAllByWithdrawStatus(id, Withdrawn.value)
+    })
     boxes.map { req =>
-      val mixState = mixStateTable.selectStar.where(mixIdCol === req.id).as(MixState(_)).headOption
-      val halfMix = mixState.flatMap(state => halfMixTable.selectStar.where(mixIdCol === req.id, roundCol === state.round).as(HalfMix(_)).headOption)
-      val fullMix = mixState.flatMap(state => fullMixTable.selectStar.where(mixIdCol === req.id, roundCol === state.round).as(FullMix(_)).headOption)
-      val withdraw = withdrawTable.selectStar.where(mixIdCol === req.id).as(Withdraw(_)).headOption
+      val mixStateFuture = mixStateDAO.selectByMixId(req.id)
+      val withdrawFuture = withdrawDAO.selectByMixId(req.id)
+
+      val mixState = daoUtils.awaitResult(mixStateFuture)
+      val halfAndFullMix = daoUtils.awaitResult(allMixDAO.selectMixes(req.id, mixState))
+      val halfMix = halfAndFullMix._1
+      val fullMix = halfAndFullMix._2
+
+      val withdraw: Option[Withdraw] = {
+        val result = daoUtils.awaitResult(withdrawFuture)
+        if (result.isDefined)
+            Option(CreateWithdraw(Array(result.get.mixId, result.get.txId, result.get.time, result.get.boxId, result.get.txBytes)))
+        else
+            Option.empty[Withdraw]
+      }
       Mix(req, mixState, halfMix, fullMix, withdraw)
     }
   }
+
+  /**
+   * returns list of all covert addresses with their private keys
+   *
+   */
+  def covertKeys: Seq[String] = {
+    val header = "name, address, private key"
+    val keys = daoUtils.awaitResult(mixingCovertRequestDAO.all).map(req => {
+      val wallet = new Wallet(req.masterKey)
+      val nameCovert = if (req.nameCovert.nonEmpty) req.nameCovert else "No Name"
+      s"$nameCovert, ${req.depositAddress}, ${wallet.getSecret(-1, req.isManualCovert).toString(16)}"
+    })
+    Seq(header) ++ keys
+  }
+
+  /**
+   * returns the private key and address of a covert
+   *
+   */
+  def covertInfoById(covertId: String): (String, BigInt) = {
+    val req: MixCovertRequest = daoUtils.awaitResult(mixingCovertRequestDAO.selectCovertRequestByMixGroupId(covertId)).getOrElse(throw new Exception(s"covertId $covertId not found in MIXING_COVERT_REQUEST"))
+    val wallet = new Wallet(req.masterKey)
+    (req.depositAddress, wallet.getSecret(-1, req.isManualCovert))
+  }
+
 }

@@ -27,9 +27,9 @@ class Client @Inject()(ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtil
 
     val netWorkType = if (isMainnet) NetworkType.MAINNET else NetworkType.TESTNET
 
-    networkUtils.allClients = Configs.nodes.map(node => {
-      if (Configs.proxy != null) RestApiErgoClient.create(node, netWorkType, "", explorerUrl, Configs.proxy)
-      else RestApiErgoClient.create(node, netWorkType, "", explorerUrl)
+     Configs.nodes.foreach(node => {
+      if (Configs.proxy != null) networkUtils.allClients(node) = RestApiErgoClient.createWithProxy(node, netWorkType, "", explorerUrl, Configs.proxy)
+      else networkUtils.allClients(node) = RestApiErgoClient.create(node, netWorkType, "", explorerUrl)
     })
     networkUtils.pruneClients()
 

@@ -1,0 +1,18 @@
+-- !Ups
+CREATE TABLE WITHDRAW_COVERT_TOKEN
+(
+    MIX_GROUP_ID       VARCHAR(255) not null,
+    TOKEN_ID           VARCHAR(255) not null,
+    WITHDRAW_ADDRESS   VARCHAR(10000),
+    CREATED_TIME       BIGINT,
+    WITHDRAW_STATUS    VARCHAR(255),
+    TX_ID        VARCHAR(255),
+    TX           BLOB,
+    primary key (MIX_GROUP_ID, TOKEN_ID, CREATED_TIME),
+    check (("CREATED_TIME" >= 0))
+);
+
+-- !Downs
+DROP TABLE WITHDRAW_COVERT_TOKEN
+
+

@@ -1,32 +1,34 @@
 package mixer
 
-import db.Columns._
-import db.ScalaDB._
-import db.Tables
 import wallet.WalletHelper.now
+
 import javax.inject.Inject
-import models.Models.MixRequest
+import models.Models.Deposit
 import network.{BlockExplorer, NetworkUtils}
 import play.api.Logger
+import dao.{AllDepositsDAO, DAOUtils, MixingRequestsDAO, SpentDepositsDAO, UnspentDepositsDAO}
 
-class Deposits @Inject()(tables: Tables, networkUtils: NetworkUtils, explorer: BlockExplorer) {
+class Deposits @Inject()(
+                            networkUtils: NetworkUtils,
+                            daoUtils: DAOUtils,
+                            explorer: BlockExplorer,
+                            mixingRequestsDAO: MixingRequestsDAO,
+                            allDepositsDAO: AllDepositsDAO,
+                            unspentDepositsDAO: UnspentDepositsDAO,
+                            spentDepositsDAO: SpentDepositsDAO) {
   private val logger: Logger = Logger(this.getClass)
-
-  import tables._
 
   /**
    * process deposits, i.e. checks pending addresses to see if they've reached predefined threshold for entering mixing
    * Does both for ergs and tokens
    */
   def processDeposits(): Unit = {
-    mixRequestsTable.select(mixReqCols: _*).where(depositCompletedCol === false).as(MixRequest(_)).map { req =>
+    daoUtils.awaitResult(mixingRequestsDAO.nonCompletedDeposits).map { req =>
       // logger.info(s"Trying to read deposits for depositAddress: $depositAddress")
       networkUtils.usingClient { implicit ctx =>
         val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
 
-        val knownIds = unspentDepositsTable.select(boxIdCol).where(addressCol === req.depositAddress).firstAsT[String] ++
-          spentDepositsTable.select(boxIdCol).where(addressCol === req.depositAddress).firstAsT[String]
-
+        val knownIds = daoUtils.awaitResult(allDepositsDAO.knownIds(req.depositAddress))
 
         allBoxes.filterNot(box => knownIds.contains(box.id)).map { box =>
           insertDeposit(req.depositAddress, box.amount, box.id, req.neededAmount, box.getToken(req.tokenId), req.neededTokenAmount)
@@ -50,14 +52,21 @@ class Deposits @Inject()(tables: Tables, networkUtils: NetworkUtils, explorer: B
    */
   def insertDeposit(address: String, amount: Long, boxId: String, needed: Long, tokenAmount: Long, neededTokenAmount: Long): String = {
     // does not check from block explorer. Should be used by experts only. Otherwise, the job will automatically insert deposits
-    if (mixRequestsTable.exists(depositAddressCol === address)) {
-      if (unspentDepositsTable.exists(boxIdCol === boxId)) throw new Exception(s"Deposit already exists")
-      if (spentDepositsTable.exists(boxIdCol === boxId)) throw new Exception(s"Deposit already spent")
-      tables.insertUnspentDeposit(address, boxId, amount, tokenAmount, now)
-      val currentSum = unspentDepositsTable.select(amountCol).where(addressCol === address).firstAsT[Long].sum
-      val tokenSum = unspentDepositsTable.select(mixingTokenAmount).where(addressCol === address).firstAsT[Long].sum
+    if (daoUtils.awaitResult(mixingRequestsDAO.existsByDepositAddress(address))) {
+      val deposit_exists = unspentDepositsDAO.existsByBoxId(boxId)
+      val deposit_spent = spentDepositsDAO.existsByBoxId(boxId)
+      if (daoUtils.awaitResult(deposit_exists)) throw new Exception(s"Deposit already exists")
+      if (daoUtils.awaitResult(deposit_spent)) throw new Exception(s"Deposit already spent")
+
+      val deposit = Deposit(address, boxId, amount, tokenAmount, now)
+      daoUtils.awaitResult(unspentDepositsDAO.insertDeposit(deposit))
+
+      val depositsAmount = daoUtils.awaitResult(unspentDepositsDAO.amountByAddress(address))
+      val currentSum = depositsAmount._1.get
+      val tokenSum = depositsAmount._2.get
+
       if (currentSum >= needed && tokenSum >= neededTokenAmount) {
-        mixRequestsTable.update(depositCompletedCol <-- true).where(depositAddressCol === address)
+        mixingRequestsDAO.updateDepositCompleted(address)
         "deposit completed"
       } else s"${needed - currentSum} nanoErgs pending"
     } else throw new Exception(s"Address $address does not belong to this wallet")

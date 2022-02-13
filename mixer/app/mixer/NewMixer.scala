@@ -2,25 +2,34 @@ package mixer
 
 import app.Configs
 import mixinterface.{AliceOrBob, TokenErgoMix}
-import db.Columns._
-import db.ScalaDB._
-import db.Tables
 import helpers.ErgoMixerUtils
 import wallet.WalletHelper.now
+
 import javax.inject.Inject
 import models.Models
-import models.Models.MixStatus.{Queued, Running}
+import models.Models.MixStatus.Running
 import models.Models.MixWithdrawStatus.WithdrawRequested
-import models.Models.{Deposit, MixRequest, OutBox}
+import models.Models.{Deposit, FullMix, HalfMix, MixHistory, MixRequest, MixState, MixTransaction, OutBox, SpentDeposit, WithdrawTx}
 import network.NetworkUtils
 import org.ergoplatform.appkit.SignedTransaction
 import play.api.Logger
 import wallet.Wallet
+import dao.{DAOUtils, FullMixDAO, HalfMixDAO, MixStateDAO, MixStateHistoryDAO, MixTransactionsDAO, MixingRequestsDAO, SpentDepositsDAO, TokenEmissionDAO, UnspentDepositsDAO, WithdrawDAO}
 
-class NewMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtils) {
+class NewMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtils,
+                         daoUtils: DAOUtils,
+                         unspentDepositsDAO: UnspentDepositsDAO,
+                         spentDepositsDAO: SpentDepositsDAO,
+                         mixingRequestsDAO: MixingRequestsDAO,
+                         mixStateDAO: MixStateDAO,
+                         withdrawDAO: WithdrawDAO,
+                         tokenEmissionDAO: TokenEmissionDAO,
+                         halfMixDAO: HalfMixDAO,
+                         fullMixDAO: FullMixDAO,
+                         mixStateHistoryDAO: MixStateHistoryDAO,
+                         mixTransactionsDAO: MixTransactionsDAO) {
   private val logger: Logger = Logger(this.getClass)
 
-  import tables._
   import ergoMixerUtils._
 
   var halfs: Seq[OutBox] = _
@@ -39,35 +48,28 @@ class NewMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils:
    * @param address deposit address of a mix
    * @return returns deposits of this address
    */
-  def getDeposits(address: String): List[Deposit] = unspentDepositsTable.selectStar.where(addressCol === address).as(Deposit(_))
+  def getDeposits(address: String): Seq[Deposit] = daoUtils.awaitResult(unspentDepositsDAO.selectByAddress(address))
 
   /**
    * processes new mixes one by one
    */
   def processNewMixQueue(): Unit = {
-    val reqs = mixRequestsTable.select(
-      mixReqCols :+ masterSecretCol: _*
-    ).where(
-      mixStatusCol === Queued.value,
-      depositCompletedCol === true
-    ).as(arr =>
-      (MixRequest(arr), arr.last.asInstanceOf[BigDecimal].toBigInt) // Mix details along with master secret
-    )
+    val reqs = daoUtils.awaitResult(mixingRequestsDAO.selectAllQueued)
 
     if (reqs.nonEmpty) logger.info(s"[NEW] Processing following ids")
 
     reqs.foreach {
-      case (mr, _) => logger.info(s"  > ${mr.id} depositAddress: ${mr.depositAddress}")
+      case req => logger.info(s"  > ${req.id} depositAddress: ${req.depositAddress}")
     }
 
     halfs = null
     reqs.foreach {
-      case (mixRequest, masterSecret) =>
+      case req =>
         try {
-          initiateMix(mixRequest, masterSecret)
+          initiateMix(req.toMixRequest, req.masterKey)
         } catch {
           case a: Throwable =>
-            logger.error(s" [NEW: ${mixRequest.id}] An error occurred. Stacktrace below")
+            logger.error(s" [NEW: ${req.id}] An error occurred. Stacktrace below")
             logger.error(getStackTraceStr(a))
         }
     }
@@ -86,14 +88,15 @@ class NewMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils:
     val depositsToUse = getDeposits(depositAddress)
     val boxIds = depositsToUse.map(_.boxId)
     if (mixRequest.withdrawStatus.equals(WithdrawRequested.value)) { // withdrawing
-      if (shouldWithdraw(id, boxIds.mkString(","))) {
+      if (withdrawDAO.shouldWithdraw(id, boxIds.mkString(","))) {
         require(mixRequest.withdrawAddress.nonEmpty)
         val wallet = new Wallet(masterSecret)
         val secret = wallet.getSecret(-1).bigInteger
         assert(boxIds.size == 1)
         val tx = aliceOrBob.spendBox(boxIds.head, Option.empty, mixRequest.withdrawAddress, Array(secret), Configs.defaultHalfFee, broadCast = true)
         val txBytes = tx.toJson(false).getBytes("utf-16")
-        tables.insertWithdraw(id, tx.getId, now, boxIds.head, txBytes)
+        val new_withdraw = WithdrawTx(id, tx.getId, now, boxIds.head, txBytes)
+        withdrawDAO.updateById(new_withdraw, WithdrawRequested.value)
         val sendRes = ctx.sendTransaction(tx)
         if (sendRes == null) logger.error(s" [Deposit: $id] something unexpected has happened! tx got refused by the node: ${tx.getId}!")
         logger.info(s" [Deposit: $id] Withdraw txId: ${tx.getId}, is requested: ${mixRequest.withdrawStatus.equals(WithdrawRequested.value)}")
@@ -101,16 +104,19 @@ class NewMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils:
       return
     }
 
-    def updateTablesMixes(isAlice: Boolean, mixRequestId: String, time: Long, tx: SignedTransaction, depositsToUse: List[Models.Deposit], optTokenBoxId: Option[String]): Unit = {
+    def updateTablesMixes(isAlice: Boolean, mixRequestId: String, time: Long, tx: SignedTransaction, depositsToUse: Seq[Models.Deposit], optTokenBoxId: Option[String]): Unit = {
       depositsToUse.map { d =>
-        tables.insertSpentDeposit(d.address, d.boxId, d.amount, d.createdTime, d.tokenAmount, tx.getId, time, mixRequestId)
-        unspentDepositsTable.deleteWhere(boxIdCol === d.boxId)
+        val spent_deposit = SpentDeposit(d.address, d.boxId, d.amount, d.createdTime, d.tokenAmount, tx.getId, time, mixRequestId)
+        spentDepositsDAO.insertDeposit(spent_deposit)
+        unspentDepositsDAO.delete(d.boxId)
       }
 
-      mixRequestsTable.update(mixStatusCol <-- Running.value).where(mixIdCol === mixRequest.id)
-      spentTokenEmissionBoxTable.insert(mixRequest.id, optTokenBoxId.get)
-      mixStateTable.insert(mixRequestId, 0, isAlice)
-      tables.insertMixStateHistory(mixRequestId, round = 0, isAlice = isAlice, time = time)
+      mixingRequestsDAO.updateMixStatus(mixRequest.id, Running)
+      tokenEmissionDAO.insert(mixRequest.id, optTokenBoxId.get)
+      val state = MixState(mixRequestId, 0, isAlice)
+      mixStateDAO.insert(state)
+      val new_history = MixHistory(mixRequestId, round = 0, isAlice = isAlice, time = time)
+      mixStateHistoryDAO.insertMixHistory(new_history)
     }
 
     val avbl = depositsToUse.map(_.amount).sum
@@ -121,7 +127,7 @@ class NewMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils:
     val neededToken = mixRequest.neededTokenAmount
     // get a random token emission box
     val optTokenBoxId = getRandomValidBoxId(networkUtils.getTokenEmissionBoxes(numFeeToken, considerPool = true)
-      .filterNot(box => spentTokenEmissionBoxTable.exists(boxIdCol === box.id)).map(_.id.toString))
+        .filterNot(box => daoUtils.awaitResult(tokenEmissionDAO.existsByBoxId(box.id))).map(_.id.toString))
 
     if (avbl < neededErg || avblToken < neededToken) { // should not happen because we are only considering completed deposits.
       throw new Exception(s"Insufficient funds. Needed $neededErg. Available $avbl")
@@ -141,7 +147,7 @@ class NewMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils:
       var tokenSize = 1
       if (mixRequest.tokenId.nonEmpty) tokenSize = 2
       val optHalfMixBoxId = getRandomValidBoxId(getHalfBoxes
-        .filterNot(box => fullMixTable.exists(halfMixBoxIdCol === box.id))
+        .filterNot(box => daoUtils.awaitResult(fullMixDAO.existsByBoxId(box.id)))
         .filter(box => box.amount == poolAmount && box.getToken(mixRequest.tokenId) == mixRequest.mixingTokenAmount
           && box.tokens.size == tokenSize && box.registers.nonEmpty
           && box.getToken(TokenErgoMix.tokenId) > 0).map(_.id)
@@ -153,8 +159,10 @@ class NewMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils:
         val (fullMixTx, bit) = aliceOrBob.spendHalfMixBox(secret, halfMixBoxId, inputBoxIds :+ optTokenBoxId.get, Configs.startFee, depositAddress, Array(dLogSecret), broadCast = false, numFeeToken)
         val (left, right) = fullMixTx.getFullMixBoxes
         val bobFullMixBox = if (bit) right else left
-        tables.insertFullMix(id, round = 0, time = currentTime, halfMixBoxId, bobFullMixBox.id)
-        tables.insertTx(bobFullMixBox.id, fullMixTx.tx)
+        val new_fullMix = FullMix(id, round = 0, currentTime, halfMixBoxId, bobFullMixBox.id)
+        fullMixDAO.insertFullMix(new_fullMix)
+        val new_mixTransaction = MixTransaction(bobFullMixBox.id, fullMixTx.tx.getId, fullMixTx.tx.toJson(false).getBytes("utf-16"))
+        mixTransactionsDAO.updateById(new_mixTransaction)
         updateTablesMixes(isAlice = false, id, currentTime, fullMixTx.tx, depositsToUse, optTokenBoxId) // is not Alice
         logger.info(s" [NEW: $id] --> Bob [halfMixBoxId:$halfMixBoxId, txId:${fullMixTx.tx.getId}] - before sendTransaction")
         val sendRes = ctx.sendTransaction(fullMixTx.tx)
@@ -171,8 +179,10 @@ class NewMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils:
 
         val tx = aliceOrBob.createHalfMixBox(secret, inputBoxIds :+ optTokenBoxId.get, Configs.startFee,
           depositAddress, Array(dLogSecret), broadCast = false, poolAmount, numFeeToken, mixRequest.tokenId, mixRequest.mixingTokenAmount)
-        tables.insertHalfMix(id, round = 0, time = currentTime, tx.getHalfMixBox.id, isSpent = false)
-        tables.insertTx(tx.getHalfMixBox.id, tx.tx)
+        val new_halfMix = HalfMix(id, round = 0, currentTime, tx.getHalfMixBox.id, isSpent = false)
+        halfMixDAO.insertHalfMix(new_halfMix)
+        val new_mixTransaction = MixTransaction(tx.getHalfMixBox.id, tx.tx.getId, tx.tx.toJson(false).getBytes("utf-16"))
+        mixTransactionsDAO.updateById(new_mixTransaction)
         updateTablesMixes(isAlice = true, id, currentTime, tx.tx, depositsToUse, optTokenBoxId) // is Alice
         logger.info(s" [NEW:$id] --> Alice [txId: ${tx.tx.getId}] - before sendTransaction")
         val sendRes = ctx.sendTransaction(tx.tx)

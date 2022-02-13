@@ -6,7 +6,6 @@ import java.util.Date
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import app.Configs
 import app.Configs.readKey
-import db.PruneDB
 import helpers.TrayUtils
 import javax.inject.Inject
 import mixer._
@@ -18,10 +17,12 @@ import services.ScheduledJobs.{RefreshMixingStats, RefreshPoolStats}
 import scala.collection.mutable
 import scala.util.Try
 
+import dao.Prune
+
 
 class ErgoMixerJobs @Inject()(val ergoMixer: ErgoMixer, val covertMixer: CovertMixer, val groupMixer: GroupMixer,
                               val rescan: Rescan, val halfMixer: HalfMixer, val fullMixer: FullMixer, val newMixer: NewMixer,
-                              val withdrawMixer: WithdrawMixer, val deposits: Deposits, val pruneDb: PruneDB,
+                              val withdrawMixer: WithdrawMixer, val deposits: Deposits, val prune: Prune,
                               val statScanner: ChainScanner, val networkUtils: NetworkUtils)
 
 class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
@@ -49,7 +50,7 @@ class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
       } else {
         if (!wasOk) {
           logger.error("Issue with nodes is resolved, will continue mixing.")
-          TrayUtils.showNotification(s"Issue with node connectivity is resolved!", s"ErgoMixer can connect to ${networkUtils.prunedClients.length} nodes, will continue mixing!")
+          TrayUtils.showNotification(s"Issue with node connectivity is resolved!", s"ErgoMixer can connect to ${networkUtils.prunedClients.size} nodes, will continue mixing!")
         }
 
         logger.info("covert mixes: " + Try(mixerJobs.covertMixer.processCovert()))
@@ -83,7 +84,7 @@ class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
 
       Configs.ringStats = mixerJobs.statScanner.ringStats()
 
-      logger.info("pruneDB: " + Try(mixerJobs.pruneDb.processPrune()))
+      logger.info("pruneDB: " + Try(mixerJobs.prune.processPrune()))
 
       logger.info(s"$currentTimeString: Refreshing stats: jobs finished")
 

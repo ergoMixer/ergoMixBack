@@ -1,32 +1,20 @@
 FROM node:12.14 as builder-front
-
 WORKDIR /usr/src/app
-COPY ./ergoMixFront/package.json ./ergoMixFront/package-lock.json ./
+COPY ./ergomixfront/package.json ./
+COPY ./ergomixfront/ageusd/ ./ageusd/
 RUN npm install
-COPY ./ergoMixFront ./
+COPY ./ergomixfront ./
 RUN npm run build
 
-FROM openjdk:8-jre-slim as builder
+FROM openjdk:8u181-jdk-slim as builder
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends apt-transport-https apt-utils bc dirmngr gnupg && \
-    echo "deb https://dl.bintray.com/sbt/debian /" | tee -a /etc/apt/sources.list.d/sbt.list && \
-    apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 2EE0EA64E40A89B84B2DF73499E82A75642AC823 && \
-    # seems that dash package upgrade is broken in Debian, so we hold it's version before update
-    echo "dash hold" | dpkg --set-selections && \
-    apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends sbt wget sed
+    apt-get -y --no-install-recommends install curl zip unzip sed
+RUN curl -s "https://get.sdkman.io" | bash
+RUN /bin/bash -c "source /root/.sdkman/bin/sdkman-init.sh; sdk install sbt 1.2.7"
+ENV PATH=/root/.sdkman/candidates/sbt/current/bin:$PATH
 WORKDIR /mixer
-RUN wget https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.1/graalvm-ce-java8-linux-amd64-19.3.1.tar.gz && \
-    tar -xf graalvm-ce-java8-linux-amd64-19.3.1.tar.gz
-ENV JAVA_HOME="/mixer/graalvm-ce-java8-19.3.1"
-ENV PATH="${JAVA_HOME}/bin:$PATH"
-ADD ["./appkit/", "/mixer/appkit"]
-WORKDIR /mixer/appkit
-RUN sbt publishLocal
-ADD ["./mixer", "/mixer/mixer"]
-WORKDIR /mixer/mixer
+ADD ["./mixer", "./"]
 COPY --from=builder-front /usr/src/app/build/ ./public/
 RUN sbt assembly
 RUN mv `find . -name ergoMixer-*.jar` /ergo-mixer.jar

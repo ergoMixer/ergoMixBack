@@ -1,30 +1,37 @@
 package mixer
 
-import db.Columns._
-import db.ScalaDB._
-import db.Tables
-import db.core.DataStructures.anyToAny
 import wallet.WalletHelper.now
+
 import javax.inject.Inject
-import models.Models.{FollowedMix, PendingRescan}
+import models.Models.{FollowedMix, FullMix, HalfMix, MixHistory, MixState, PendingRescan}
+import dao.{DAOUtils, FullMixDAO, HalfMixDAO, MixStateDAO, MixStateHistoryDAO, MixingRequestsDAO, RescanDAO, SpentDepositsDAO}
 
-class Rescan @Inject()(tables: Tables, mixScanner: MixScanner) {
-
-  import tables._
+class Rescan @Inject()(mixScanner: MixScanner,
+                       daoUtils: DAOUtils,
+                       mixingRequestsDAO: MixingRequestsDAO,
+                       rescanDAO: RescanDAO,
+                       spentDepositsDAO: SpentDepositsDAO,
+                       mixStateHistoryDAO: MixStateHistoryDAO,
+                       halfMixDAO: HalfMixDAO,
+                       fullMixDAO: FullMixDAO,
+                       mixStateDAO: MixStateDAO) {
 
   private implicit val insertReason = "rescan"
 
   def processRescanQueue() = {
-    rescanTable.selectStar.as(PendingRescan(_)).foreach {
+    daoUtils.awaitResult(rescanDAO.all).foreach {
       case PendingRescan(mixId, _, round, goBackward, isHalfMixTx, mixBoxId) =>
         processRescan(mixId, round, goBackward, isHalfMixTx, mixBoxId)
-        rescanTable.deleteWhere(mixIdCol === mixId)
+        rescanDAO.delete(mixId)
     }
   }
 
   def processRescan(mixId: String, round: Int, goBackward: Boolean, isHalfMixTx: Boolean, mixBoxId: String) = {
-    val masterSecret = mixRequestsTable.select(masterSecretCol).where(mixIdCol === mixId).firstAsT[BigDecimal].headOption.map(_.toBigInt()).getOrElse(throw new Exception("Unable to read master secret"))
-    val poolAmount = mixRequestsTable.select(amountCol).where(mixIdCol === mixId).firstAsT[Long].headOption.getOrElse(throw new Exception("Unable to read pool amount"))
+    val masterSecretFuture = mixingRequestsDAO.selectMasterKey(mixId)
+    val poolAmountFuture = mixingRequestsDAO.selectByMixId(mixId)
+    val masterSecret = daoUtils.awaitResult(masterSecretFuture).getOrElse(throw new Exception("Unable to read master secret"))
+    val poolAmount = daoUtils.awaitResult(poolAmountFuture).getOrElse(throw new Exception("Unable to read pool amount")).amount
+
     val followedMixes: Seq[FollowedMix] = if (!goBackward) { // go forward
       if (isHalfMixTx) mixScanner.followHalfMix(mixBoxId, round, masterSecret) else mixScanner.followFullMix(mixBoxId, round, masterSecret)
     } else { // go backward
@@ -34,32 +41,24 @@ class Rescan @Inject()(tables: Tables, mixScanner: MixScanner) {
     applyMixes(mixId, followedMixes)
   }
 
-  @deprecated("This takes a lot of time. Use followFullMix and followHalfMix", "1.0")
-  def getFollowedMix(mixId: String): Seq[FollowedMix] = {
-    mixRequestsTable.select(depositAddressCol, masterSecretCol, amountCol).where(mixIdCol === mixId).as(a => (a(0).as[String], a(1).as[BigDecimal], a(2).as[Int])).headOption.flatMap {
-      case (depositAddress, bigDecimal, poolAmount) =>
-        spentDepositsTable.select(boxIdCol).where(addressCol === depositAddress).firstAsT[String].headOption.map(boxId => mixScanner.followDeposit(boxId, bigDecimal.toBigInt(), poolAmount))
-    }.getOrElse(throw new Exception("Invalid mixID"))
-  }
-
   private def updateMixHistory(mixId: String, round: Int, isAlice: Boolean) = {
-    mixStateHistoryTable.deleteWhere(mixIdCol === mixId, roundCol === round)
-    tables.insertMixStateHistory(mixId, round, isAlice, now)
+    val mixHistory = MixHistory(mixId, round, isAlice, now)
+    mixStateHistoryDAO.updateById(mixHistory)
   }
 
   private def updateFullMix(mixId: String, round: Int, halfMixBoxId: String, fullMixBoxId: String) = {
-    fullMixTable.deleteWhere(mixIdCol === mixId, roundCol === round)
-    tables.insertFullMix(mixId, round, now, halfMixBoxId, fullMixBoxId)
+    val fullMix = FullMix(mixId, round, now, halfMixBoxId, fullMixBoxId)
+    fullMixDAO.updateById(fullMix)
   }
 
   private def updateHalfMix(mixId: String, round: Int, halfMixBoxId: String, isSpent: Boolean) = {
-    halfMixTable.deleteWhere(mixIdCol === mixId, roundCol === round)
-    tables.insertHalfMix(mixId, round, now, halfMixBoxId, isSpent)
+    val halfMix = HalfMix(mixId, round, now, halfMixBoxId, isSpent)
+    halfMixDAO.updateById(halfMix)
   }
 
   private def updateMixState(mixId: String, round: Int, isAlice: Boolean) = {
-    mixStateTable.deleteWhere(mixIdCol === mixId)
-    mixStateTable.insert(mixId, round, isAlice)
+    val mixState = MixState(mixId, round, isAlice)
+    mixStateDAO.updateInRescan(mixState)
   }
 
   private def applyMix(mixId: String, followedMix: FollowedMix) = {
@@ -88,9 +87,9 @@ class Rescan @Inject()(tables: Tables, mixScanner: MixScanner) {
   }
 
   private def clearFutureRounds(mixId: String, round: Int): Unit = {
-    fullMixTable.deleteWhere(mixIdCol === mixId, roundCol > round)
-    halfMixTable.deleteWhere(mixIdCol === mixId, roundCol > round)
-    mixStateHistoryTable.deleteWhere(mixIdCol === mixId, roundCol > round)
+    mixStateHistoryDAO.deleteFutureRounds(mixId, round)
+    halfMixDAO.deleteFutureRounds(mixId, round)
+    fullMixDAO.deleteFutureRounds(mixId, round)
   }
 
   private def applyMixes(mixId: String, followedMixes: Seq[FollowedMix]) = {

@@ -1,18 +1,17 @@
 package mixer
 
 import app.Configs
-import db.Tables
 import javax.inject.Inject
 import mixinterface.TokenErgoMix
 import models.Models.EntityInfo
 import network.{BlockExplorer, NetworkUtils}
 import special.collection.Coll
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.compat.Platform
+import scala.collection.JavaConverters._
 
-class ChainScanner @Inject()(tables: Tables, networkUtils: NetworkUtils, explorer: BlockExplorer) {
+class ChainScanner @Inject()(networkUtils: NetworkUtils, explorer: BlockExplorer) {
   /**
    * scans blockchain to extract ring statistics, # of half-boxes, # of mixes in the last 24 h
    *
@@ -113,9 +112,10 @@ class ChainScanner @Inject()(tables: Tables, networkUtils: NetworkUtils, explore
    */
   def scanParams: Seq[EntityInfo] = {
     networkUtils.usingClient { implicit ctx =>
-      return ctx.getUnspentBoxesFor(TokenErgoMix.paramAddress).asScala
+      val maxErg = (1e9*1e8).toLong
+      return ctx.getCoveringBoxesFor(TokenErgoMix.paramAddress, maxErg, Seq.empty.asJava).getBoxes.asScala
         .filter(box => box.getTokens.size() > 0 && box.getTokens.get(0).getId.toString.equals(TokenErgoMix.tokenId))
-        .map(box => EntityInfo(box))
+        .map(EntityInfo(_))
     }
   }
 }

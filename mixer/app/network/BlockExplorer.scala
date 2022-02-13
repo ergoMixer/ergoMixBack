@@ -1,13 +1,13 @@
 package network
 
-import java.io.InputStream
+import java.io.{BufferedWriter, InputStream, OutputStreamWriter}
 import java.net.{HttpURLConnection, URLConnection}
-
 import app.Configs
 import io.circe.Json
+
 import javax.inject.Singleton
 import models.Models.{InBox, OutBox, SpendTx}
-import org.ergoplatform.appkit.ErgoToken
+import org.ergoplatform.appkit.{ErgoToken, ErgoTreeTemplate}
 
 import scala.util.{Failure, Success, Try}
 
@@ -22,6 +22,7 @@ class BlockExplorer() {
   private val boxUrl = s"$baseUrl/transactions/boxes/"
   private val txUrl = s"$baseUrl/transactions/"
   private val urlAddress = s"$baseUrl/addresses/"
+  private val unspentSearchUrl = s"$baseUrl/api/v1/boxes/unspent/search/"
 
   /**
    * @param j json representation of box
@@ -217,6 +218,29 @@ class BlockExplorer() {
   } catch {
     case a: Throwable => Json.Null
   }
+
+  /**
+   * @param ergoTreeTemplateHash ergo tree template hash for the address of unspent box
+   * @param tokenId corresponding token id
+   * @return list of id of unspent boxes
+   */
+  def getUnspentBoxIdsWithAsset(ergoTreeTemplateHash: String, tokenId: String): Seq[String] = {
+    val jsonString = s"""{
+         | "ergoTreeTemplateHash": "$ergoTreeTemplateHash",
+         | "assets": [
+         |     "$tokenId"
+         | ]
+         |}""".stripMargin
+    val res = (GetURL.post(unspentSearchUrl, jsonString))
+    res.hcursor.downField("items").as[Seq[Json]] match {
+      case Left(e) => throw new Exception(s"Error while parsing Json: $e")
+      case Right(arr) => arr.map(js => js.hcursor.downField("boxId").as[String] match {
+        case Left(e) => throw new Exception(s"Error while parsing Json: $e")
+        case Right(id) => id
+      })
+    }
+  }
+
 }
 
 object GetURL {
@@ -309,4 +333,40 @@ object GetURL {
       case Left(ex) => throw ex
     }
   }
+
+  def postConnection(url: String, headers: Map[String, String], useProxyIfSet: Boolean = true): HttpURLConnection = {
+    val connection = {
+      if (!useProxyIfSet || Configs.proxy == null) new URL(url).openConnection
+      else new URL(url).openConnection(Configs.proxy)
+    }.asInstanceOf[HttpURLConnection]
+    connection.setRequestMethod("POST")
+    connection.setDoOutput(true)
+    headers.foreach { case (name, value) => connection.setRequestProperty(name, value) }
+    connection.setConnectTimeout(20000)
+    connection
+  }
+
+  def postOrError(url: String, jsonString: String): Either[Throwable, Option[Json]] = {
+    Try {
+      val httpConn = postConnection(url, Map("Content-Type" -> "application/json") ++ requestProperties)
+      val outputBuffer: BufferedWriter = new BufferedWriter(new OutputStreamWriter(httpConn.getOutputStream))
+      outputBuffer.write(jsonString)
+      outputBuffer.close()
+      (httpConn.getResponseCode, httpConn)
+    } match {
+      case Success((200, httpConn)) => Try(Some(parse(is2Str(httpConn.getInputStream)).right.get)).toEither
+      case Success((httpCode, httpConn)) => Left(new Exception(s"http:$httpCode,error:${is2Str(httpConn.getErrorStream)}"))
+      case Failure(ex) => Left(ex)
+    }
+  }
+
+  def post(url: String, jsonString: String): Json = {
+    postOrError(url, jsonString) match {
+      case Right(Some(json)) => json
+      case Right(None) => throw new Exception("Explorer returned error 404")
+      case Left(ex) =>
+        throw ex
+    }
+  }
+
 }

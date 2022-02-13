@@ -92,12 +92,6 @@ chmod +x install.sh
 ./install.sh
 ```
 
-<!-- Alternatively, you can build from source by appending the `-s` suffix. -->
-
-<!-- ```
-$ curl -s https://raw.githubusercontent.com/ergoMixer/ergoMixBack/master/sh/install.sh -s | bash
-``` -->
-
 If you encounter any permission errors when attempting to run the script, please run `chmod +x install.sh` from within the same directory. 
 
 ### Docker Quick Start
@@ -134,39 +128,6 @@ NOTE: The `/path/on/host/to/ergo/database_and_logfile` directory must have `777`
   * #### SBT 1.2.7
     Depending on your OS, you can follow instructions in [this](https://www.scala-sbt.org/1.0/docs/Setup.html) page to install sbt.
 
-  * #### GraalVM
-    GraalVM is not strictly necessary to run Appkit, unless you really use Graal features like running JavaScript.
-
-    1) You may for some reason like JS and want to develop Ergo dApps using Node.js, then you can use Appkit from Node.js. 
-    2) Or you have existing Node.js backend application and want it to seamlessly integrate with Ergo from the same Node.js process. Then you can run your entire Node.js under GraalVM (which is fully supported by the Graal team) and then just use Appkit from your legacy code directly
-    3) You may have other use cases with other language in similar ways. Some experiments [here](https://github.com/aslesarenko/ergo-appkit-examples)
-
-        #### Install GraalVM Community Edition on MacOS and Linux
-        
-        First you need to download an archive with the [latest release](https://github.com/oracle/graal/releases) of GraalVM (e.g.`graalvm-ce-java8-linux-amd64-19.3.1.tar.gz`) for Linux and put its content in your `$PATH` :
-
-        ```shell
-        $ cd <your/directory/with/downloaded/graal>
-        $ tar -zxf graalvm-ce-java8-linux-amd64-19.3.1.tar.gz
-        $ export GRAAL_HOME=<your/directory/with/downloaded/graal>/graalvm-ce-java8-19.3.1
-        $ export PATH=$PATH:${GRAAL_HOME}/bin
-        ```
-        
-        The same for MacOS:
-      
-        ```shell
-        $ cd <your/directory/with/downloaded/graal>
-        $ tar -zxf graalvm-ce-darwin-amd64-19.3.1.tar.gz
-        $ export GRAAL_HOME=<your/directory/with/downloaded/graal>/graalvm-ce-java8-19.3.1/Contents/Home
-        $ export PATH=$PATH:${GRAAL_HOME}/bin
-        ```
-### Build the Appkit project
-    There is a slightly modified version of appkit in this repository. So, in order to build the mixer you first need to publish appkit locally in the Ivy repository:
-    ```shell
-    $ cd <your_directory_clone_project>/mixer/appkit
-    $ sbt publishLocal
-    ```
-
 ### Build the ErgoMixer:
   * #### Frontend
       Use the following command to get the latest frontend:
@@ -182,7 +143,7 @@ NOTE: The `/path/on/host/to/ergo/database_and_logfile` directory must have `777`
   * #### Backend      
     Finally, build the backend:
     ```shell
-    $ cd ../mixer
+    $ cd ./mixer
     $ sbt assembly
     ```
     The jar file will appear in `target/scala-2.12/` directory.

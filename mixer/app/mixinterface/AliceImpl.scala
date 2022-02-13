@@ -11,7 +11,7 @@ import special.collection.Coll
 import special.sigma.GroupElement
 import wallet.WalletHelper._
 
-import scala.jdk.CollectionConverters._
+import scala.collection.JavaConverters._
 
 class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit ctx: BlockchainContext) extends Alice {
   val gX: GroupElement = g.exp(x)
@@ -25,11 +25,12 @@ class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit
    * @param otherInputBoxes       other inputs like fee
    * @param changeAddress         change address
    * @param changeBoxRegs         change box registers
+   * @param burnTokens            tokens that need to be burned
    * @param additionalDlogSecrets secrets to spent inputs
    * @param additionalDHTuples    dh tuples
    * @return tx spending full-box as alice
    */
-  def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT]): SignedTransaction = {
+  def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], burnTokens: Seq[ErgoToken], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT]): SignedTransaction = {
     val (gY, gXY) = (f.r4, f.r5)
     val txB: UnsignedTransactionBuilder = ctx.newTxBuilder
 
@@ -49,11 +50,11 @@ class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit
       inputs.add(0, f.inputBox)
     }
 
-    val txToSign = txB.boxesToSpend(inputs)
+    val preTxB = txB.boxesToSpend(inputs)
       .outputs(outBoxes: _*)
       .fee(feeAmount)
       .sendChangeTo(getAddress(changeAddress))
-      .build()
+    val txToSign = if (burnTokens.nonEmpty) preTxB.tokensToBurn(burnTokens: _*).build() else preTxB.build()
 
     val alice: ErgoProver = additionalDHTuples.foldLeft(
       additionalDlogSecrets.foldLeft(

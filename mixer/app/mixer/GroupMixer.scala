@@ -2,36 +2,31 @@ package mixer
 
 import app.Configs
 import mixinterface.AliceOrBob
-import db.Columns._
-import db.ScalaDB._
-import db.Tables
-import db.core.DataStructures.anyToAny
 import helpers.ErgoMixerUtils
+
 import javax.inject.Inject
+import scala.collection.JavaConverters._
 import models.Models.GroupMixStatus._
 import models.Models.{DistributeTx, EndBox, MixGroupRequest}
 import network.{BlockExplorer, NetworkUtils}
-import org.ergoplatform.appkit.impl.ScalaBridge
 import org.ergoplatform.appkit.{Address, ErgoToken}
 import play.api.Logger
 import wallet.{Wallet, WalletHelper}
+import dao.{DAOUtils, DistributeTransactionsDAO, MixingGroupRequestDAO, MixingRequestsDAO}
 
-class GroupMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
-                           networkUtils: NetworkUtils, explorer: BlockExplorer) {
+class GroupMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
+                           networkUtils: NetworkUtils, explorer: BlockExplorer,
+                           daoUtils: DAOUtils,
+                           mixingGroupRequestDAO: MixingGroupRequestDAO,
+                           distributeTransactionsDAO: DistributeTransactionsDAO, mixingRequestsDAO: MixingRequestsDAO) {
   private val logger: Logger = Logger(this.getClass)
-
-  import tables._
 
   /**
    * processes group mixes one by one
    */
   def processGroupMixes(): Unit = {
     networkUtils.usingClient { implicit ctx =>
-      mixRequestsGroupTable.selectStar.where(
-        mixStatusCol === Queued.value
-      ).as(arr =>
-        MixGroupRequest(arr)
-      ).foreach(req => {
+      daoUtils.awaitResult(mixingGroupRequestDAO.queued).foreach(req => {
         logger.info(s"[MixGroup: ${req.id}] processing deposits...")
         val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
         var confirmedErgDeposits = 0L
@@ -45,22 +40,18 @@ class GroupMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtil
           else 0
         })
         if (confirmedErgDeposits > 0 || confirmedTokenDeposits > 0) {
-          mixRequestsGroupTable.update(depositCol <-- confirmedErgDeposits, tokenDepositCol <-- confirmedTokenDeposits).where(mixGroupIdCol === req.id)
+          mixingGroupRequestDAO.updateDepositById(req.id, confirmedErgDeposits, confirmedTokenDeposits)
           if (req.tokenId.isEmpty) logger.info(s"  processed confirmed deposits $confirmedErgDeposits")
           else logger.info(s"  processed confirmed deposits, erg: $confirmedErgDeposits, ${req.tokenId}: $confirmedTokenDeposits")
         }
 
         if (confirmedErgDeposits >= req.neededAmount && confirmedTokenDeposits >= req.neededTokenAmount) {
           logger.info(s"  sufficient deposit, starting...")
-          mixRequestsGroupTable.update(mixStatusCol <-- Starting.value).where(mixGroupIdCol === req.id)
+          mixingGroupRequestDAO.updateStatusById(req.id, Starting.value)
         }
       })
 
-      mixRequestsGroupTable.selectStar.where(
-        mixStatusCol === Starting.value
-      ).as(arr =>
-        MixGroupRequest(arr)
-      ).foreach(req => {
+      daoUtils.awaitResult(mixingGroupRequestDAO.starting).foreach(req => {
         try {
           processStartingGroup(req)
         } catch {
@@ -77,13 +68,12 @@ class GroupMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtil
    *
    * @param req group request
    */
-  def processStartingGroup(req: MixGroupRequest) = networkUtils.usingClient { implicit ctx =>
+  def processStartingGroup(req: MixGroupRequest): Unit = networkUtils.usingClient { implicit ctx =>
     logger.info(s"[MixGroup: ${req.id}] processing...")
     val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
-    if (distributeTxsTable.exists(mixGroupIdCol === req.id)) { // txs already created, just w8 for enough confirmation
+    if (daoUtils.awaitResult(distributeTransactionsDAO.existsByMixGroupId(req.id))) {
       var allTxsConfirmed = true
-      distributeTxsTable.selectStar.where(mixGroupIdCol === req.id).as(DistributeTx(_))
-        .sortBy(_.order)
+      daoUtils.awaitResult(distributeTransactionsDAO.selectByMixGroupId(req.id))
         .foreach(tx => {
           val confNum = explorer.getTxNumConfirmations(tx.txId)
           allTxsConfirmed &= confNum >= Configs.numConfirmation
@@ -95,14 +85,14 @@ class GroupMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtil
 
       if (allTxsConfirmed) {
         logger.info("  all distribute transactions are confirmed...")
-        mixRequestsGroupTable.update(mixStatusCol <-- Running.value).where(mixGroupIdCol === req.id)
+        mixingGroupRequestDAO.updateStatusById(req.id, Running.value)
       }
 
     } else { // create and send chain of transactions
       logger.info("  distributing deposits to start mixing...")
       val wallet = new Wallet(req.masterKey)
       val secret = wallet.getSecret(-1).bigInteger
-      val requests = mixRequestsTable.select(depositAddressCol, neededCol, mixingTokenNeeded)
+      /*val requests = mixRequestsTable.select(depositAddressCol, neededCol, mixingTokenNeeded)
         .where(mixGroupIdCol === req.id)
         .as { arr =>
           val i = arr.toIterator
@@ -111,7 +101,8 @@ class GroupMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtil
             i.next.as[Long], // erg
             i.next.as[Long] // token
           )
-        }.toArray
+        }.toArray*/
+      val requests = daoUtils.awaitResult(mixingRequestsDAO.selectPartsByMixGroupId(req.id)).toArray
 
       val excessErg = req.doneDeposit - req.neededAmount
       val excessToken = req.tokenDoneDeposit - req.neededTokenAmount
@@ -127,8 +118,9 @@ class GroupMixer @Inject()(tables: Tables, aliceOrBob: AliceOrBob, ergoMixerUtil
       val transactions = aliceOrBob.distribute(allBoxes.map(_.id).toArray, reqEndBoxes, Array(secret), Configs.distributeFee, req.depositAddress, Configs.maxOuts)
       for (i <- transactions.indices) {
         val tx = transactions(i)
-        val inputs = tx.getInputBoxes.map(ScalaBridge.isoErgoTransactionInput.from(_).getBoxId).mkString(",")
-        distributeTxsTable.insert(req.id, tx.getId, i + 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputs)
+        val inputs = tx.getSignedInputs.asScala.map(_.getId).mkString(",")
+        val new_tx = DistributeTx(req.id, tx.getId, i + 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputs)
+        distributeTransactionsDAO.insert(new_tx)
         val sendRes = ctx.sendTransaction(tx)
         if (sendRes == null) logger.error(s"  transaction got refused by the node! maybe it doesn't support chained transactions, waiting... consider updating your node for a faster mixing experience.")
       }
