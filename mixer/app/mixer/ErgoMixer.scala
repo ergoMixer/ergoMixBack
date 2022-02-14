@@ -91,11 +91,11 @@ class ErgoMixer @Inject()(
       throw new Exception("no such covert id!")
     }
     if (daoUtils.awaitResult(covertDefaultsDAO.exists(covertId, tokenId))) {
-      covertDefaultsDAO.updateRing(covertId, tokenId, ring)
+      daoUtils.awaitResult(covertDefaultsDAO.updateRing(covertId, tokenId, ring))
       logger.info(s"asset $tokenId updated, new ring: $ring")
     } else {
       val asset = CovertAsset(covertId, tokenId, ring, 0L, now)
-      covertDefaultsDAO.insert(asset)
+      daoUtils.awaitResult(covertDefaultsDAO.insert(asset))
       logger.info(s"asset created for covert address, id: $tokenId, ring: $ring")
     }
   }
@@ -111,9 +111,9 @@ class ErgoMixer @Inject()(
     if (!daoUtils.awaitResult(mixingCovertRequestDAO.existsById(covertId))) {
       throw new Exception("Invalid covert id")
     }
-    covertAddressesDAO.delete(covertId)
+    daoUtils.awaitResult(covertAddressesDAO.delete(covertId))
     addresses.foreach(address => {
-      covertAddressesDAO.insert(covertId, address)
+      daoUtils.awaitResult(covertAddressesDAO.insert(covertId, address))
     })
   }
 
