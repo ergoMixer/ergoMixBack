@@ -45,6 +45,7 @@ publishArtifact in Test := true
 fullClasspath in assembly += Attributed.blank(PlayKeys.playPackageAssets.value)
 
 assemblyMergeStrategy in assembly := {
+  case "logback.xml" => MergeStrategy.first
   case PathList("reference.conf") => MergeStrategy.concat
   case manifest if manifest.contains("MANIFEST.MF") => MergeStrategy.discard
   case manifest if manifest.contains("module-info.class") => MergeStrategy.discard

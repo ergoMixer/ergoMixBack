@@ -155,7 +155,7 @@ class OutputDAO @Inject() (protected val dbConfigProvider: DatabaseConfigProvide
   }
 
   def selectUnspentBoxesHaveSpendAddress(): Future[Seq[ExtractedOutputModel]] = {
-    db.run(outputs.filter(req => !req.spent && req.spendAddress.toString().nonEmpty).result)
+    db.run(outputs.filter(req => !req.spent && req.spendAddress =!= "").result)
   }
 
   def updateStealthId(boxId: String, stealthId: String): Unit ={

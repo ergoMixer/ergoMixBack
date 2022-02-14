@@ -74,8 +74,8 @@ trait StealthStartupServiceHooks {
 
 @Singleton
 class StealthStartupService @Inject()(appLifecycle: ApplicationLifecycle,
-                               system: ActorSystem, scannerTask: ScannerTask, initBestBlockTask: InitBestBlockTask)
-                              (implicit ec: ExecutionContext) extends StealthStartupServiceHooks{
+                                      system: ActorSystem, scannerTask: ScannerTask, initBestBlockTask: InitBestBlockTask)
+                                     (implicit ec: ExecutionContext) extends StealthStartupServiceHooks{
 
   private val logger: Logger = Logger(this.getClass)
 
@@ -98,8 +98,9 @@ class StealthStartupService @Inject()(appLifecycle: ApplicationLifecycle,
       message = StealthJobsInfo.InitBestBlockInDb
     )
 
-    system.scheduler.scheduleOnce(
-      delay = 60.seconds,
+    system.scheduler.scheduleAtFixedRate(
+      initialDelay = 60.seconds,
+      interval = 60.seconds,
       receiver = jobs,
       message = StealthJobsInfo.spendStealth
     )
