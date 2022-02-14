@@ -78,7 +78,7 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: front-build
-          path: ./public/
+          path: ./mixer/public/
 
       - name: Build App
         run: |
@@ -141,7 +141,7 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: front-build
-          path: ./public/
+          path: ./mixer/public/
 
       - name: Windows Build
         shell: cmd
@@ -200,7 +200,7 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: front-build
-          path: ./public/
+          path: ./mixer/public/
 
       - name: Mac-OS Build
         run: sbt ++${{ matrix.scala }} jdkPackager:packageBin
