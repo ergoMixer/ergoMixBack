@@ -34,6 +34,12 @@ class MixStateDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
     val mixes = TableQuery[MixStateTable]
 
     /**
+     * returns all mixes
+     *
+     */
+    def all: Future[Seq[MixState]] = db.run(mixes.result)
+
+    /**
      * deletes all of states
      *
      */

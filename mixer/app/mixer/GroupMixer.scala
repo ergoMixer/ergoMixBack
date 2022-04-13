@@ -121,8 +121,14 @@ class GroupMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtil
         val inputs = tx.getSignedInputs.asScala.map(_.getId).mkString(",")
         val new_tx = DistributeTx(req.id, tx.getId, i + 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputs)
         distributeTransactionsDAO.insert(new_tx)
-        val sendRes = ctx.sendTransaction(tx)
-        if (sendRes == null) logger.error(s"  transaction got refused by the node! maybe it doesn't support chained transactions, waiting... consider updating your node for a faster mixing experience.")
+        try {
+          ctx.sendTransaction(tx)
+        }
+        catch {
+          case e: Throwable =>
+            logger.error(s"  transaction got refused by the node! maybe it doesn't support chained transactions, waiting... consider updating your node for a faster mixing experience.")
+            logger.debug(s"  Exception: ${e.getMessage}")
+        }
       }
     }
 

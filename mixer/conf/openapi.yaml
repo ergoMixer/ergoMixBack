@@ -257,7 +257,8 @@ paths:
                   "withdrawTxId": "",
                   "lastMixTime": "None",
                   "mixingTokenId": "",
-                  "mixingTokenAmount": 0
+                  "mixingTokenAmount": 0,
+                  "hopRounds": -1
                 }
                 ]
         default:

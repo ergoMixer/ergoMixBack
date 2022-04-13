@@ -471,6 +471,8 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
 
   /**
    * A get endpoint which returns mix boxes of a specific group or covert request
+   * @param id mix group ID (covert ID in case of covert mixes)
+   * @param status mix withdraw status (all, active, withdrawn)
    */
   def mixRequestList(id: String, status: String): Action[AnyContent] = Action {
     try {
@@ -484,6 +486,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
           else if (mix.halfMix.isDefined) mix.halfMix.get.createdTime
           else "None"
         }
+        val lastHopRound = ergoMixer.getHopRound(mix.mixRequest.id)
 
         s"""
            |{
@@ -503,7 +506,8 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
            |  "withdrawTxId": "$withdrawTxId",
            |  "lastMixTime": "$lastMixTime",
            |  "mixingTokenId": "${mix.mixRequest.tokenId}",
-           |  "mixingTokenAmount": ${mix.mixRequest.mixingTokenAmount}
+           |  "mixingTokenAmount": ${mix.mixRequest.mixingTokenAmount},
+           |  "hopRounds": ${lastHopRound}
            |}""".stripMargin
       }).mkString(",") + "]"
       Ok(res).as("application/json")

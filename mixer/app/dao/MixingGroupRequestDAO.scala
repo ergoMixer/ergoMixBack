@@ -71,6 +71,12 @@ class MixingGroupRequestDAO @Inject()(protected val dbConfigProvider: DatabaseCo
     def all: Future[Seq[MixGroupRequest]] = db.run(groupRequests.result)
 
     /**
+     * selects id of all groupRequests
+     *
+     */
+    def allIds: Future[Seq[String]] = db.run(groupRequests.map(_.id).result)
+
+    /**
      * deletes all of requests
      *
      */
@@ -123,7 +129,7 @@ class MixingGroupRequestDAO @Inject()(protected val dbConfigProvider: DatabaseCo
     }
 
     /**
-     * updates deposit and tokenDeposit by mixGroupId
+     * updates status by mixGroupId
      *
      * @param mixGroupId String
      * @param status String

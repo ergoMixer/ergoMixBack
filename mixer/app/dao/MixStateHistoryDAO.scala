@@ -52,6 +52,18 @@ class MixStateHistoryDAO @Inject()(protected val dbConfigProvider: DatabaseConfi
     val mixStatesArchive = TableQuery[MixStateHistoryArchivedTable]
 
     /**
+     * returns all mixes
+     *
+     */
+    def all: Future[Seq[MixHistory]] = db.run(mixHistories.result)
+
+    /**
+     * deletes all of state histories
+     *
+     */
+    def clear: Future[Unit] = db.run(mixHistories.delete).map(_ => ())
+
+    /**
      * deletes future mixHistory by mixID
      *
      * @param mixID String

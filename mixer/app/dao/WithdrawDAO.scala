@@ -2,7 +2,7 @@ package dao
 
 import javax.inject.{Inject, Singleton}
 import models.Models.WithdrawTx
-import models.Models.MixWithdrawStatus.{AgeUSDRequested, WithdrawRequested}
+import models.Models.MixWithdrawStatus.{AgeUSDRequested, HopRequested, UnderHop, WithdrawRequested}
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 
@@ -30,7 +30,7 @@ trait WithdrawComponent {
     }
 
     class WithdrawArchivedTable(tag: Tag) extends Table[(String, String, Long, String, Array[Byte], String, String)](tag, "WITHDRAW_ARCHIVED") {
-        def id = column[String]("MIX_ID", O.PrimaryKey)
+        def id = column[String]("MIX_ID")
 
         def txId = column[String]("TX_ID")
 
@@ -70,6 +70,12 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
     def insert(tx: WithdrawTx): Future[Unit] = db.run(withdraws += tx).map(_ => ())
 
     /**
+     * returns all withdraws
+     *
+     */
+    def all: Future[Seq[WithdrawTx]] = db.run(withdraws.result)
+
+    /**
      * deletes all of withdraws
      *
      */
@@ -104,14 +110,26 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
     ))
 
     /**
+     * updates withdraw in withdraw and withdrawArchived tables
+     *
+     * @param new_withdraw WithdrawTx
+     */
+    def insertAndArchive(new_withdraw: WithdrawTx)(implicit insertReason: String): Future[Unit] = db.run(DBIO.seq(
+        withdraws.filter(withdraw => withdraw.id === new_withdraw.mixId).delete,
+        withdraws += new_withdraw,
+        withdrawsArchive += (new_withdraw.mixId, new_withdraw.txId, new_withdraw.time, new_withdraw.boxId, new_withdraw.txBytes, new_withdraw.additionalInfo, insertReason)
+    ))
+
+    /**
      * selects withdraw requests
      *
      */
-    def getWithdrawals: Future[(Seq[WithdrawTx], Seq[WithdrawTx])] = {
+    def getWithdrawals: Future[(Seq[WithdrawTx], Seq[WithdrawTx], Seq[WithdrawTx])] = {
         val query = for {
-            withdraw <- (mixingRequests.filter(req => req.withdrawStatus === WithdrawRequested.value) join withdraws on(_.id === _.id)).map(_._2).result
+            withdraw <- (mixingRequests.filter(req => req.withdrawStatus === WithdrawRequested.value || req.withdrawStatus === UnderHop.value) join withdraws on(_.id === _.id)).map(_._2).result
             mint <- (mixingRequests.filter(req => req.withdrawStatus === AgeUSDRequested.value) join withdraws on(_.id === _.id)).map(_._2).result
-        } yield (withdraw, mint)
+            hop <- (mixingRequests.filter(req => req.withdrawStatus === HopRequested.value) join withdraws on(_.id === _.id)).map(_._2).result
+        } yield (withdraw, mint, hop)
         db.run(query)
     }
 
@@ -131,7 +149,7 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      *
      * @param mixId String
      */
-    def delete(mixId: String): Unit = db.run(withdraws.filter(withdraw => withdraw.id === mixId).delete).map(_ => ())
+    def delete(mixId: String): Future[Unit] = db.run(withdraws.filter(withdraw => withdraw.id === mixId).delete).map(_ => ())
 
     /**
      * delete withdraw request by mixId

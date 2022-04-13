@@ -4,18 +4,22 @@ import app.Configs
 import helpers.ErgoMixerUtils
 
 import javax.inject.Inject
-import models.Models.MixWithdrawStatus.{NoWithdrawYet, Withdrawn}
-import models.Models.{GroupMixStatus, MixRequest, WithdrawTx}
+import models.Models.MixStatus.Complete
+import models.Models.MixWithdrawStatus.{AgeUSDRequested, NoWithdrawYet, UnderHop, WithdrawRequested, Withdrawn}
+import models.Models.{CreateMixRequest, CreateWithdrawTx, GroupMixStatus, HopMix, MixRequest, WithdrawTx}
 import network.{BlockExplorer, NetworkUtils}
 import play.api.Logger
-import dao.{DAOUtils, MixingRequestsDAO, WithdrawDAO, MixingGroupRequestDAO}
+import dao.{DAOUtils, HopMixDAO, MixingGroupRequestDAO, MixingRequestsDAO, WithdrawDAO}
+import org.ergoplatform.appkit.BlockchainContext
+import wallet.WalletHelper
 
 class WithdrawMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
                               networkUtils: NetworkUtils, explorer: BlockExplorer,
                               daoUtils: DAOUtils,
                               withdrawDAO: WithdrawDAO,
                               mixingRequestsDAO: MixingRequestsDAO,
-                              mixingGroupRequestDAO: MixingGroupRequestDAO) {
+                              mixingGroupRequestDAO: MixingGroupRequestDAO,
+                              hopMixDAO: HopMixDAO) {
   private val logger: Logger = Logger(this.getClass)
 
   import ergoMixerUtils._
@@ -28,6 +32,7 @@ class WithdrawMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
     val withdrawals = daoUtils.awaitResult(withdrawDAO.getWithdrawals)
     val withdraws = withdrawals._1
     val minting = withdrawals._2
+    val hopping = withdrawals._3
 
     withdraws.foreach {
       case tx =>
@@ -50,6 +55,16 @@ class WithdrawMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
             logger.error(getStackTraceStr(a))
         }
     }
+
+    hopping.foreach(tx => {
+      try {
+        networkUtils.usingClient { implicit ctx => processInitiateHops(tx) }
+      } catch {
+        case a: Throwable =>
+          logger.info(s" [WITHDRAW (hopping): ${tx.mixId}] txId: ${tx.txId} An error occurred. Stacktrace below")
+          logger.error(getStackTraceStr(a))
+      }
+    })
   }
 
   /**
@@ -65,8 +80,8 @@ class WithdrawMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
       //   * this is a half box and is spent with someone else --> will be handled in HalfMixer
       //   * inputs are not available due to fork --> will be handled in other jobs (HalfMixer, FullMixer, NewMixer)
       try {
-        val result = ctx.sendTransaction(ctx.signedTxFromJson(tx.toString))
-        logger.info(s"  broadcasted transaction: $result.")
+        ctx.sendTransaction(ctx.signedTxFromJson(tx.toString))
+        logger.info(s"  broadcasted transaction ${tx.txId}.")
       }
       catch {
         case e: Throwable =>
@@ -110,7 +125,7 @@ class WithdrawMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
       logger.info(s"  transaction is confirmed enough. Mix is done.")
       daoUtils.awaitResult(mixingRequestsDAO.withdrawTheRequest(tx.mixId))
       val mix: MixRequest = daoUtils.awaitResult(mixingRequestsDAO.selectByMixId(tx.mixId)).getOrElse(throw new Exception(s"mixId ${tx.mixId} not found in MixingRequests"))
-      val numRunning = daoUtils.awaitResult(mixingRequestsDAO.countWithdrawn(mix.groupId, Withdrawn.value))
+      val numRunning = daoUtils.awaitResult(mixingRequestsDAO.countNotWithdrawn(mix.groupId))
       if (numRunning == 0) { // group mix is done because all mix boxes are withdrawn
         mixingGroupRequestDAO.updateStatusById(mix.groupId, GroupMixStatus.Complete.value)
       }
@@ -118,4 +133,47 @@ class WithdrawMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
     } else
       logger.info(s"  not enough confirmations yet: $numConf.")
   }
+
+  /**
+   * processes initiate hop withdrawals
+   */
+  private def processInitiateHops(withdrawTx: WithdrawTx)(implicit ctx: BlockchainContext): Unit = {
+    logger.info(s" [INITIATE HOP: ${withdrawTx.mixId}] txId: ${withdrawTx.txId} processing.")
+    val numConf = explorer.getTxNumConfirmations(withdrawTx.txId)
+
+    if (numConf == -1) { // not mined yet!
+      val tx = ctx.signedTxFromJson(withdrawTx.toString)
+      try {
+        ctx.sendTransaction(tx)
+        logger.info(s"  broadcasted tx: ${tx.getId}.")
+      }
+      catch {
+        case e: Throwable =>
+          logger.info(s"  broadcasted tx ${tx.getId}, failed (probably due to double spent)")
+          logger.debug(s"  Exception: ${e.getMessage}")
+
+          // if fee box is used, check to see if it is double spent
+          if (withdrawTx.getFeeBox.nonEmpty) {
+            val spentTxId = explorer.getSpendingTxId(withdrawTx.getFeeBox.get)
+            if (spentTxId.nonEmpty && spentTxId.get != withdrawTx.txId) {
+              logger.info(s"  fee ${withdrawTx.getFeeBox.get} is double spent, will try in next round...")
+              daoUtils.awaitResult(withdrawDAO.delete(withdrawTx.mixId))
+            }
+          }
+      }
+    }
+    else if (numConf >= Configs.numConfirmation) {
+      logger.info(s"  transaction is confirmed enough. Hop is initiated.")
+      val tx = ctx.signedTxFromJson(withdrawTx.toString)
+      val hopBoxId = tx.getOutputsToSpend.get(0).getId.toString
+      daoUtils.awaitResult(hopMixDAO.insert(HopMix(withdrawTx.mixId, 0, WalletHelper.now, hopBoxId)))
+      daoUtils.awaitResult(withdrawDAO.delete(withdrawTx.mixId))
+      daoUtils.awaitResult(mixingRequestsDAO.updateMixStatus(withdrawTx.mixId, Complete))
+      daoUtils.awaitResult(mixingRequestsDAO.updateWithdrawStatus(withdrawTx.mixId, UnderHop.value))
+    }
+    else {
+      logger.info(s"  not enough confirmations yet: $numConf.")
+    }
+  }
+
 }

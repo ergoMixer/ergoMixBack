@@ -54,4 +54,6 @@ object Configs extends ConfigHelper {
   lazy val mixOnlyAsBob: Boolean = readKey("mixOnlyAsBob", "false").toBoolean
   lazy val stopMixingWhenReachedThreshold: Boolean = readKey("stopMixingWhenReachedThreshold", "true").toBoolean
 
+  lazy val hopRounds: Int = readKey("hopRounds", "0").toInt
+
 }

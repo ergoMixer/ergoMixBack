@@ -275,17 +275,22 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      * counts number of withdrawn requests with mixGroupID
      *
      * @param groupId String
-     * @param withdrawnStatus String
      */
-    def countWithdrawn(groupId: String, withdrawnStatus: String): Future[Int] = db.run(mixingRequests.filter(req => req.groupId === groupId && req.withdrawStatus === withdrawnStatus).size.result)
+    def countWithdrawn(groupId: String): Future[Int] = db.run(mixingRequests.filter(req => req.groupId === groupId && req.withdrawStatus === Withdrawn.value).size.result)
+
+    /**
+     * counts number of requests in group that didn't withdrawn yet by mixGroupID
+     *
+     * @param groupId String
+     */
+    def countNotWithdrawn(groupId: String): Future[Int] = db.run(mixingRequests.filter(req => req.groupId === groupId && req.withdrawStatus =!= Withdrawn.value).size.result)
 
     /**
      * counts number of finished requests with mixGroupID
      *
      * @param groupId String
-     * @param mixStatus String
      */
-    def countFinished(groupId: String, mixStatus: MixStatus): Future[Int] = db.run(mixingRequests.filter(req => req.groupId === groupId && req.mixStatus === mixStatus).size.result)
+    def countFinished(groupId: String): Future[Int] = db.run(mixingRequests.filter(req => req.groupId === groupId && req.mixStatus === MixStatus.fromString(Complete.value)).size.result)
 
     /**
      * counts number requests with mixGroupID
@@ -339,4 +344,12 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
         } yield req.depositCompleted
         db.run(query.update(true)).map(_ => ())
     }
+
+    /**
+     * checks if the mix request mixes erg or token
+     *
+     * @param mixId String
+     */
+    def isMixingErg(mixId: String): Future[Boolean] = db.run(mixingRequests.filter(req => req.id === mixId && req.tokenId === "").exists.result)
+
 }

@@ -97,9 +97,15 @@ class NewMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
         val txBytes = tx.toJson(false).getBytes("utf-16")
         val new_withdraw = WithdrawTx(id, tx.getId, now, boxIds.head, txBytes)
         withdrawDAO.updateById(new_withdraw, WithdrawRequested.value)
-        val sendRes = ctx.sendTransaction(tx)
-        if (sendRes == null) logger.error(s" [Deposit: $id] something unexpected has happened! tx got refused by the node: ${tx.getId}!")
-        logger.info(s" [Deposit: $id] Withdraw txId: ${tx.getId}, is requested: ${mixRequest.withdrawStatus.equals(WithdrawRequested.value)}")
+        try {
+          ctx.sendTransaction(tx)
+          logger.info(s" [Deposit: $id] Withdraw txId: ${tx.getId}, is requested: ${mixRequest.withdrawStatus.equals(WithdrawRequested.value)}")
+        }
+        catch {
+          case e: Throwable =>
+            logger.error(s" [Deposit: $id] something unexpected has happened! tx got refused by the node: ${tx.getId}!")
+            logger.debug(s"  Exception: ${e.getMessage}")
+        }
       }
       return
     }
@@ -165,9 +171,15 @@ class NewMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
         mixTransactionsDAO.updateById(new_mixTransaction)
         updateTablesMixes(isAlice = false, id, currentTime, fullMixTx.tx, depositsToUse, optTokenBoxId) // is not Alice
         logger.info(s" [NEW: $id] --> Bob [halfMixBoxId:$halfMixBoxId, txId:${fullMixTx.tx.getId}] - before sendTransaction")
-        val sendRes = ctx.sendTransaction(fullMixTx.tx)
-        if (sendRes == null) logger.error(s"  something unexpected has happened! tx got refused by the node!")
-        else logger.info(s"[txId: ${fullMixTx.tx.getId}] was broadcast.")
+        try {
+          ctx.sendTransaction(fullMixTx.tx)
+          logger.info(s"[txId: ${fullMixTx.tx.getId}] was broadcast.")
+        }
+        catch {
+          case e: Throwable =>
+            logger.error(s"  something unexpected has happened! tx got refused by the node!")
+            logger.debug(s"  Exception: ${e.getMessage}")
+        }
       } else {
         // half-mix box does not exist... behave as Alice
 
@@ -185,9 +197,15 @@ class NewMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
         mixTransactionsDAO.updateById(new_mixTransaction)
         updateTablesMixes(isAlice = true, id, currentTime, tx.tx, depositsToUse, optTokenBoxId) // is Alice
         logger.info(s" [NEW:$id] --> Alice [txId: ${tx.tx.getId}] - before sendTransaction")
-        val sendRes = ctx.sendTransaction(tx.tx)
-        if (sendRes == null) logger.info(s"  something unexpected has happened! tx got refused by the node!")
-        else logger.info(s"[txId: ${tx.tx.getId}] was broadcast")
+        try {
+          ctx.sendTransaction(tx.tx)
+          logger.info(s"[txId: ${tx.tx.getId}] was broadcast")
+        }
+        catch {
+          case e: Throwable =>
+            logger.error(s"  something unexpected has happened! tx got refused by the node!")
+            logger.debug(s"  Exception: ${e.getMessage}")
+        }
       }
     }
   }

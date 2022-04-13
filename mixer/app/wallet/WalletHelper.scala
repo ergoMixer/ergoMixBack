@@ -1,10 +1,10 @@
 package wallet
 
 import java.math.BigInteger
-
 import app.Configs
 import org.ergoplatform.{ErgoAddress, ErgoAddressEncoder}
-import org.ergoplatform.appkit.{BlockchainContext, ConstantsBuilder, JavaHelpers, NetworkType}
+import org.ergoplatform.appkit.{Address, BlockchainContext, ConstantsBuilder, JavaHelpers, NetworkType}
+import sigmastate.basics.DLogProtocol.DLogProverInput
 import sigmastate.eval._
 import sigmastate.interpreter.CryptoConstants
 import special.sigma.GroupElement
@@ -34,6 +34,7 @@ object WalletHelper {
     JavaHelpers.decodeStringToGE(hex)
   }
 
+  @deprecated("This needs blockchain context and compiles contract. Use getAddressOfSecret instead", "1.0")
   def getProveDlogAddress(z: BigInt, ctx: BlockchainContext): String = {
     val gZ: GroupElement = g.exp(z.bigInteger)
       val contract = ctx.compileContract(
@@ -42,6 +43,19 @@ object WalletHelper {
         ).build(), "{proveDlog(gZ)}"
       )
       addressEncoder.fromProposition(contract.getErgoTree).get.toString
+  }
+
+  def getAddressOfSecret(secret: BigInt): String = new Address(JavaHelpers.createP2PKAddress(
+    DLogProverInput(secret.bigInteger).publicImage, addressEncoder.networkPrefix)).toString
+
+  /**
+   * @param masterSecret mix request master secret key
+   * @return first hop address of the mix request
+   */
+  def getHopAddress(masterSecret: BigInt, round: Int): String = {
+    val wallet = new Wallet(masterSecret)
+    val secret = wallet.getSecret(round, toFirst = true)
+    getAddressOfSecret(secret)
   }
 
   val networkType: NetworkType = if (Configs.isMainnet) NetworkType.MAINNET else NetworkType.TESTNET

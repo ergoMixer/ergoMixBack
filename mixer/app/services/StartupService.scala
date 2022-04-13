@@ -4,13 +4,14 @@ import akka.actor._
 import app.Configs
 import network.Client
 import helpers.TrayUtils
+
 import javax.inject._
 import mixer.ErgoMixer
 import play.api.Logger
 import play.api.db.Database
 import play.api.inject.ApplicationLifecycle
 import play.api.mvc._
-import services.ScheduledJobs.{RefreshMixingStats, RefreshPoolStats}
+import services.ScheduledJobs.{RefreshMixingStats, RefreshPoolStats, UpdateGroupMixStates}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -47,6 +48,12 @@ class ErgomixHooksImpl @Inject()(appLifecycle: ApplicationLifecycle, implicit va
       interval = Configs.statisticJobsInterval.second,
       receiver = jobsActor,
       message = RefreshPoolStats
+    )
+
+    system.scheduler.scheduleOnce(
+      delay = 5.seconds,
+      receiver = jobsActor,
+      message = UpdateGroupMixStates
     )
 
     logger.info("Initialization done")

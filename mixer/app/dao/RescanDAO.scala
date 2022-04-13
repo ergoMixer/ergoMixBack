@@ -21,14 +21,14 @@ trait RescanComponent {
 
         def goBackward = column[Boolean]("GO_BACKWARD")
 
-        def isHalfMixTx = column[Boolean]("IS_HALF_MIX_TX")
+        def boxType = column[String]("BOX_TYPE")
 
         def mixBoxId = column[String]("MIX_BOX_ID")
 
-        def * = (id, createdTime, round, goBackward, isHalfMixTx, mixBoxId) <> (PendingRescan.tupled, PendingRescan.unapply)
+        def * = (id, createdTime, round, goBackward, boxType, mixBoxId) <> (PendingRescan.tupled, PendingRescan.unapply)
     }
 
-    class RescanArchivedTable(tag: Tag) extends Table[(String, Long, Int, Boolean, Boolean, String, String)](tag, "RESCAN_ARCHIVE") {
+    class RescanArchivedTable(tag: Tag) extends Table[(String, Long, Int, Boolean, String, String, String)](tag, "RESCAN_ARCHIVE") {
         def id = column[String]("MIX_ID", O.PrimaryKey)
 
         def createdTime = column[Long]("CREATED_TIME")
@@ -37,13 +37,13 @@ trait RescanComponent {
 
         def goBackward = column[Boolean]("GO_BACKWARD")
 
-        def isHalfMixTx = column[Boolean]("IS_HALF_MIX_TX")
+        def boxType = column[String]("BOX_TYPE")
 
         def mixBoxId = column[String]("MIX_BOX_ID")
 
         def reason = column[String]("REASON")
 
-        def * = (id, createdTime, round, goBackward, isHalfMixTx, mixBoxId, reason)
+        def * = (id, createdTime, round, goBackward, boxType, mixBoxId, reason)
     }
 
 }
@@ -90,6 +90,6 @@ class RescanDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvider
     def updateById(new_rescan: PendingRescan)(implicit insertReason: String): Future[Unit] = db.run(DBIO.seq(
         rescans.filter(rescan => rescan.id === new_rescan.mixId).delete,
         rescans += new_rescan,
-        rescansArchive += (new_rescan.mixId, new_rescan.time, new_rescan.round, new_rescan.goBackward, new_rescan.isHalfMixTx, new_rescan.mixBoxId, insertReason)
+        rescansArchive += (new_rescan.mixId, new_rescan.time, new_rescan.round, new_rescan.goBackward, new_rescan.boxType, new_rescan.mixBoxId, insertReason)
     ))
 }

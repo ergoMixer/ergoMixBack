@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "round": 0,
+      "hopMixBoxId": "4ccb85f225155df9d5c0fb5b889c34e966e9b1478b66cf2794bc858b578402a9"
+    },
+    {
+      "round": 1,
+      "hopMixBoxId": "a661b5d03fec4b36b83cf1a350abb6995f69c57a395a9a9f01a67f9536987f16"
+    },
+    {
+      "round": 2,
+      "hopMixBoxId": "0116941ec2c73aca722514effc7448b31ac939cec22c73f0ea1f1cfe43abe46b"
+    }
+  ]
+}

@@ -1,19 +1,16 @@
 package testHandlers
 
 import dao._
-import org.scalatest.BeforeAndAfterAll
+import org.scalatest.{BeforeAndAfterAll, PrivateMethodTester}
 import org.scalatest.matchers.should
 import org.scalatest.propspec.AnyPropSpec
 import org.scalatestplus.play.guice.GuiceOneAppPerSuite
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.{Application, Mode}
 import services.Module
-import spire.ClassTag
 
 import java.io.File
 import javax.inject.{Inject, Singleton}
-import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, Future}
 
 @Singleton
 class DaoContext @Inject()(val allDepositsDAO: AllDepositsDAO,
@@ -34,18 +31,16 @@ class DaoContext @Inject()(val allDepositsDAO: AllDepositsDAO,
                            val rescanDAO: RescanDAO,
                            val distributeTransactionsDAO: DistributeTransactionsDAO,
                            val mixingRequestsDAO: MixingRequestsDAO,
-                           val spentDepositsDAO: SpentDepositsDAO)
+                           val spentDepositsDAO: SpentDepositsDAO,
+                           val withdrawCovertTokenDAO: WithdrawCovertTokenDAO,
+                           val hopMixDAO: HopMixDAO,
+                           val covertsDAO: CovertsDAO
+                          )
 
 
 
-class TestSuite extends AnyPropSpec with should.Matchers with GuiceOneAppPerSuite with BeforeAndAfterAll {
-  implicit override lazy val app: Application = new GuiceApplicationBuilder().
-    configure(
-      "slick.dbs.default.driver" -> "slick.driver.H2Driver$",
-      "slick.dbs.default.db.driver" -> "org.h2.Driver",
-      "slick.dbs.default.db.url" -> "jdbc:h2:./test/db/database",
-      "slick.dbs.default.db.user" -> "test",
-      "slick.dbs.default.db.password" -> "test")
+class TestSuite extends AnyPropSpec with should.Matchers with GuiceOneAppPerSuite with BeforeAndAfterAll with PrivateMethodTester {
+  implicit override lazy val app: Application = new GuiceApplicationBuilder()
     .in(Mode.Test)
     .disable[Module]
     .build

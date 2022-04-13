@@ -56,6 +56,12 @@ class HalfMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvide
     val halfMixArchive = TableQuery[HalfMixArchivedTable]
 
     /**
+     * returns all mixes
+     *
+     */
+    def all: Future[Seq[HalfMix]] = db.run(halfMix.result)
+
+    /**
      * inserts a mix into table
      *
      * @param mix HalfMix

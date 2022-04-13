@@ -397,6 +397,37 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
   }
 
   /**
+   * spends hop box (withdrawing the box or send it to next hop)
+   */
+  def spendHopBox(proverDlogSecret: BigInteger, inputId: String, destinationAddress: String): SignedTransaction = {
+    usingClient { implicit ctx =>
+      val prover: ErgoProver = ctx.newProverBuilder().withDLogSecret(proverDlogSecret).build()
+
+      val inputs = new java.util.ArrayList[InputBox]()
+      val input = ctx.getBoxesById(inputId)(0)
+
+      if (!input.getTokens.isEmpty) throw new Exception("Weird case happened: hopBox containing token. Aborting hopping transaction generation...")
+      inputs.add(input)
+
+      val txC = ctx.newTxBuilder()
+
+      val nextHopBox = txC.outBoxBuilder()
+        .value(input.getValue - Configs.distributeFee)
+        .contract(new ErgoTreeContract(Address.create(destinationAddress).getErgoAddress.script))
+        .build()
+
+      val uTx = ctx.newTxBuilder()
+        .boxesToSpend(inputs)
+        .outputs(nextHopBox)
+        .fee(Configs.distributeFee)
+        .sendChangeTo(Address.create(destinationAddress).getErgoAddress)
+        .build()
+      val tx = prover.sign(uTx)
+      tx
+    }
+  }
+
+  /**
    * withdraw tokens from covert
    */
   def withdrawToken(proverDlogSecrets: BigInteger, inputIds: Seq[String], tokenIds: Seq[String], withdrawAddress: String, depositAddress: String): SignedTransaction = {
@@ -456,5 +487,6 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
       tx
     }
   }
+
 
 }

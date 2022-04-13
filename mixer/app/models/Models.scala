@@ -1,17 +1,14 @@
 package models
 
 import java.nio.charset.StandardCharsets
-import java.text.SimpleDateFormat
-import java.util.Date
 import app.Configs
 import io.circe.generic.auto._
 import io.circe.generic.semiauto.deriveDecoder
 import io.circe.syntax._
 import io.circe.{Decoder, Encoder, HCursor, Json, parser}
 import mixinterface.TokenErgoMix
-import org.ergoplatform.appkit.{ErgoToken, ErgoValue, InputBox, SignedTransaction}
+import org.ergoplatform.appkit.{Address, ErgoToken, ErgoValue, InputBox, SignedTransaction}
 import play.api.libs.json._
-import scorex.util.encode.Base16
 import sigmastate.Values.ErgoTree
 import special.collection.Coll
 import special.sigma.GroupElement
@@ -35,8 +32,8 @@ object Models {
 
     def mixBox(tokenErgoMix: TokenErgoMix): Option[Either[HBox, FBox]] = {
       try {
-        val fullMixBoxErgoTree = Base16.encode(tokenErgoMix.fullMixScriptErgoTree.bytes).trim
-        val halfMixBoxErgoTree = Base16.encode(tokenErgoMix.halfMixContract.getErgoTree.bytes).trim
+        val fullMixBoxErgoTree = tokenErgoMix.fullMixScriptErgoTree.bytesHex
+        val halfMixBoxErgoTree = tokenErgoMix.halfMixContract.getErgoTree.bytesHex
         ergoTree match {
           case `fullMixBoxErgoTree` =>
             Some(Right(FBox(id, ge("R4"), ge("R5"), ge("R6"))))
@@ -54,6 +51,11 @@ object Models {
     def getFBox(tokenErgoMix: TokenErgoMix): Option[FBox] = mixBox(tokenErgoMix).flatMap {
       case Right(fBox) => Some(fBox)
       case _ => None
+    }
+
+    def isAddressEqualTo(address: String): Boolean = {
+      val addressErgoTree = Address.create(address).getErgoAddress.script.bytesHex
+      addressErgoTree == ergoTree
     }
   }
 
@@ -112,6 +114,10 @@ object Models {
     object WithdrawRequested extends MixWithdrawStatus("withdrawing")
 
     object AgeUSDRequested extends MixWithdrawStatus("minting")
+
+    object HopRequested extends MixWithdrawStatus("hopping")
+
+    object UnderHop extends MixWithdrawStatus("under hop")
 
     object Withdrawn extends MixWithdrawStatus("withdrawn")
 
@@ -427,6 +433,15 @@ object Models {
         i.next().asInstanceOf[Long]
       )
     }
+
+    implicit val mixHistoryDecoder: Decoder[MixHistory] = deriveDecoder[MixHistory]
+
+    def apply(jsonString: String): MixHistory = {
+      parser.decode[MixHistory](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing MixHistory from Json: $e")
+        case Right(asset) => asset
+      }
+    }
   }
 
   case class WithdrawTx(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte], additionalInfo: String = "") {
@@ -654,8 +669,15 @@ object Models {
         i.next().asInstanceOf[String],
         i.next().asInstanceOf[Long],
         i.next().asInstanceOf[String],
-        parser.parse(new String(i.next().asInstanceOf[Array[Byte]], "utf-16")).right.get
+        parseTx(i.next().asInstanceOf[Array[Byte]])
       )
+    }
+
+    private def parseTx(txBytes: Array[Byte]) = {
+      parser.parse(new String(txBytes, "utf-16")) match {
+        case Right(txJson) => txJson
+        case Left(_) => Json.Null
+      }
     }
   }
 
@@ -672,7 +694,78 @@ object Models {
     override def toString: String = this.asJson.toString
   }
 
-  case class PendingRescan(mixId: String, time: Long, round: Int, goBackward: Boolean, isHalfMixTx: Boolean, mixBoxId: String) {
+  object CreateFollowedMix {
+    def apply(a: Array[Any]): FollowedMix = {
+      val i = a.toIterator
+      FollowedMix(
+        i.next().asInstanceOf[Int],
+        i.next().asInstanceOf[Boolean],
+        i.next().asInstanceOf[String],
+        try {
+          Option(i.next().asInstanceOf[String])
+        } catch {
+          case _: Throwable => Option.empty[String]
+        }
+      )
+    }
+
+    implicit val followedMixDecoder: Decoder[FollowedMix] = deriveDecoder[FollowedMix]
+
+    def apply(jsonString: String): FollowedMix = {
+      parser.decode[FollowedMix](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing FollowedMix from Json: $e")
+        case Right(asset) => asset
+      }
+    }
+  }
+
+  case class FollowedHop(round: Int, hopMixBoxId: String) {
+    override def toString: String = this.asJson.toString
+  }
+
+  object CreateFollowedHop {
+    def apply(a: Array[Any]): FollowedHop = {
+      val i = a.toIterator
+      FollowedHop(
+        i.next().asInstanceOf[Int],
+        i.next().asInstanceOf[String]
+      )
+    }
+
+    implicit val followedHopDecoder: Decoder[FollowedHop] = deriveDecoder[FollowedHop]
+
+    def apply(jsonString: String): FollowedHop = {
+      parser.decode[FollowedHop](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing FollowedHop from Json: $e")
+        case Right(asset) => asset
+      }
+    }
+  }
+
+  case class FollowedWithdraw(txId: String, boxId: String) {
+    override def toString: String = this.asJson.toString
+  }
+
+  object CreateFollowedWithdraw {
+    def apply(a: Array[Any]): FollowedWithdraw = {
+      val i = a.toIterator
+      FollowedWithdraw(
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[String]
+      )
+    }
+
+    implicit val followedWithdrawDecoder: Decoder[FollowedWithdraw] = deriveDecoder[FollowedWithdraw]
+
+    def apply(jsonString: String): FollowedWithdraw = {
+      parser.decode[FollowedWithdraw](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing FollowedWithdraw from Json: $e")
+        case Right(asset) => asset
+      }
+    }
+  }
+
+  case class PendingRescan(mixId: String, time: Long, round: Int, goBackward: Boolean, boxType: String, mixBoxId: String) {
     override def toString: String = this.asJson.toString
   }
 
@@ -684,7 +777,7 @@ object Models {
         i.next().asInstanceOf[Long],
         i.next().asInstanceOf[Int],
         i.next().asInstanceOf[Boolean],
-        i.next().asInstanceOf[Boolean],
+        i.next().asInstanceOf[String],
         i.next().asInstanceOf[String]
       )
     }
@@ -814,6 +907,31 @@ object Models {
     }
   }
 
+  case class HopMix(mixId: String, round: Int, createdTime: Long, boxId: String) {
+    override def toString: String = this.asJson.toString
+  }
+
+  object CreateHopMix {
+    def apply(a: Array[Any]): HopMix = {
+      val i = a.toIterator
+      HopMix(
+        i.next().asInstanceOf[String],
+        i.next().asInstanceOf[Int],
+        i.next().asInstanceOf[Long],
+        i.next().asInstanceOf[String]
+      )
+    }
+
+    implicit val hopMixDecoder: Decoder[HopMix] = deriveDecoder[HopMix]
+
+    def apply(jsonString: String): HopMix = {
+      parser.decode[HopMix](jsonString) match {
+        case Left(e) => throw new Exception(s"Error while parsing HopMix from Json: $e")
+        case Right(asset) => asset
+      }
+    }
+  }
+
   case class CovertAssetWithdrawTx(covertId: String, tokenId: String, withdrawAddress: String, createdTime: Long, withdrawStatus: String, txId: String, tx: Array[Byte]) {
     override def toString: String = new String(tx, StandardCharsets.UTF_16)
 
@@ -870,6 +988,5 @@ object Models {
 
     def isEmpty: Boolean = tokens.isEmpty
   }
-
 
 }

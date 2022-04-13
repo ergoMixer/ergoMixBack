@@ -62,6 +62,12 @@ class FullMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvide
     val fullMixArchive = TableQuery[FullMixArchivedTable]
 
     /**
+     * returns all mixes
+     *
+     */
+    def all: Future[Seq[FullMix]] = db.run(fullMix.result)
+
+    /**
      * inserts a mix state into MIX_STATE table
      *
      * @param mix FullMix

@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "round" : 2,
+      "isAlice" : true,
+      "halfMixBoxId" : "e76ec269312eb6cd431af5aa83212d5be547e189f5585cceaa849fc80e32043a",
+      "fullMixBoxId" : "a721205b24e59d8574df0e70547527a214fdcfa05e8cc5c4433cc5c06dab26af"
+    },
+    {
+      "round" : 3,
+      "isAlice" : false,
+      "halfMixBoxId" : "31d28b4a7b52a1db2c769e55e05825b0ade71dec11c7db9788b21f273774533c",
+      "fullMixBoxId" : "801f4ea1f70e8b6198c9cb702ad0522630df022637827d6de307546aaa89d1ac"
+    },
+    {
+      "round" : 4,
+      "isAlice" : false,
+      "halfMixBoxId" : "1c95c30afd74987749a22fd6c48dda598620ce4d2c62abd6db0db9c300cd33c5",
+      "fullMixBoxId" : "887deb51d6487d023954f85c97473132efa1c6e6f22982377aba280b31472039"
+    }
+  ]
+}

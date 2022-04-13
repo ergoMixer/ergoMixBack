@@ -23,6 +23,7 @@ class BlockExplorer() {
   private val txUrl = s"$baseUrl/transactions/"
   private val urlAddress = s"$baseUrl/addresses/"
   private val unspentSearchUrl = s"$baseUrl/api/v1/boxes/unspent/search/"
+  private val boxesByAddressUtl = s"$baseUrl/api/v1/boxes/byAddress/"
 
   /**
    * @param j json representation of box
@@ -97,6 +98,15 @@ class BlockExplorer() {
    */
   def getUnspentBoxes(address: String): Seq[OutBox] = {
     getOutBoxesFromJson(GetURL.get(unspentUrl + address))
+  }
+
+  /**
+   * @param address address to get boxes of
+   * @return list of box IDs
+   */
+  def getBoxIdsByAddress(address: String): Seq[String] = {
+    val json = GetURL.get(boxesByAddressUtl + address)
+    (json \\ "items").headOption.get.asArray.get.map(j => (j \\ "boxId").head.asString.get)
   }
 
   /**

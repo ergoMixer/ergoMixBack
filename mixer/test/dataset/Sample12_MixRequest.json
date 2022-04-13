@@ -1,0 +1,18 @@
+{
+  "id": "000570c6-2247-4680-a0b5-0661eab0e4b3",
+  "groupId": "a30a08af-3a9b-47a0-9703-cfe5bad5e875",
+  "amount": 10000000000,
+  "numRounds": 30,
+  "mixStatus": "complete",
+  "createdTime": 1633802506226,
+  "withdrawAddress": "9fYfh5kJRw1CWkCRepfEAzJkj9dFGX88rfsq3sNTRiVRgnWGGRC",
+  "depositAddress": "9fsEvV5qcApUyZGiUfReqSZnwn4vSkXMr2juYjAz4Hu1tmqFVT5",
+  "depositCompleted": true,
+  "neededAmount": 10155833333,
+  "numToken": 30,
+  "withdrawStatus": "under hop",
+  "mixingTokenAmount": 0,
+  "neededTokenAmount": 0,
+  "tokenId": "",
+  "masterKey": "53904828017637223986629754366675959158132940254120441255254734055897887944493"
+}

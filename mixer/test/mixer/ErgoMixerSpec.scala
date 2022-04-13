@@ -2,13 +2,12 @@ package mixer
 
 import wallet.WalletHelper
 import dao._
-import dataset.TestDataset
 import mocked.MockedNetworkUtils
-import models.Models.{CovertAsset, FullMix, HalfMix, MixCovertRequest, MixState, MixingRequest, WithdrawTx}
-import models.Models.MixWithdrawStatus.WithdrawRequested
+import models.Models.{CovertAsset, FullMix, HalfMix, HopMix, MixCovertRequest, MixState, MixingRequest, WithdrawTx}
+import models.Models.MixWithdrawStatus.{HopRequested, WithdrawRequested}
 import org.scalatestplus.mockito.MockitoSugar.mock
 import play.api.db.slick.DatabaseConfigProvider
-import testHandlers.TestSuite
+import testHandlers.{ErgoMixerDataset, TestSuite}
 
 class ErgoMixerSpec
   extends TestSuite {
@@ -19,7 +18,7 @@ class ErgoMixerSpec
   val mockedDBConfigProvider = mock[DatabaseConfigProvider]
   val daoUtils = new DAOUtils(mockedDBConfigProvider)
 
-  private val dataset = TestDataset
+  private val dataset = ErgoMixerDataset
 
   def createErgoMixerObject: ErgoMixer = new ErgoMixer(
     networkUtils.getMocked,
@@ -32,7 +31,9 @@ class ErgoMixerSpec
     daoContext.mixingGroupRequestDAO,
     daoContext.mixStateDAO,
     daoContext.fullMixDAO,
-    daoContext.withdrawDAO
+    daoContext.withdrawDAO,
+    daoContext.hopMixDAO,
+    daoContext.covertsDAO
   )
 
   /**
@@ -280,16 +281,20 @@ class ErgoMixerSpec
   property("withdrawMixNow should throw exception if withdrawAddress is empty or call updateWithdrawStatus if it exists") {
     // get test data from dataset
     val testSample_emptyAddress = dataset.emptyAddressMixId
-    val testSample_withAddress = dataset.withAddressMixId
+    val testSample_withAddress_token = dataset.withAddressMixId_token
+    val testSample_withAddress_erg = dataset.withAddressMixId_erg
     val mixId_emptyAddress = testSample_emptyAddress._1
     val request_emptyAddress = testSample_emptyAddress._2
-    val mixId_withAddress = testSample_withAddress._1
-    val request_withAddress = testSample_withAddress._2
+    val mixId_withAddress_token = testSample_withAddress_token._1
+    val request_withAddress_token = testSample_withAddress_token._2
+    val mixId_withAddress_erg = testSample_withAddress_erg._1
+    val request_withAddress_erg = testSample_withAddress_erg._2
 
     // make dependency tables ready before test
     daoUtils.awaitResult(daoContext.mixingRequestsDAO.clear)
     daoUtils.awaitResult(daoContext.mixingRequestsDAO.insert(request_emptyAddress))
-    daoUtils.awaitResult(daoContext.mixingRequestsDAO.insert(request_withAddress))
+    daoUtils.awaitResult(daoContext.mixingRequestsDAO.insert(request_withAddress_token))
+    daoUtils.awaitResult(daoContext.mixingRequestsDAO.insert(request_withAddress_erg))
 
     val ergoMixer = createErgoMixerObject
 
@@ -302,11 +307,13 @@ class ErgoMixerSpec
       case e: Exception => if (e.getMessage != "Set a valid withdraw address first!") fail(s"Wrong exception: ${e.getMessage}")
     }
 
-    ergoMixer.withdrawMixNow(mixId_withAddress)
+    ergoMixer.withdrawMixNow(mixId_withAddress_token)
+    ergoMixer.withdrawMixNow(mixId_withAddress_erg)
 
     // verify the update in database
     val db_reqs: Seq[(String, String)] = daoUtils.awaitResult(daoContext.mixingRequestsDAO.all).map(req => (req.id, req.withdrawStatus))
-    db_reqs should contain ((mixId_withAddress, WithdrawRequested.value))
+    db_reqs should contain ((mixId_withAddress_token, WithdrawRequested.value))
+    db_reqs should contain ((mixId_withAddress_erg, HopRequested.value))
   }
 
   /**
@@ -547,6 +554,30 @@ class ErgoMixerSpec
 
     val res_Withdrawn = ergoMixer.getMixes(testSample_Withdrawn._1, "withdrawn")
     res_Withdrawn should be (testSample_Withdrawn._2)
+  }
+
+  /**
+   * Name: getHopRound
+   * Purpose: Testing function return type and value
+   * Dependencies:
+   *    hopMixDAO
+   */
+  property("getHopRound should return last hop round") {
+    // get test data from dataset
+    val testSample = dataset.lastHopRound
+    val hops: Seq[HopMix] = testSample._1
+    val mixId: String = testSample._2
+    val round: Int = testSample._3
+
+    // make dependency tables ready before test
+    daoUtils.awaitResult(daoContext.hopMixDAO.clear)
+    hops.foreach(hop => daoUtils.awaitResult(daoContext.hopMixDAO.insert(hop)))
+
+    val ergoMixer = createErgoMixerObject
+
+    // verify return value
+    val res = ergoMixer.getHopRound(mixId)
+    res should be (round)
   }
 
 }

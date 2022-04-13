@@ -1,0 +1,14 @@
+{
+  "id": "8a15e876-81fe-42e9-820e-0c0c244cd5d6",
+  "neededAmount": 111996500000,
+  "status": "running",
+  "createdTime": 1636517154115,
+  "depositAddress": "9fxHK6rvcHfz161dTUuqfHNk8utyatB2jsTswmz8c9CkDj1E3hB",
+  "doneDeposit": 0,
+  "tokenDoneDeposit": 0,
+  "mixingAmount": 110000000000,
+  "mixingTokenAmount": 0,
+  "neededTokenAmount": 0,
+  "tokenId": "",
+  "masterKey": "107909368842751085102900009589483169190626135940756717571242707363047493125345"
+}

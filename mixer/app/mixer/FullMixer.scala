@@ -6,12 +6,12 @@ import helpers.ErgoMixerUtils
 import wallet.WalletHelper.now
 
 import javax.inject.Inject
-import models.Models.MixStatus.Complete
-import models.Models.MixWithdrawStatus.WithdrawRequested
-import models.Models.{FullMix, HalfMix, MixHistory, MixState, MixTransaction, OutBox, PendingRescan, WithdrawTx}
+import models.Models.MixStatus.{Complete, Running}
+import models.Models.MixWithdrawStatus.{HopRequested, WithdrawRequested}
+import models.Models.{CreateMixTransaction, FullMix, HalfMix, MixHistory, MixState, MixTransaction, OutBox, PendingRescan, WithdrawTx}
 import network.{BlockExplorer, NetworkUtils}
 import play.api.Logger
-import wallet.Wallet
+import wallet.{Wallet, WalletHelper}
 import dao.{AllMixDAO, DAOUtils, EmissionDAO, FullMixDAO, HalfMixDAO, MixStateDAO, MixStateHistoryDAO, MixTransactionsDAO, MixingRequestsDAO, RescanDAO, TokenEmissionDAO, WithdrawDAO}
 
 class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
@@ -124,8 +124,7 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
         case Some(txId) => // spent
           if (!daoUtils.awaitResult(withdrawDAO.existsByTxId(txId))) { // we need to fast-forward, full box is spent but its not withdraw... by rescanning block-chain
             logger.error(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] [ERROR] Rescanning because full:$fullMixBoxId is spent")
-            Thread.currentThread().getStackTrace foreach println
-            val new_scan = PendingRescan(mixId, currentTime, currentRound, goBackward = false, isHalfMixTx = false, fullMixBoxId)
+            val new_scan = PendingRescan(mixId, currentTime, currentRound, goBackward = false, "full", fullMixBoxId)
             rescanDAO.updateById(new_scan)
           }
         case None => // not spent, good to go
@@ -142,17 +141,37 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
 
           val wallet = new Wallet(masterSecret)
           val secret = wallet.getSecret(currentRound)
-          if (numTokens < 2 || withdrawStatus.equals(WithdrawRequested.value) || (currentRound >= maxRounds && Configs.stopMixingWhenReachedThreshold)) {
+          if (numTokens < 2 || (withdrawStatus.equals(WithdrawRequested.value) || withdrawStatus.equals(HopRequested.value)) || (currentRound >= maxRounds && Configs.stopMixingWhenReachedThreshold)) {
             if (withdrawAddress.nonEmpty) {
               val optFeeEmissionBoxId = getRandomValidBoxId(getFeeBoxes.map(_.id).filterNot(id => daoUtils.awaitResult(emissionDAO.existsByBoxId(id))))
               if (withdrawDAO.shouldWithdraw(mixId, fullMixBoxId) && optFeeEmissionBoxId.nonEmpty) {
-                val tx = aliceOrBob.spendFullMixBox(isAlice, secret, fullMixBoxId, withdrawAddress, Array[String](optFeeEmissionBoxId.get), Configs.defaultHalfFee, withdrawAddress, broadCast = false)
-                val txBytes = tx.toJson(false).getBytes("utf-16")
-                val new_withdraw = WithdrawTx(mixId, tx.getId, currentTime, fullMixBoxId + "," + optFeeEmissionBoxId.get, txBytes)
-                withdrawDAO.updateById(new_withdraw, WithdrawRequested.value)
-                logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] Withdraw txId: ${tx.getId}, is requested: ${withdrawStatus.equals(WithdrawRequested.value)}")
-                val sendRes = ctx.sendTransaction(tx)
-                if (sendRes == null) logger.error(s"  something unexpected has happened! tx got refused by the node!")
+                val tx = if (withdrawStatus.equals(HopRequested.value)) {
+                  val hopSecret = wallet.getSecret(0, toFirst = true)
+                  val hopAddress = WalletHelper.getProveDlogAddress(hopSecret, ctx)
+                  val tx = aliceOrBob.spendFullMixBox(isAlice, secret, fullMixBoxId, hopAddress, Array[String](optFeeEmissionBoxId.get), Configs.defaultHalfFee, withdrawAddress, broadCast = false)
+                  val txBytes = tx.toJson(false).getBytes("utf-16")
+                  val new_withdraw = WithdrawTx(mixId, tx.getId, currentTime, fullMixBoxId + "," + optFeeEmissionBoxId.get, txBytes)
+                  withdrawDAO.updateById(new_withdraw, HopRequested.value)
+                  logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] Hop txId: ${tx.getId}, is requested: ${(withdrawStatus.equals(WithdrawRequested.value) || withdrawStatus.equals(HopRequested.value))}")
+                  tx
+                }
+                else {
+                  val tx = aliceOrBob.spendFullMixBox(isAlice, secret, fullMixBoxId, withdrawAddress, Array[String](optFeeEmissionBoxId.get), Configs.defaultHalfFee, withdrawAddress, broadCast = false)
+                  val txBytes = tx.toJson(false).getBytes("utf-16")
+                  val new_withdraw = WithdrawTx(mixId, tx.getId, currentTime, fullMixBoxId + "," + optFeeEmissionBoxId.get, txBytes)
+                  withdrawDAO.updateById(new_withdraw, WithdrawRequested.value)
+                  logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] Withdraw txId: ${tx.getId}, is requested: ${(withdrawStatus.equals(WithdrawRequested.value) || withdrawStatus.equals(HopRequested.value))}")
+                  tx
+                }
+
+                try {
+                  ctx.sendTransaction(tx)
+                }
+                catch {
+                  case e: Throwable =>
+                    logger.error(s"  something unexpected has happened! tx got refused by the node!")
+                    logger.debug(s"  Exception: ${e.getMessage}")
+                }
               }
             } else {
               mixingRequestsDAO.updateMixStatus(mixId, Complete)
@@ -179,8 +198,14 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
                 val new_tx = halfMixTx.tx
                 mixTransactionsDAO.updateById(MixTransaction(halfMixTx.getHalfMixBox.id, new_tx.getId, new_tx.toJson(false).getBytes("utf-16")))
                 logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] --> Alice [full:$fullMixBoxId, fee:$feeEmissionBoxId], txId: ${halfMixTx.tx.getId}")
-                val sendRes = ctx.sendTransaction(halfMixTx.tx)
-                if (sendRes == null) logger.error(s"  something unexpected has happened! tx got refused by the node!")
+                try {
+                  ctx.sendTransaction(halfMixTx.tx)
+                }
+                catch {
+                  case e: Throwable =>
+                    logger.error(s"  something unexpected has happened! tx got refused by the node!")
+                    logger.debug(s"  Exception: ${e.getMessage}")
+                }
                 halfMixTx.tx.getId
               }
 
@@ -195,8 +220,14 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
                 val new_tx = fullMixTx.tx
                 mixTransactionsDAO.updateById(MixTransaction(bobFullMixBox.id, new_tx.getId, new_tx.toJson(false).getBytes("utf-16")))
                 logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] --> Bob [full:$fullMixBoxId, half:$halfMixBoxId, fee:$feeEmissionBoxId], txId: ${fullMixTx.tx.getId}")
-                val sendRes = ctx.sendTransaction(fullMixTx.tx)
-                if (sendRes == null) logger.error(s"  something unexpected has happened! tx got refused by the node!")
+                try {
+                  ctx.sendTransaction(fullMixTx.tx)
+                }
+                catch {
+                  case e: Throwable =>
+                    logger.error(s"  something unexpected has happened! tx got refused by the node!")
+                    logger.debug(s"  Exception: ${e.getMessage}")
+                }
                 fullMixTx.tx.getId
               }
 
@@ -224,8 +255,8 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
         val prevTx = daoUtils.awaitResult(mixTransactionsDAO.selectByBoxId(fullMixBoxId))
         try {
           if (prevTx.nonEmpty) {
-            val res = ctx.sendTransaction(ctx.signedTxFromJson(prevTx.get.toString))
-            logger.info(s"  broadcasted tx ${prevTx.get.txId}, response: $res")
+            ctx.sendTransaction(ctx.signedTxFromJson(prevTx.get.toString))
+            logger.info(s"  broadcasted tx ${prevTx.get.txId}")
           }
         }
         catch {
@@ -238,7 +269,7 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
                 // halfMixBoxId is no longer confirmed. This indicates a fork. We need to rescan
                 logger.error(s"  [FULL:$mixId ($currentRound) ${str(isAlice)}] [ERROR] Rescanning [half:$halfMixBoxId disappeared]")
                 Thread.currentThread().getStackTrace foreach println
-                val new_scan = PendingRescan(mixId, now, currentRound, goBackward = true, isHalfMixTx = false, fullMixBoxId)
+                val new_scan = PendingRescan(mixId, now, currentRound, goBackward = true, "full", fullMixBoxId)
                 rescanDAO.updateById(new_scan)
               case Some(true) =>
                 if (networkUtils.isDoubleSpent(halfMixBoxId, fullMixBoxId) || (currentRound == 0 && networkUtils.isDoubleSpent(tokenBoxId, fullMixBoxId))) {

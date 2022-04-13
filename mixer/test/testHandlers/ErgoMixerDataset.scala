@@ -1,24 +1,16 @@
-package dataset
+package testHandlers
 
-import app.Configs
 import io.circe.{Json, parser}
 import models.Models._
+import testHandlers.MixScannerDataset.{jsonToObjectList, readJsonFile}
 
 import scala.collection.mutable
-import scala.io.Source.fromFile
 
-object TestDataset {
-
-  private val rings: Seq[EntityInfo] = Seq(
-    EntityInfo("ERG", "", Seq(1000000000L, 10000000000L, 100000000000L), 9, 1000L)
-  )
-
-  def readJsonFile(filePath: String): String = {
-    val sourceFile = fromFile(filePath)
-    val jsonString = sourceFile.getLines.mkString
-    sourceFile.close()
-    jsonString
-  }
+/**
+ * Dataset of test values for classes:
+ * ErgoMixer
+ */
+object ErgoMixerDataset extends DatasetSuite {
 
   def jsonToMixingBoxPrices(jsonString: String): Seq[(Long, Long)] = {
     parser.parse(jsonString) match {
@@ -27,24 +19,17 @@ object TestDataset {
         case Left(e) => throw new Exception(s"Error while parsing MixingBox from Json: $e")
         case Right(arr) => arr.map(js => {
           val cursor = js.hcursor
-          val neededAmount = cursor.downField("neededAmount").as[Long] match {case Right(needed) => needed}
-          val tokenNeededAmount = cursor.downField("tokenNeededAmount").as[Long] match {case Right(needed) => needed}
+          val neededAmount = cursor.downField("neededAmount").as[Long] match {
+            case Right(needed) => needed
+          }
+          val tokenNeededAmount = cursor.downField("tokenNeededAmount").as[Long] match {
+            case Right(needed) => needed
+          }
           (neededAmount, tokenNeededAmount)
         })
       }
     }
   }
-
-
-  def setConfigData: Unit = {
-    val idToParam = mutable.Map.empty[String, EntityInfo]
-    rings.foreach(param => idToParam(param.id) = param)
-    Configs.params = idToParam
-    Configs.tokenPrices = Some(Map(180 -> 720000000, 90 -> 360000000, 60 -> 240000000, 30 -> 120000000))
-    Configs.entranceFee = Some(200)
-  }
-
-  setConfigData
 
   private val sample0_MixingRequest: MixingRequest = CreateMixingRequest(readJsonFile("./test/dataset/Sample0_MixRequest.json"))
   private val sample0_MixRequest: MixRequest = sample0_MixingRequest.toMixRequest
@@ -140,31 +125,41 @@ object TestDataset {
   private val emptyAddress_MixingRequest: MixingRequest = CreateMixingRequest(readJsonFile("./test/dataset/SampleEmptyAddress_MixRequest.json"))
   private val emptyAddress_MixId = emptyAddress_MixingRequest.id
 
+  private val sample12_MixingRequest: MixingRequest = CreateMixingRequest(readJsonFile("./test/dataset/Sample12_MixRequest.json"))
+  private val sample12_MixId: String = sample12_MixingRequest.id
+
+  private val sample16_hopMixList = jsonToObjectList[HopMix](readJsonFile("./test/dataset/Sample16_HopMixList.json"), CreateHopMix.apply)
+  private val sample16_lastRound = sample16_hopMixList.last.round
+  private val sample16_mixId = sample16_hopMixList.last.mixId
+
   /**
    * apis for testing ErgoMixer.newCovertRequest
-   *  spec data: BigInt, the masterKey and it exists or not
-   *    and (String, Int, Seq[String]) which is newCovertData
-   *  db data: MixCovertRequest, the covert object in database
+   * spec data: BigInt, the masterKey and it exists or not
+   * and (String, Int, Seq[String]) which is newCovertData
+   * db data: MixCovertRequest, the covert object in database
    *
    * @return BigInt masterKey
    * @return Boolean exists
    */
   def newCovertData: (String, Int, Seq[String]) = (sample2_CovertName, sample2_roundNum, sample2_Addresses)
+
   def existsMasterSecretKey: (BigInt, MixCovertRequest) = (sample2_masterKey_1, sample0_MixCovertRequest)
+
   def notExistsMasterSecretKey: BigInt = sample2_masterKey_2
 
   /**
    * api for testing ErgoMixer.handleCovertSupport
-   *  spec data: (String, String, Long), covertId, tokenId, ring
-   *  db data: (MixCovertRequest, CovertAsset), the covert object and corresponding asset in database
+   * spec data: (String, String, Long), covertId, tokenId, ring
+   * db data: (MixCovertRequest, CovertAsset), the covert object and corresponding asset in database
    */
   def existsCovertAsset: (String, String, Long, MixCovertRequest, CovertAsset) = (sample0_CovertAsset.covertId, sample0_CovertAsset.tokenId, 200000000000L, sample0_MixCovertRequest, sample0_CovertAsset)
+
   def notExistsCovertAsset: (String, String, Long, MixCovertRequest) = (sample0_CovertAsset.covertId, sample0_CovertAsset.tokenId, 200000000000L, sample0_MixCovertRequest)
 
   /**
    * api for testing ErgoMixer.getWithdrawAddress
-   *  spec data: (String, String), mixId and withdrawAddress
-   *  db data: MixingRequest, the mix request object in database
+   * spec data: (String, String), mixId and withdrawAddress
+   * db data: MixingRequest, the mix request object in database
    *
    * @return String mixId
    * @return String withdrawAddress
@@ -174,8 +169,8 @@ object TestDataset {
 
   /**
    * api for testing ErgoMixer.getRoundNum
-   *  spec data: (String, Int), mixId and roundNum
-   *  db data: MixState, the mix state object in database
+   * spec data: (String, Int), mixId and roundNum
+   * db data: MixState, the mix state object in database
    *
    * @return String mixId
    * @return Int roundNum
@@ -185,8 +180,8 @@ object TestDataset {
 
   /**
    * api for testing ErgoMixer.getIsAlice
-   *  spec data: (String, Boolean), mixId and isAlice
-   *  db data: MixState, the mix state object in database
+   * spec data: (String, Boolean), mixId and isAlice
+   * db data: MixState, the mix state object in database
    *
    * @return String mixId
    * @return Boolean isAlice
@@ -196,19 +191,21 @@ object TestDataset {
 
   /**
    * api for testing ErgoMixer.withdrawMixNow
-   *  spec data: String, mixId
-   *  db data: MixingRequest, the mix request object in database
+   * spec data: String, mixId
+   * db data: MixingRequest, the mix request object in database
    *
    * @return String mixId
    * @return MixRequest req
    */
-  def withAddressMixId: (String, MixingRequest) = (sample0_MixId, sample0_MixingRequest)
+  def withAddressMixId_token: (String, MixingRequest) = (sample0_MixId, sample0_MixingRequest)
+  def withAddressMixId_erg: (String, MixingRequest) = (sample12_MixId, sample12_MixingRequest)
+
   def emptyAddressMixId: (String, MixingRequest) = (emptyAddress_MixId, emptyAddress_MixingRequest)
 
   /**
    * api for testing ErgoMixer.getCovertCurrentMixing
-   *  spec data: (String, Map[String, Long]), groupId and Map of tokenId to amount of current running mixing
-   *  db data: Seq[MixingRequest], sequence of MixingRequest objects
+   * spec data: (String, Map[String, Long]), groupId and Map of tokenId to amount of current running mixing
+   * db data: Seq[MixingRequest], sequence of MixingRequest objects
    *
    * @return String mixId
    * @return Boolean isAlice
@@ -218,8 +215,8 @@ object TestDataset {
 
   /**
    * api for testing ErgoMixer.getCovertRunningMixing
-   *  spec data: (String, Map[String, Long]), groupId and Map of tokenId to amount of current running mixing
-   *  db data: Seq[MixingRequest], sequence of MixingRequest objects
+   * spec data: (String, Map[String, Long]), groupId and Map of tokenId to amount of current running mixing
+   * db data: Seq[MixingRequest], sequence of MixingRequest objects
    *
    * @return String mixId
    * @return Boolean isAlice
@@ -229,7 +226,7 @@ object TestDataset {
 
   /**
    * apis for testing ErgoMixer.newMixRequest
-   *  all spec data
+   * all spec data
    */
   def newMixData: (String, Int, Long, Long, Long, Long, String, String) = (
     sample5_WithdrawAddress,
@@ -243,39 +240,49 @@ object TestDataset {
 
   /**
    * apis for testing ErgoMixer.newMixGroupRequest
-   *  all spec data
+   * all spec data
    */
   def newGroupData: (mutable.Iterable[MixingBox], Seq[(Long, Long)], MixGroupRequest) = (sampleArray_MixGroupRequest, sampleArray_MixGroupRequestPrices, sampleArray_MixGroupRequestAll)
 
   /**
    * apis for testing ErgoMixer.getFinishedForGroup
-   *  spec data: (Int, Int, Int), number of withdrawn, finished and all mix requests
-   *  db data: Seq[MixingRequest], sequence of MixingRequest objects
+   * spec data: (Int, Int, Int), number of withdrawn, finished and all mix requests
+   * db data: Seq[MixingRequest], sequence of MixingRequest objects
    *
-   *  @return String groupId
-   *  @return Int countWithdrawn
-   *  @return Int countFinished
-   *  @return Int countAll
+   * @return String groupId
+   * @return Int countWithdrawn
+   * @return Int countFinished
+   * @return Int countAll
    */
   def roundFinishedData: (String, Int, Int, Int, Seq[MixingRequest]) = (sample0_GroupId, 2, 3, 5, sample_AllMixingRequests)
 
   /**
    * apis for testing ErgoMixer.getProgressForGroup
-   *  spec data: (String, (Int, Int)), groupId and progress output
-   *  db data: (Seq[MixingRequest], Seq[MixState]), sequence of MixingRequest and corresponding mix state objects
+   * spec data: (String, (Int, Int)), groupId and progress output
+   * db data: (Seq[MixingRequest], Seq[MixState]), sequence of MixingRequest and corresponding mix state objects
    */
   def roundProgressData: (String, (Int, Int), Seq[MixingRequest], Seq[MixState]) = (sample0_GroupId, (60, 10), sample_AllMixingRequests, sample_AllMixStates)
 
   /**
    * apis for testing ErgoMixer.getMixes
-   *  spec data:
-   *    Mixes: (String, Seq[Mix]), groupId and progress output for three type of mixes(all, active and withdrawn)
+   * spec data:
+   * Mixes: (String, Seq[Mix]), groupId and progress output for three type of mixes(all, active and withdrawn)
    *
-   *  db data: (Seq[MixingRequest], Seq[MixState], Seq[WithdrawTx], Seq[HalfMix], Seq[FullMix])
-   *    which are sequence of data for each table of MixingRequest, MixState, Withdraw, HalfMix and FullMix
+   * db data: (Seq[MixingRequest], Seq[MixState], Seq[WithdrawTx], Seq[HalfMix], Seq[FullMix])
+   * which are sequence of data for each table of MixingRequest, MixState, Withdraw, HalfMix and FullMix
    */
   def dbMixes: (Seq[MixingRequest], Seq[MixState], Seq[WithdrawTx], Seq[HalfMix], Seq[FullMix]) = (sample_AllMixingRequests, sample_AllMixStates, sample_AllMixWithdraws, sample_HalfMixes, sample_FullMixes)
+
   def allMixes: (String, Seq[Mix]) = (sample0_GroupId, sampleSeq_AllMixes)
+
   def activeMixes: (String, Seq[Mix]) = (sample0_GroupId, sampleSeq_ActiveMixes)
+
   def withdrawnMixes: (String, Seq[Mix]) = (sample0_GroupId, sampleSeq_WithdrawnMixes)
+
+  /**
+   * apis for testing ErgoMixer.getMixes
+   * spec data: (String, Int), the mix request ID and last hop round
+   * db data: (Seq[HopMix],
+   */
+  def lastHopRound: (Seq[HopMix], String, Int) = (sample16_hopMixList, sample16_mixId, sample16_lastRound)
 }

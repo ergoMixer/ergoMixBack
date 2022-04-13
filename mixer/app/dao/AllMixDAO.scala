@@ -6,8 +6,8 @@ import slick.jdbc.JdbcProfile
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.{ExecutionContext, Future}
 import models.Models.MixStatus.{Queued, Running}
-import models.Models.{Deposit, FullMix, HalfMix, MixState, MixStatus}
-import models.Models.MixWithdrawStatus.WithdrawRequested
+import models.Models.{Deposit, FullMix, HalfMix, HopMix, MixState, MixStatus}
+import models.Models.MixWithdrawStatus.{HopRequested, UnderHop, WithdrawRequested}
 import network.BlockExplorer
 import play.api.Logger
 
@@ -23,6 +23,7 @@ class AllMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvider
         with TokenEmissionComponent
         with UnspentDepositsComponent
         with SpentDepositsComponent
+        with HopMixComponent
         with HasDatabaseConfigProvider[JdbcProfile] {
 
     import profile.api._
@@ -48,6 +49,8 @@ class AllMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvider
 
     val spentDeposits = TableQuery[SpentDepositsTable]
 
+    val hopMixes = TableQuery[HopMixTable]
+
     /**
      * selects unspent halfBoxes
      *
@@ -56,7 +59,7 @@ class AllMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvider
         val query = for {
             ((halfMix, state), request) <- halfMixes.filter(mix => mix.isSpent === false) join
                 mixes on((mix, state) => {mix.id === state.id && mix.round === state.round}) join
-                mixingRequests.filter(request => request.mixStatus === MixStatus.fromString(Running.value) || request.withdrawStatus === WithdrawRequested.value) on(_._1.id === _.id)
+                mixingRequests.filter(request => request.mixStatus === MixStatus.fromString(Running.value) || (request.withdrawStatus === WithdrawRequested.value || request.withdrawStatus === HopRequested.value)) on(_._1.id === _.id)
         } yield (halfMix.id, state.round, halfMix.halfMixBoxId, request.masterKey, request.withdrawStatus, request.withdrawAddress)
         db.run(query.result)
     }
@@ -69,9 +72,22 @@ class AllMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvider
         val query = for {
             ((fullMix, state), request) <- fullMixes join
                 mixes on((mix, state) => {mix.id === state.id && mix.round === state.round}) join
-                mixingRequests.filter(request => request.mixStatus === MixStatus.fromString(Running.value) || request.withdrawStatus === WithdrawRequested.value) on(_._1.id === _.id)
+                mixingRequests.filter(request => request.mixStatus === MixStatus.fromString(Running.value) || (request.withdrawStatus === WithdrawRequested.value || request.withdrawStatus === HopRequested.value)) on(_._1.id === _.id)
         } yield (fullMix.id, request.numRounds, request.withdrawAddress, request.masterKey, state.isAlice,
             fullMix.fullMixBoxId, state.round, fullMix.halfMixBoxId, request.withdrawStatus, request.tokenId)
+        db.run(query.result)
+    }
+
+    /**
+     * selects unspent hopBoxes
+     *
+     */
+    def groupHopMixesProgress: Future[Seq[HopMix]] = {
+        val lastHops = hopMixes.groupBy(hop => hop.id).map{ case (id, group) => (id, group.map(_.round).max) }
+        val lastHopMixes = (hopMixes join lastHops on((hopMix, lastHop) => hopMix.id === lastHop._1 && hopMix.round === lastHop._2)).map{ case(hopMix, lastHop) => hopMix}
+        val query = for {
+            (hopMix, request) <- lastHopMixes join mixingRequests.filter(request => request.withdrawStatus === UnderHop.value) on(_.id === _.id)
+        } yield hopMix
         db.run(query.result)
     }
 

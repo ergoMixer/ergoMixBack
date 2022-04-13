@@ -2,28 +2,27 @@ package services
 
 import java.text.SimpleDateFormat
 import java.util.Date
-
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import app.Configs
 import app.Configs.readKey
 import helpers.TrayUtils
+
 import javax.inject.Inject
 import mixer._
 import models.Models.EntityInfo
 import network.NetworkUtils
 import play.api.Logger
-import services.ScheduledJobs.{RefreshMixingStats, RefreshPoolStats}
+import services.ScheduledJobs.{RefreshMixingStats, RefreshPoolStats, UpdateGroupMixStates}
 
 import scala.collection.mutable
 import scala.util.Try
-
 import dao.Prune
 
 
 class ErgoMixerJobs @Inject()(val ergoMixer: ErgoMixer, val covertMixer: CovertMixer, val groupMixer: GroupMixer,
                               val rescan: Rescan, val halfMixer: HalfMixer, val fullMixer: FullMixer, val newMixer: NewMixer,
                               val withdrawMixer: WithdrawMixer, val deposits: Deposits, val prune: Prune,
-                              val statScanner: ChainScanner, val networkUtils: NetworkUtils)
+                              val statScanner: ChainScanner, val networkUtils: NetworkUtils, val hopMixer: HopMixer)
 
 class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
   private val logger: Logger = Logger(this.getClass)
@@ -60,6 +59,7 @@ class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
         logger.info("half mixes: " + Try(mixerJobs.halfMixer.processHalfMixQueue()))
         logger.info("full mixes: " + Try(mixerJobs.fullMixer.processFullMixQueue()))
         logger.info("process withdraws: " + Try(mixerJobs.withdrawMixer.processWithdrawals()))
+        logger.info("hop mixes: " + Try(mixerJobs.hopMixer.processHopBoxes()))
         logger.info("rescans: " + Try(mixerJobs.rescan.processRescanQueue()))
         logger.info(s"$currentTimeString: Refreshing mixing stats: jobs finished")
       }
@@ -88,6 +88,11 @@ class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
 
       logger.info(s"$currentTimeString: Refreshing stats: jobs finished")
 
+    case UpdateGroupMixStates =>
+      mixerJobs.ergoMixer.updateGroupMixesStates()
+
+      logger.info(s"$currentTimeString: Group mix states updated")
+
   }
 }
 
@@ -99,5 +104,7 @@ object ScheduledJobs {
   case object RefreshMixingStats
 
   case object RefreshPoolStats
+
+  case object UpdateGroupMixStates
 
 }

@@ -186,9 +186,13 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
       val inputs = tx.getSignedInputs.asScala.map(_.getId).mkString(",")
       val new_tx = DistributeTx(req.id, tx.getId, i + 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputs)
       distributeTransactionsDAO.insert(new_tx)
-      val sendRes = ctx.sendTransaction(tx)
-      if (sendRes == null) {
-        logger.error(s"  transaction got refused by the node! maybe it doesn't support chained transactions, waiting... consider updating your node for a faster mixing experience.")
+      try {
+        ctx.sendTransaction(tx)
+      }
+      catch {
+        case e: Throwable =>
+          logger.error(s"transaction ${tx.getId} got refused by the node! maybe it doesn't support chained transactions, waiting... consider updating your node for a faster mixing experience.")
+          logger.debug(s"  Exception: ${e.getMessage}")
       }
     }
   }
@@ -206,32 +210,37 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
         val confNum = explorer.getTxNumConfirmations(tx.txId)
         if (confNum == -1) { // not mined yet, broadcast tx again!
           val signedTx = ctx.signedTxFromJson(tx.toString)
-          val res = ctx.sendTransaction(signedTx)
-          logger.info(s"  broadcasting tx ${tx.txId}, response: $res...")
-          if (res == null) {
-            var spendingTxId: String = ""
-            val boxStatus = tx.inputs.split(",").forall(boxId => {
-              explorer.getSpendingTxId(boxId) match {
-                case Some(txId) =>
-                  spendingTxId = txId
-                case None =>
-                  spendingTxId = ""
-              }
-              if ((!spendingTxId.isEmpty && spendingTxId != req.id) || outputs.contains(boxId)) {
-                false
-              }
-              else true
-            })
-            if (boxStatus) {
-              logger.error(s"  transaction got refused by the node! potential reason: node does not support chain transactions. waiting...")
-            }
-            else {
-              outputs = outputs ++ signedTx.getOutputsToSpend.asScala.map(box => {
-                box.getId.toString
+          try {
+            ctx.sendTransaction(signedTx)
+            logger.info(s"  broadcasted tx ${signedTx.getId}")
+          }
+          catch {
+            case e: Throwable =>
+              logger.error(s"  transaction ${signedTx.getId} got refused by the node!")
+              logger.debug(s"  Exception: ${e.getMessage}")
+              var spendingTxId: String = ""
+              val boxStatus = tx.inputs.split(",").forall(boxId => {
+                explorer.getSpendingTxId(boxId) match {
+                  case Some(txId) =>
+                    spendingTxId = txId
+                  case None =>
+                    spendingTxId = ""
+                }
+                if ((!spendingTxId.isEmpty && spendingTxId != req.id) || outputs.contains(boxId)) {
+                  false
+                }
+                else true
               })
-              distributeTransactionsDAO.setOrderToZeroByTxId(tx.txId)
-              logger.info(s"  tx ${tx.txId} has a box spent or has a wrong box")
-            }
+              if (boxStatus) {
+                logger.error(s"  potential reason: node does not support chain transactions. waiting...")
+              }
+              else {
+                outputs = outputs ++ signedTx.getOutputsToSpend.asScala.map(box => {
+                  box.getId.toString
+                })
+                distributeTransactionsDAO.setOrderToZeroByTxId(tx.txId)
+                logger.info(s"  tx has a box spent or has a wrong box")
+              }
           }
         } else if (confNum >= Configs.numConfirmation) { // confirmed enough
           logger.info(s"  tx ${tx.txId} is confirmed.")
@@ -282,12 +291,15 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
         networkUtils.usingClient {ctx =>
           // not mined yet, broadcast tx again!
           val signedTx = ctx.signedTxFromJson(new String(tx, StandardCharsets.UTF_16))
-          val res = ctx.sendTransaction(signedTx)
-          logger.info(s"  broadcasting tx $txId, response: $res...")
-
-          if (res == null) {
-            logger.error(s"  transaction got refused by the node! removing transaction from db...")
-            daoUtils.awaitResult(withdrawCovertTokenDAO.resetRequest(covertId, tokenId))
+          try {
+            ctx.sendTransaction(signedTx)
+            logger.info(s"  broadcasted tx ${signedTx.getId}")
+          }
+          catch {
+            case e: Throwable =>
+              logger.error(s"  transaction ${signedTx.getId} got refused by the node! removing transaction from db...")
+              logger.debug(s"  Exception: ${e.getMessage}")
+              daoUtils.awaitResult(withdrawCovertTokenDAO.resetRequest(covertId, tokenId))
           }
         }
       }
@@ -344,9 +356,16 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
     }
 
     val tx = aliceOrBob.withdrawToken(proverDlogSecrets, inputs, tokenIds, withdrawAddress, depositAddress)
-    val res = networkUtils.usingClient {ctx => ctx.sendTransaction(tx)}
-    logger.info((s"  withdraw token list [${tokenIds.mkString(",")}] from covert $covertId requested with txId ${tx.getId}, response: $res"))
-    withdrawCovertTokenDAO.updateTx(covertId, tokenIds, tx.getId, tx.toJson(false).getBytes("utf-16"))
+    try {
+      networkUtils.usingClient {ctx => ctx.sendTransaction(tx)}
+      logger.info(s"  withdraw token list [${tokenIds.mkString(",")}] from covert $covertId requested with txId ${tx.getId}")
+      withdrawCovertTokenDAO.updateTx(covertId, tokenIds, tx.getId, tx.toJson(false).getBytes("utf-16"))
+    }
+    catch {
+      case e: Throwable =>
+        logger.error(s"  something unexpected has happened! tx ${tx.getId} got refused by the node!")
+        logger.debug(s"  Exception: ${e.getMessage}")
+    }
   }
 
   /**

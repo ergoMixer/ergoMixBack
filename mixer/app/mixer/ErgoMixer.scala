@@ -6,14 +6,14 @@ import wallet.WalletHelper._
 
 import javax.inject.Inject
 import models.Models.MixStatus.{Complete, Queued, Running}
-import models.Models.MixWithdrawStatus.{NoWithdrawYet, WithdrawRequested, Withdrawn}
+import models.Models.MixWithdrawStatus.{HopRequested, NoWithdrawYet, WithdrawRequested, Withdrawn}
 import models.Models._
 import network.NetworkUtils
 import play.api.Logger
 import wallet.{Wallet, WalletHelper}
 
 import scala.collection.mutable
-import dao.{AllMixDAO, CovertAddressesDAO, CovertDefaultsDAO, DAOUtils, FullMixDAO, MixStateDAO, MixingCovertRequestDAO, MixingGroupRequestDAO, MixingRequestsDAO, WithdrawDAO}
+import dao._
 
 
 class ErgoMixer @Inject()(
@@ -27,7 +27,10 @@ class ErgoMixer @Inject()(
                              mixingGroupRequestDAO: MixingGroupRequestDAO,
                              mixStateDAO: MixStateDAO,
                              fullMixDAO: FullMixDAO,
-                             withdrawDAO: WithdrawDAO) {
+                             withdrawDAO: WithdrawDAO,
+                             hopMixDAO: HopMixDAO,
+                             covertsDAO: CovertsDAO
+                         ) {
   private val logger: Logger = Logger(this.getClass)
 
   /**
@@ -38,6 +41,7 @@ class ErgoMixer @Inject()(
    * @return covert address
    */
   def newCovertRequest(nameCovert: String, numRounds: Int, addresses: Seq[String] = Nil, privateKey: String): String = {
+    okAddresses(addresses)
     networkUtils.usingClient { implicit ctx =>
       var masterSecret: BigInt = BigInt(0)
       if (privateKey.isEmpty) {
@@ -51,13 +55,13 @@ class ErgoMixer @Inject()(
       }
       val wallet = new Wallet(masterSecret)
       val depositSecret = wallet.getSecret(-1, privateKey.nonEmpty)
-      val depositAddress = WalletHelper.getProveDlogAddress(depositSecret, ctx)
+      val depositAddress = WalletHelper.getAddressOfSecret(depositSecret)
       val mixId = UUID.randomUUID().toString
       val lastErgRing = Configs.params.filter(_._1.isEmpty).head._2.rings.last
       val req: MixCovertRequest = MixCovertRequest(nameCovert, mixId, now, depositAddress, numRounds, privateKey.nonEmpty, masterSecret)
-      daoUtils.awaitResult(mixingCovertRequestDAO.insert(req))
-      addCovertWithdrawAddress(mixId, addresses)
-      handleCovertSupport(mixId, "", lastErgRing)
+      val covertAddresses = addresses.map({(mixId, _)})
+      val asset = CovertAsset(mixId, "", lastErgRing, 0L, now)
+      covertsDAO.createCovert(req, covertAddresses, asset)
       logger.info(s"covert address $mixId is created, addr: $depositAddress. you can add supported asset for it.")
       depositAddress
     }
@@ -124,7 +128,7 @@ class ErgoMixer @Inject()(
    */
   def updateMixWithdrawAddress(mixId: String, address: String): Unit = {
     okAddresses(Seq(address))
-    mixingRequestsDAO.updateAddress(mixId, address)
+    daoUtils.awaitResult(mixingRequestsDAO.updateAddress(mixId, address))
   }
 
   /**
@@ -183,7 +187,8 @@ class ErgoMixer @Inject()(
   def withdrawMixNow(mixId: String): Unit = {
     val address = getWithdrawAddress(mixId)
     if (address.nonEmpty) {
-      mixingRequestsDAO.updateWithdrawStatus(mixId, WithdrawRequested.value)
+      if (Configs.hopRounds > 0 && daoUtils.awaitResult(mixingRequestsDAO.isMixingErg(mixId))) daoUtils.awaitResult(mixingRequestsDAO.updateWithdrawStatus(mixId, HopRequested.value))
+      else daoUtils.awaitResult(mixingRequestsDAO.updateWithdrawStatus(mixId, WithdrawRequested.value))
     } else throw new Exception("Set a valid withdraw address first!")
   }
 
@@ -333,8 +338,8 @@ class ErgoMixer @Inject()(
    * @return (total, completed, withdrawn) numbers of this group
    */
   def getFinishedForGroup(groupId: String): (Long, Long, Long) = {
-    val withdrawn = mixingRequestsDAO.countWithdrawn(groupId, MixWithdrawStatus.Withdrawn.value)
-    val finished = mixingRequestsDAO.countFinished(groupId, Complete)
+    val withdrawn = mixingRequestsDAO.countWithdrawn(groupId)
+    val finished = mixingRequestsDAO.countFinished(groupId)
     val all = mixingRequestsDAO.countAll(groupId)
     (daoUtils.awaitResult(all).toLong, daoUtils.awaitResult(finished).toLong, daoUtils.awaitResult(withdrawn).toLong)
   }
@@ -415,6 +420,31 @@ class ErgoMixer @Inject()(
     val req: MixCovertRequest = daoUtils.awaitResult(mixingCovertRequestDAO.selectCovertRequestByMixGroupId(covertId)).getOrElse(throw new Exception(s"covertId $covertId not found in MIXING_COVERT_REQUEST"))
     val wallet = new Wallet(req.masterKey)
     (req.depositAddress, wallet.getSecret(-1, req.isManualCovert))
+  }
+
+  /**
+   * TODO: remove this after next release
+   * checks and updates state of group mixes which are already complete
+   *
+   */
+  def updateGroupMixesStates(): Unit = {
+    val groupIds: Seq[String] = daoUtils.awaitResult(mixingGroupRequestDAO.allIds)
+    groupIds.foreach(groupId => {
+      val numRunning = daoUtils.awaitResult(mixingRequestsDAO.countNotWithdrawn(groupId))
+      if (numRunning == 0) { // group mix is done because all mix boxes are withdrawn
+        mixingGroupRequestDAO.updateStatusById(groupId, GroupMixStatus.Complete.value)
+      }
+    })
+  }
+
+  /**
+   * returns last round number of mixId
+   *
+   * @param mixId String
+   */
+  def getHopRound(mixId: String): Int = {
+    val hopRounds = daoUtils.awaitResult(hopMixDAO.getHopRound(mixId))
+    if (hopRounds.nonEmpty) hopRounds.get else -1
   }
 
 }
