@@ -16,7 +16,8 @@ trait ConfigHelper {
    */
   def readKey(key: String, default: String = null): String = {
     try {
-      if (config.has(key)) config.getOptional[String](key).getOrElse(default)
+      if (config.has(key)) config.getOptional[String](key).get
+      else if(default.nonEmpty) default
       else throw config.reportError(key, s"${key} is required.")
     } catch {
       case ex: Throwable =>

@@ -187,7 +187,8 @@ class ErgoMixer @Inject()(
   def withdrawMixNow(mixId: String): Unit = {
     val address = getWithdrawAddress(mixId)
     if (address.nonEmpty) {
-      if (Configs.hopRounds > 0 && daoUtils.awaitResult(mixingRequestsDAO.isMixingErg(mixId))) daoUtils.awaitResult(mixingRequestsDAO.updateWithdrawStatus(mixId, HopRequested.value))
+      if (daoUtils.awaitResult(mixingRequestsDAO.isMixingErg(mixId)) && Configs.hopRounds > 0)
+        daoUtils.awaitResult(mixingRequestsDAO.updateWithdrawStatus(mixId, HopRequested.value))
       else daoUtils.awaitResult(mixingRequestsDAO.updateWithdrawStatus(mixId, WithdrawRequested.value))
     } else throw new Exception("Set a valid withdraw address first!")
   }
