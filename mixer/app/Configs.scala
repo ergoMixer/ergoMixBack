@@ -55,5 +55,11 @@ object Configs extends ConfigHelper {
   lazy val stopMixingWhenReachedThreshold: Boolean = readKey("stopMixingWhenReachedThreshold", "true").toBoolean
 
   lazy val hopRounds: Int = readKey("hopRounds", "0").toInt
+  lazy val bestBlockId: String = readKey("bestBlockId")
+  lazy val stealthImplementorFee: Long = readKey("fees.stealthImplementorFee").toLong
+  lazy val stealthTransactionFeePercent: Double = readKey("fees.stealthTransactionFeePercent").toDouble
+
+  lazy val stealthScanInterval: Int = readKey("stealthScanInterval").toInt
+  lazy val stealthSpendInterval: Int = readKey("stealthSpendInterval").toInt
 
 }

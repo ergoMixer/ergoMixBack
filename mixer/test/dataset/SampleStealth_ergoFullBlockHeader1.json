@@ -1,0 +1,24 @@
+{
+  "extensionId" : "91e3af2f22f25ddda8d1c92c09c0c35eea0136e8995ab54d0acbef9bc57ecbfc",
+  "difficulty" : "4850122752",
+  "votes" : "000000",
+  "timestamp" : 1644589275733,
+  "size" : 221,
+  "stateRoot" : "0fbee9243ca157f583116648df3b56386cd6299bc72c77de8365a6968bc2cf5915",
+  "height" : 138778,
+  "nBits" : 83960087,
+  "version" : 2,
+  "id" : "b39e2bf2f432329af48bc4bf5bcf91152286ad1539c34c254ec187cb7d353c7b",
+  "adProofsRoot" : "3c250115177f1b75971759a4c109fe56adef24dac4d8b1474a04443496e7e2c0",
+  "transactionsRoot" : "4e01bc6d0df21204724ed8637bf0c225c3065354804e609c3bcf6dd740729402",
+  "extensionHash" : "55403943dbc267d175a1bb7e54c0a8f30b54514a95db72f7d07a10aa428435a2",
+  "powSolutions" : {
+    "pk" : "02c968d8d8c6eafb8f4682c6959a7b2073ae2dfae02eb20a3be82e4b497d5e6c53",
+    "w" : "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+    "n" : "00000001fae737bf",
+    "d" : 0
+  },
+  "adProofsId" : "670f62c81b4041bfbd4afac9138a1b99745229368fbd4ab744c50b285ee34998",
+  "transactionsId" : "590e8db8255ea59e71e600b2158a36928066f2b982d469f31e018ec106ae3ee4",
+  "parentId" : "d154d281426c06b453b704988b8d156f31efc4ef77e91f00edd4b735569f9afc"
+}

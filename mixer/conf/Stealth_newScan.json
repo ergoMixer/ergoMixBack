@@ -1,0 +1,7 @@
+{
+  "scanName": "simple scan",
+  "trackingRule": {
+    "predicate": "containsAsset",
+    "assetId": "72c3fbce3243d491d81eb564cdab1662b1f8d4c7e312b88870cec79b7cfd4321"
+  }
+}

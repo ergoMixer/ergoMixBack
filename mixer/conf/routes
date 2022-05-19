@@ -59,3 +59,11 @@ GET         /info                              controllers.ApiController.getInfo
 POST        /exit                              controllers.ApiController.exit
 GET         /backup                            controllers.ApiController.backup
 POST        /restore                           controllers.ApiController.restore
+
+# stealth routes
+POST        /stealth                                   controllers.StealthApiController.createStealthAddress
+GET         /stealth                                   controllers.StealthApiController.getStealthAddresses
+GET         /stealth/address/:pk                       controllers.StealthApiController.generateStealthAddress(pk: String)
+GET         /stealth/:stealthId                        controllers.StealthApiController.getStealthAddress(stealthId: String)
+GET         /stealth/:stealthId/getUnspentBoxes        controllers.StealthApiController.getUnspentBoxes(stealthId: String)
+POST        /stealth/:stealthId/spend                  controllers.StealthApiController.setSpendAddress(stealthId: String)

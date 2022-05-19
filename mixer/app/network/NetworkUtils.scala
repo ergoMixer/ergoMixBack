@@ -1,10 +1,12 @@
 package network
 
 import app._
+
 import javax.inject.{Inject, Singleton}
 import mixinterface.TokenErgoMix
 import models.Models
 import models.Models.OutBox
+import network.GetURL.getOrErrorStr
 import org.ergoplatform.appkit.{BlockchainContext, ErgoClient, InputBox}
 import play.api.Logger
 import wallet.WalletHelper
@@ -203,4 +205,16 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
     }
   }.getOrElse(false)
 
+  /** parsing json result to a string
+   *
+   * @param url url of request
+   * @return string related to result json
+   */
+  def getJsonAsString(url: String): String = {
+    getOrErrorStr(url) match {
+      case Right(Some(json)) => json
+      case Right(None) => throw new Exception("Node returned error 404")
+      case Left(ex) => throw ex
+    }
+  }
 }
