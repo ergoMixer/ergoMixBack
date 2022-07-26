@@ -1,5 +1,9 @@
 package dao
 
+import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
+import slick.jdbc.JdbcProfile
+import spire.ClassTag
+
 import java.util.concurrent.Executors
 import javax.inject.Inject
 import scala.concurrent.duration.Duration

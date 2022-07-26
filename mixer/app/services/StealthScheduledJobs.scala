@@ -9,7 +9,6 @@ object StealthJobsInfo {
   val initBestBlockInDb = "store best block in db"
   val blockChainScan = "block scanned"
   val spendStealth = "spend stealth boxes"
-  val registerScan = "registering new scan"
 }
 
 class StealthJobs(scanner: ScannerTask, initBestBlock: InitBestBlockTask) extends Actor with ActorLogging {
@@ -22,9 +21,6 @@ class StealthJobs(scanner: ScannerTask, initBestBlock: InitBestBlockTask) extend
     case StealthJobsInfo.initBestBlockInDb =>
       logger.info("Start job Store Best Block task.")
       Try(initBestBlock.store_block())
-    case StealthJobsInfo.registerScan =>
-      logger.info("Start job register scan task.")
-      Try(scanner.scanRegister())
     case StealthJobsInfo.blockChainScan =>
       logger.info("Start job scanner task.")
       Try(scanner.start())

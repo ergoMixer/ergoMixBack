@@ -1,14 +1,11 @@
 package dao.stealth
 
-import dao.DAOUtils
-
 import javax.inject.{Inject, Singleton}
 import models.StealthModels.ExtractedTransactionModel
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 
-import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future}
 
 trait TransactionComponent { self: HasDatabaseConfigProvider[JdbcProfile] =>
   import profile.api._

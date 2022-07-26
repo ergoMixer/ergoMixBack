@@ -3,9 +3,7 @@ package stealth
 import app.Configs
 import io.circe.Decoder
 import io.circe.parser.parse
-import models.StealthModels.{ExtractionInputResult, ExtractionInputResultModel, ExtractionOutputResult, ExtractionOutputResultModel, ExtractionResultModel, ExtractionRulesModel, ScanModel}
-import models.StealthModels.Types.ScanId
-import network.GetURL.getOrErrorStr
+import models.StealthModels.{ExtractionInputResult, ExtractionInputResultModel, ExtractionOutputResult, ExtractionOutputResultModel, ExtractionResultModel}
 import network.NetworkUtils
 import org.ergoplatform.ErgoBox
 import org.ergoplatform.modifiers.ErgoFullBlock
@@ -82,23 +80,8 @@ class NodeProcess @Inject()(networkUtils: NetworkUtils){
     false
   }
 
-  /**
-   *
-   * @param box   ErgoBox
-   * @param rules scanRules
-   * @return Seq[ScanId], Sequence of match rules (scanID)
-   */
-  def checkBox(box: ErgoBox, rules: Seq[ScanModel]): Seq[ScanId] = {
-    var validScanIds: Seq[ScanId] = Seq.empty
-    rules.foreach(scanRule => {
-      if (checkStealth(box)) validScanIds = validScanIds :+ scanRule.scanId
-    })
-    validScanIds
-  }
-
   def processTransactions(
                            headerId: String,
-                           extractionRules: ExtractionRulesModel
                          ): ExtractionResultModel = {
 
     val ergoFullBlock = mainChainFullBlockWithHeaderId(headerId).get
@@ -116,14 +99,13 @@ class NodeProcess @Inject()(networkUtils: NetworkUtils){
           )
       }
       tx.outputs.foreach { out =>
-        val scanIds = checkBox(out, extractionRules.scans)
-        if (scanIds.nonEmpty)
+        if (checkStealth(out)) {
           createdOutputs += ExtractionOutputResult(
             out,
             ergoFullBlock.header,
-            tx,
-            scanIds
+            tx
           )
+        }
       }
     }
     ExtractionResultModel(extractedInputs, createdOutputs)

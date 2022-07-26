@@ -4,14 +4,12 @@ import dao.DAOUtils
 
 import javax.inject.{Inject, Singleton}
 import models.StealthModels.ExtractedOutputModel
-import models.StealthModels.Types.ScanId
 import org.ergoplatform.ErgoBox
 import org.ergoplatform.wallet.boxes.ErgoBoxSerializer
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 
-import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future}
 
 trait OutputComponent { self: HasDatabaseConfigProvider[JdbcProfile] =>
   import profile.api._
@@ -53,14 +51,13 @@ trait OutputComponent { self: HasDatabaseConfigProvider[JdbcProfile] =>
 
 @Singleton()
 class OutputDAO @Inject() (protected val dbConfigProvider: DatabaseConfigProvider, daoUtils: DAOUtils)(implicit executionContext: ExecutionContext)
-  extends OutputComponent with ExtractedBlockComponent with ScanComponent
+  extends OutputComponent with ExtractedBlockComponent
     with HasDatabaseConfigProvider[JdbcProfile] {
 
   import profile.api._
 
   val outputs = TableQuery[OutputTable]
   val outputsFork = TableQuery[OutputForkTable]
-  val scan_outputs = TableQuery[ScanOutputsPivotTable]
   val extractedBlocks = TableQuery[ExtractedBlockTable]
 
   /**
@@ -130,17 +127,16 @@ class OutputDAO @Inject() (protected val dbConfigProvider: DatabaseConfigProvide
 
   /**
   *
-   * @param scanId Types.ScanId (Int)
    * @param maxHeight Int
    * @param minInclusionHeight Int
    * @return Sequence of Ergo boxes that are unspent and mined before "maxHeight" (for consider minConfirmation) and also mined after "minInclusionHeight"
    */
-  def selectUnspentBoxesWithScanId(scanId: ScanId, maxHeight: Int, minInclusionHeight: Int): Seq[ErgoBox] = {
+  def selectUnspentBoxes(maxHeight: Int, minInclusionHeight: Int): Seq[ErgoBox] = {
     val query = for {
-      ((scans, outs), blocks) <- scan_outputs.filter(_.scanId === scanId) join
-        outputs.filter(!_.spent) on ((scanFK, output) => {scanFK.boxId === output.boxId && scanFK.headerId === output.headerId}) join
-        extractedBlocks.filter(block =>  {block.height <= maxHeight && block.height > minInclusionHeight}) on (_._2.headerId === _.id)
-    } yield (outs.bytes)
+      (outs, _) <-
+        outputs.filter(!_.spent) join
+        extractedBlocks.filter(block =>  {block.height <= maxHeight && block.height > minInclusionHeight}) on (_.headerId === _.id)
+    } yield outs.bytes
     daoUtils.execAwait(query.result).map(ErgoBoxSerializer.parseBytes)
   }
 
@@ -169,7 +165,7 @@ class OutputDAO @Inject() (protected val dbConfigProvider: DatabaseConfigProvide
   def selectUnspentBoxesByStealthId(stealthId: String): Seq[ErgoBox] = {
     val query = for {
       outs <-  outputs.filter(req => !req.spent && req.stealthId === stealthId)
-    } yield (outs.bytes)
+    } yield outs.bytes
     daoUtils.execAwait(query.result).map(ErgoBoxSerializer.parseBytes)
   }
 

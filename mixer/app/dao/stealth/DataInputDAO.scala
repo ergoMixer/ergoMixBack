@@ -2,12 +2,9 @@ package dao.stealth
 
 import javax.inject.{Inject, Singleton}
 import models.StealthModels._
-
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
-
-import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future}
 
 trait DataInputComponent { self: HasDatabaseConfigProvider[JdbcProfile] =>
   import profile.api._

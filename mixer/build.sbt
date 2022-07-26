@@ -8,7 +8,7 @@ libraryDependencies += filters
 
 lazy val commonSettings = Seq(
   organization := "ergoMixer",
-  version := "4.1.1",
+  version := "3.3.5",
   scalaVersion := "2.12.10",
   resolvers ++= Seq(
     Resolver.sonatypeRepo("public"),
@@ -45,6 +45,7 @@ publishArtifact in Test := true
 fullClasspath in assembly += Attributed.blank(PlayKeys.playPackageAssets.value)
 
 assemblyMergeStrategy in assembly := {
+  case "logback.xml" => MergeStrategy.first
   case PathList("reference.conf") => MergeStrategy.concat
   case manifest if manifest.contains("MANIFEST.MF") => MergeStrategy.discard
   case manifest if manifest.contains("module-info.class") => MergeStrategy.discard
@@ -67,18 +68,19 @@ libraryDependencies ++= Seq(
   "org.apache.commons" % "commons-lang3" % "3.11",
   "org.webjars" % "swagger-ui" % "3.38.0",
   "com.typesafe.play" %% "play-slick" % "4.0.0",
-  "com.typesafe.play" %% "play-slick-evolutions" % "4.0.0"
+  "com.typesafe.play" %% "play-slick-evolutions" % "4.0.0",
+  ("org.ergoplatform" %% "ergo" % "v4.0.13-5251a78b-SNAPSHOT")
+    .excludeAll(
+      ExclusionRule(organization = "com.typesafe.akka"),
+      ExclusionRule(organization = "ch.qos.logback"),
+      ExclusionRule(organization = "org.ethereum"),
+      ExclusionRule(organization = "javax.xml.bind"),
+    ).force(),
+  "org.scalaj" %% "scalaj-http" % "2.3.0",
 )
 
 enablePlugins(JDKPackagerPlugin)
-(antPackagerTasks in JDKPackager) := (antPackagerTasks in JDKPackager).value orElse {
-  for {
-    f <- System.getProperty("os.name").toLowerCase match { 
-         case win if win.contains("win")  => Some(file(sys.env("JAVA_HOME") ++ "\\lib\\ant-javafx.jar"))
-         case osName => Some(file(sys.env("JAVA_HOME") ++ "/lib/ant-javafx.jar"))
-         } if f.exists()
-  } yield f
-}
+(antPackagerTasks in JDKPackager) := Some(file(sys.env.getOrElse("ANT_PATH", "/usr/lib/jvm/java-8-oracle/lib/ant-javafx.jar")))
 
 lazy val root = (project in file("."))
   .enablePlugins(PlayScala, BuildInfoPlugin)

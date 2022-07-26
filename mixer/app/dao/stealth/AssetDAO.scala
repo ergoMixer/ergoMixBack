@@ -1,13 +1,11 @@
 package dao.stealth
 
-import dao.DAOUtils
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 import models.StealthModels.ExtractedAssetModel
 
 import javax.inject.{Inject, Singleton}
-import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future}
 
 trait AssetComponent { self: HasDatabaseConfigProvider[JdbcProfile] =>
   import profile.api._

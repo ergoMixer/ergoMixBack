@@ -2,7 +2,6 @@ package dao.stealth
 
 import dao.DAOUtils
 import helpers.ErrorHandler.notFoundHandle
-import play.api.Logger
 
 import javax.inject.Inject
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}

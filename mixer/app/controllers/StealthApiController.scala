@@ -27,8 +27,6 @@ class StealthApiController @Inject()(controllerComponents: ControllerComponents,
                                      networkUtils: NetworkUtils, explorer: BlockExplorer,
                              )(implicit ec: ExecutionContext) extends AbstractController(controllerComponents) {
 
-  import networkUtils._
-
   private val logger: Logger = Logger(this.getClass)
 
   /**

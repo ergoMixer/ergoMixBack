@@ -1,10 +1,9 @@
 package models
 
 import org.ergoplatform.{DataInput, ErgoBox, Input}
-import org.ergoplatform.http.api.ApiCodecs
 import org.ergoplatform.modifiers.history.Header
 import org.ergoplatform.modifiers.mempool.ErgoTransaction
-import org.ergoplatform.nodeView.wallet.scanning.{ScanningPredicate, ScanningPredicateJsonCodecs}
+import org.ergoplatform.nodeView.wallet.scanning.ScanningPredicate
 import org.ergoplatform.wallet.boxes.ErgoBoxSerializer
 import scorex.util.ModifierId
 import scorex.util.encode.Base16
@@ -12,31 +11,11 @@ import sigmastate.serialization.ValueSerializer
 
 object StealthModels {
   object Types {
-    type ScanId = Int
     type Identifier = String
   }
 
   case class ScanControllerModel(scanName: String, trackingRule: ScanningPredicate)
 
-  case class ScanModel(scanId: Types.ScanId, scanName: String, trackingRule: ScanningPredicate)
-
-  object Scan extends ApiCodecs {
-
-    def apply(scanControllerModel: ScanControllerModel): ScanModel = ScanModel(1, scanControllerModel.scanName, scanControllerModel.trackingRule)
-
-    import ScanningPredicateJsonCodecs._
-    import io.circe._, io.circe.generic.semiauto._
-
-    implicit val scanDecoder: Decoder[ScanControllerModel] = deriveDecoder[ScanControllerModel]
-    implicit val scanEncoder: Encoder[ScanModel] = deriveEncoder[ScanModel]
-
-    def apply(jsonString: String): ScanControllerModel = {
-      parser.decode[ScanControllerModel](jsonString) match {
-        case Left(e) => throw new Exception(s"Error while parsing ScanControllerModel from Json: $e")
-        case Right(req) => req
-      }
-    }
-  }
 
   case class ExtractedBlockModel(headerId: String, parentId: String, height: Int, timestamp: Long)
 
@@ -45,8 +24,6 @@ object StealthModels {
       ExtractedBlockModel(header.id, header.parentId, header.height, header.timestamp)
     }
   }
-
-  case class ExtractionRulesModel(scans: Seq[ScanModel])
 
   case class ExtractedTransactionModel(id: String, headerId: String, inclusionHeight: Int, timestamp: Long)
 
@@ -99,10 +76,10 @@ object StealthModels {
     }
   }
 
-  case class ExtractionOutputResultModel(extractedOutput: ExtractedOutputModel, extractedRegisters: Seq[ExtractedRegisterModel], extractedAssets: Seq[ExtractedAssetModel], extractedTransaction: ExtractedTransactionModel, extractedDataInput: Seq[ExtractedDataInputModel], scanIds: Seq[Types.ScanId])
+  case class ExtractionOutputResultModel(extractedOutput: ExtractedOutputModel, extractedRegisters: Seq[ExtractedRegisterModel], extractedAssets: Seq[ExtractedAssetModel], extractedTransaction: ExtractedTransactionModel, extractedDataInput: Seq[ExtractedDataInputModel])
 
   object ExtractionOutputResult {
-    def apply(ergoBox: ErgoBox, header: Header, tx: ErgoTransaction, scanIds: Seq[Types.ScanId]): ExtractionOutputResultModel = {
+    def apply(ergoBox: ErgoBox, header: Header, tx: ErgoTransaction): ExtractionOutputResultModel = {
       val extractedOutput = ExtractedOutput(ergoBox, header)
       val extractedRegisters = ergoBox.additionalRegisters.map(
         register => ExtractedRegister(register, ergoBox)
@@ -115,7 +92,7 @@ object StealthModels {
       val extractedDataInputs = tx.dataInputs.zipWithIndex.map {
         case (dataInput, index) => ExtractedDataInput(dataInput, index.toShort, tx.id, header)
       }
-      ExtractionOutputResultModel(extractedOutput, extractedRegisters.toSeq, extractedAssets.toSeq, extractedTransaction, extractedDataInputs, scanIds)
+      ExtractionOutputResultModel(extractedOutput, extractedRegisters.toSeq, extractedAssets.toSeq, extractedTransaction, extractedDataInputs)
     }
   }
 

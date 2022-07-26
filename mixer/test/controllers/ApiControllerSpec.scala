@@ -1,6 +1,0 @@
-package controllers
-
-class ApiControllerSpec  {
-
-}
-

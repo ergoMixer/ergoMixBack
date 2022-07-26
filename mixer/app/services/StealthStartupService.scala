@@ -35,12 +35,6 @@ class StealthStartupService @Inject()(appLifecycle: ApplicationLifecycle,
       message = StealthJobsInfo.initBestBlockInDb
     )
 
-    system.scheduler.scheduleOnce(
-      delay = 5.seconds,
-      receiver = jobs,
-      message = StealthJobsInfo.registerScan
-    )
-
     system.scheduler.scheduleAtFixedRate(
       initialDelay = 10.seconds,
       interval = Configs.stealthScanInterval.seconds,

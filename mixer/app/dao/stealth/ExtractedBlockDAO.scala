@@ -39,7 +39,7 @@ class ExtractedBlockDAO @Inject() (protected val dbConfigProvider: DatabaseConfi
 
   import profile.api._
 
-  val timeout = 5.second
+  val timeout: FiniteDuration = 5.second
   val extractedBlocks = TableQuery[ExtractedBlockTable]
   val extractedBlocksFork = TableQuery[ExtractedBlockForkTable]
 
