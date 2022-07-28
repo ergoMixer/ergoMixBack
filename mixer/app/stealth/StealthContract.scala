@@ -259,6 +259,14 @@ class StealthContract @Inject()(stealthDAO: StealthDAO,
       }
     }
 
+    def getTokens(inputList: List[InputBox]): Seq[ErgoToken] = {
+      val inputsTokens = mutable.Buffer[ErgoToken]()
+      inputList.foreach( input =>{
+        input.getTokens.forEach(token => inputsTokens += token)
+      })
+      inputsTokens
+    }
+
     def feeCalculator(inputList: List[InputBox]): Long = {
       val values = inputList.map(_.getValue.toLong).sum
       (values * Configs.stealthTransactionFeePercent).toLong + Configs.stealthImplementorFee
@@ -303,12 +311,13 @@ class StealthContract @Inject()(stealthDAO: StealthDAO,
             val start = i * Configs.maxIns
             val inputBoxList = inputs.slice(start, start + Configs.maxIns)
 
-
+            val tokens = getTokens(inputBoxList.toList)
             val txB = ctx.newTxBuilder()
             val fee = feeCalculator(inputBoxList.toList)
 
             val output = txB.outBoxBuilder()
               .value(inputBoxList.map(_.getValue.toLong).sum - fee)
+              .tokens(tokens:_*)
               .contract(new ErgoTreeContract(WalletHelper.getAddress(address).script))
               .build()
 
