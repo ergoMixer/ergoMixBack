@@ -23,22 +23,11 @@ class MockedNodeProcess {
 
 
   def storeData(): Unit = {
-    val (header1, header2) = dataset.newHeader
-    when(mockedNodeProcess.mainChainHeaderIdAtHeight(any())).thenReturn(
-      Option[String] {
-        header1.id
+    when(mockedNodeProcess.mainChainHeaderWithHeaderId(any())).thenReturn(
+      Option[Header] {
+        dataset.newHeader._2
       }
     )
-    when(mockedNodeProcess.mainChainHeaderAtHeight(any())).thenAnswer(item => {
-      val args = item.getArguments
-      if (args(0).asInstanceOf[Int] == header2.height) {
-        Option[Header] {
-          header2
-        }
-      } else {
-        None
-      }
-    })
   }
 
 
@@ -61,21 +50,13 @@ class MockedNodeProcess {
 
   }
 
-
   // node process mocked functions
-
-  when(mockedNodeProcess.mainChainHeaderWithHeaderId(any())).thenReturn(
-    Option[Header] {
-      dataset.newHeader._2
-    }
-  )
-
   when(mockedNodeProcess.mainChainFullBlockWithHeaderId(any())).thenReturn(
     Option[ErgoFullBlock] {
       dataset.newErgoBlock._1
     }
   )
-  when(mockedNodeProcess.processTransactions(any(), any())).thenReturn(
+  when(mockedNodeProcess.processTransactions(any())).thenReturn(
     null
   )
 

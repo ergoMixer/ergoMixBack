@@ -5,7 +5,6 @@ import io.circe.parser.parse
 import io.circe.{Json, parser}
 import models.Models._
 import io.circe.syntax._
-import models.StealthModels.{Scan, ScanControllerModel}
 import org.ergoplatform.modifiers.ErgoFullBlock
 import org.ergoplatform.modifiers.history.Header
 
@@ -286,7 +285,6 @@ object TestDataset {
 
 
 
-  private val scan: ScanControllerModel = Scan(readJsonFile("./test/dataset/SampleStealth_newScan.json"))
   private val header1 = parse(readJsonFile("./test/dataset/SampleStealth_ergoFullBlockHeader1.json")).toOption.get.as[Header].toOption.get
   private val header2 = parse(readJsonFile("./test/dataset/SampleStealth_ergoFullBlockHeader2.json")).toOption.get.as[Header].toOption.get
   private val ergoBlock1 = parse(readJsonFile("./test/dataset/SampleStealth_ergoFullBlock1.json")).toOption.get.as[ErgoFullBlock].toOption.get
@@ -296,9 +294,7 @@ object TestDataset {
   private val headerIdJson: String = Seq[String](s"${header1.id}").asJson.toString()
   private val blockJson: String = readJsonFile("./test/dataset/SampleStealth_ergoFullBlock1.json")
 
-  def newScan: ScanControllerModel = {
-    scan
-  }
+
   def newHeader : (Header, Header) = (header1, header2)
   def newErgoBlock : (ErgoFullBlock, ErgoFullBlock) = (ergoBlock1, ergoBlock2)
 

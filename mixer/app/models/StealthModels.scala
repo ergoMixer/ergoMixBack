@@ -14,9 +14,6 @@ object StealthModels {
     type Identifier = String
   }
 
-  case class ScanControllerModel(scanName: String, trackingRule: ScanningPredicate)
-
-
   case class ExtractedBlockModel(headerId: String, parentId: String, height: Int, timestamp: Long)
 
   object ExtractedBlock {

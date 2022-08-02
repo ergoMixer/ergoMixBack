@@ -46,6 +46,10 @@ class RegisterDAO @Inject() (protected val dbConfigProvider: DatabaseConfigProvi
    */
   def insert(registers: Seq[ExtractedRegisterModel]): DBIO[Option[Int]] = this.registers ++= registers
 
+  def deleteAll(): Unit = {
+    db.run(registers.delete)
+  }
+
   /**
    * exec insert query
    * @param registers Seq of register

@@ -3,7 +3,7 @@ package dao.stealth
 import dao.DAOUtils
 
 import javax.inject.{Inject, Singleton}
-import models.StealthModels.ExtractedOutputModel
+import models.StealthModels.{ExtractedOutputModel, StealthSpendAddress}
 import org.ergoplatform.ErgoBox
 import org.ergoplatform.wallet.boxes.ErgoBoxSerializer
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
@@ -71,6 +71,10 @@ class OutputDAO @Inject() (protected val dbConfigProvider: DatabaseConfigProvide
    * @param outputs Seq of output
    */
   def insert(outputs: Seq[ExtractedOutputModel]): DBIO[Option[Int]] = this.outputs ++= outputs
+
+  def deleteAll(): Unit = {
+    db.run(outputs.delete)
+  }
 
   /**
    * exec insert query

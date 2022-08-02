@@ -17,9 +17,8 @@ import org.ergoplatform.wallet.boxes.ErgoBoxSerializer
 import play.api.Logger
 import wallet.WalletHelper.addressEncoder
 import RegexUtils._
-import io.circe.Encoder
-import org.ergoplatform.wallet.serialization.JsonCodecsWrapper
-import slick.dbio.DBIO
+import helpers.StealthUtils
+import slick.dbio.{DBIO, DBIOAction}
 
 import java.util.UUID
 import javax.inject.Inject
@@ -28,6 +27,7 @@ import scala.language.postfixOps
 import scala.collection.JavaConverters._
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
+import scala.util.{Failure, Success, Try}
 import scala.util.control.Breaks._
 
 class StealthContract @Inject()(stealthDAO: StealthDAO,
@@ -103,7 +103,7 @@ class StealthContract @Inject()(stealthDAO: StealthDAO,
     val u: GroupElement = WalletHelper.hexToGroupElement(pkHex)
     val pattern = """[a-fA-F0-9]{2}(1004)((0e21)[a-fA-F0-9]{66}){4}(ceee7300ee7301ee7302ee7303)[a-fA-F0-9]{8}""".r
 
-    def getDHTDataInHex(base: GroupElement, power: BigInt): String ={
+    def getDHTDataInHex(base: GroupElement, power: BigInt): String = {
       Base64.encode(base.exp(power.bigInteger).getEncoded.toArray)
     }
 
@@ -214,24 +214,19 @@ class StealthContract @Inject()(stealthDAO: StealthDAO,
    * */
   def setSpendAddress(stealthId: String, data: List[StealthSpendAddress]): Unit = {
     try {
-
       val boxIds = data.map(_.boxId)
-      val action = DBIO.seq(
-        DBIO.successful({
-        val stealthIds = daoUtils.awaitResult(outputDAO.getStealthIdByIds(boxIds))
-        stealthIds.foreach(sId => if (sId != stealthId) throw new Exception("box's stealthId is not correct"))
-      }),
-      DBIO.successful({
-        data.foreach(item => outputDAO.addSpendAddressIfExist(item.boxId, item.address))
-      })
-      )
-      val response = daoUtils.execTransact(action)
+      val stealthIds = daoUtils.awaitResult(outputDAO.getStealthIdByIds(boxIds))
+      stealthIds.foreach(sId => if (sId != stealthId) throw new Exception("box's stealthId is not correct"))
+      val action =
+        for (item <- data)
+          yield DBIO.successful({
+            outputDAO.addSpendAddressIfExist(item.boxId, item.address)
+          })
+      val response = daoUtils.execTransact(DBIO.sequence(action))
       Await.result(response, Duration.Inf)
-    }
-    catch {
+    } catch {
       case e: Exception =>
         logger.error(e.getMessage)
-        throw new Exception(e.getMessage)
     }
   }
 
@@ -242,40 +237,7 @@ class StealthContract @Inject()(stealthDAO: StealthDAO,
    * @return
    * */
   def spendStealthBoxes(sendTransaction: Boolean = true): Unit = {
-
-    def convertToInputBox(box: ErgoBox): InputBox = {
-      val tokens = mutable.Buffer[ErgoToken]()
-      box.additionalTokens.toArray.foreach(token =>
-        tokens += new ErgoToken(token._1, token._2)
-      )
-      networkUtils.usingClient { implicit ctx =>
-        val txB = ctx.newTxBuilder()
-        val input = txB.outBoxBuilder()
-          .value(box.value)
-          .tokens(tokens: _*)
-          .contract(new ErgoTreeContract(box.ergoTree))
-          .build().convertToInputWith(box.id.toString, 1)
-        input
-      }
-    }
-
-    def getTokens(inputList: List[InputBox]): Seq[ErgoToken] = {
-      val inputsTokens = mutable.Buffer[ErgoToken]()
-      inputList.foreach( input =>{
-        input.getTokens.forEach(token => inputsTokens += token)
-      })
-      inputsTokens
-    }
-
-    def feeCalculator(inputList: List[InputBox]): Long = {
-      val values = inputList.map(_.getValue.toLong).sum
-      (values * Configs.stealthTransactionFeePercent).toLong + Configs.stealthImplementorFee
-    }
-
-    def getDHTDataFromErgoTree(ergoTree: String, start: Int, until: Int): GroupElement = {
-      WalletHelper.hexToGroupElement(ergoTree.slice(start, until))
-    }
-
+    val stealthUtils = new StealthUtils(networkUtils)
     val spendBoxList = mutable.Seq[SpendBoxModel]()
     val spendAddressList = mutable.Set[String]()
     networkUtils.usingClient { implicit ctx =>
@@ -293,10 +255,10 @@ class StealthContract @Inject()(stealthDAO: StealthDAO,
         spendBoxList.foreach(spendBox => {
           val stealth = daoUtils.awaitResult(stealthDAO.selectByStealthId(spendBox.stealthId)).get
           val ergoTreeHex = Base16.encode(spendBox.box.ergoTree.bytes)
-          val gr = getDHTDataFromErgoTree(ergoTreeHex, 8, 74)
-          val gy = getDHTDataFromErgoTree(ergoTreeHex, 78, 144)
-          val ur = getDHTDataFromErgoTree(ergoTreeHex, 148, 214)
-          val uy = getDHTDataFromErgoTree(ergoTreeHex, 218, 284)
+          val gr = stealthUtils.getDHTDataFromErgoTree(ergoTreeHex, 8, 74)
+          val gy = stealthUtils.getDHTDataFromErgoTree(ergoTreeHex, 78, 144)
+          val ur = stealthUtils.getDHTDataFromErgoTree(ergoTreeHex, 148, 214)
+          val uy = stealthUtils.getDHTDataFromErgoTree(ergoTreeHex, 218, 284)
           proverBuilder = proverBuilder.withDHTData(gr, gy, ur, uy, stealth.secret.bigInteger)
 
         })
@@ -306,18 +268,18 @@ class StealthContract @Inject()(stealthDAO: StealthDAO,
           val inputs = spendBoxList
             .filter(item => item.spendAddress == address)
             .map(_.box)
-            .map(convertToInputBox)
+            .map(stealthUtils.convertToInputBox)
           (0 until inputs.size / Configs.maxIns).foreach(i => {
             val start = i * Configs.maxIns
             val inputBoxList = inputs.slice(start, start + Configs.maxIns)
 
-            val tokens = getTokens(inputBoxList.toList)
+            val tokens = stealthUtils.getTokens(inputBoxList.toList)
             val txB = ctx.newTxBuilder()
-            val fee = feeCalculator(inputBoxList.toList)
+            val fee = stealthUtils.feeCalculator(inputBoxList.toList)
 
             val output = txB.outBoxBuilder()
               .value(inputBoxList.map(_.getValue.toLong).sum - fee)
-              .tokens(tokens:_*)
+              .tokens(tokens: _*)
               .contract(new ErgoTreeContract(WalletHelper.getAddress(address).script))
               .build()
 

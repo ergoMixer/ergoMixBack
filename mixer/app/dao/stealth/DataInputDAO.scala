@@ -57,6 +57,10 @@ class DataInputDAO @Inject() (protected val dbConfigProvider: DatabaseConfigProv
        } yield count).transactionally
   }
 
+  def deleteAll(): Unit = {
+    db.run(dataInputs.delete)
+  }
+
   /**
    * exec insert query
    * @param inputs Seq of input

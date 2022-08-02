@@ -2,6 +2,7 @@ package stealth
 
 import dataset.TestDataset
 import mocked.MockedNetworkUtils
+import scorex.util.encode.Base16
 
 import scala.language.postfixOps
 import testHandlers.TestSuite
@@ -83,20 +84,20 @@ class NodeProcessSpec
   }
 
   /**
-   * testing processTransactions function with this given data the output should be an empty list
+   * testing processTransactions function with this given data the output should not be an empty list
    * Dependencies:
    * network
    * Procedure:
-   * checking function output (list of trigger events) with this test data must be empty
+   * checking function output (list of trigger events) with this test data must not be empty
    * Expected Output:
-   * an empty list
+   * not empty list
    */
-  property("testing processTransactions function with this given data the output should be an empty list") {
+  property("testing processTransactions function with this given data the output should not be an empty list") {
     val networkUtils = new MockedNetworkUtils
     val nodeProcess = new NodeProcess(networkUtils.getMocked)
 
-    val result = nodeProcess.processTransactions(dataset.newHeader._1.id, stealthDaoContext.scanDAO.selectAll)
-    result.createdOutputs.length should be(0)
+    val result = nodeProcess.processTransactions(dataset.newHeader._1.id)
+    result.createdOutputs.length should not be 0
   }
 
 }

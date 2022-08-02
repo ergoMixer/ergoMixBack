@@ -51,6 +51,9 @@ class AssetDAO @Inject() (protected val dbConfigProvider: DatabaseConfigProvider
    */
   def insert(assets: Seq[ExtractedAssetModel]): DBIO[Option[Int]] = this.assets ++= assets
 
+  def deleteAll(): Unit = {
+    db.run(assets.delete)
+  }
 
   def save(assets: Seq[ExtractedAssetModel]): Future[Unit] = {
     db.run(insert(assets)).map(_ => ())

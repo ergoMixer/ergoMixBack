@@ -51,6 +51,11 @@ class InputDAO @Inject() (protected val dbConfigProvider: DatabaseConfigProvider
    */
   def insert(inputs: Seq[ExtractedInputModel]): DBIO[Option[Int]] = this.inputs ++= inputs
 
+
+  def deleteAll(): Unit = {
+    db.run(inputs.delete)
+  }
+
   /**
    * exec insert query
    * @param inputs Seq of input

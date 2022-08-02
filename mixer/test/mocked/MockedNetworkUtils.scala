@@ -6,6 +6,7 @@ import org.mockito.Mockito.when
 import org.mockito.invocation.InvocationOnMock
 import org.scalatestplus.mockito.MockitoSugar
 import app._
+import dataset.TestDataset
 import mixinterface.TokenErgoMix
 import org.ergoplatform.appkit.{BlockchainContext, SignedTransaction}
 
@@ -17,6 +18,8 @@ class MockedNetworkUtils
   with HttpClientTesting {
 
   private val networkUtils = mock[NetworkUtils]
+  private val dataset = TestDataset
+
 
   def getMocked = networkUtils
 
@@ -48,5 +51,23 @@ class MockedNetworkUtils
 
   val tokenErgoMix: Option[TokenErgoMix] = networkUtils.usingClient { implicit ctx => Some(new TokenErgoMix(ctx)) }
   when(networkUtils.tokenErgoMix).thenReturn(tokenErgoMix)
+
+  when(networkUtils.getJsonAsString(any())).thenAnswer( item => {
+    val args = item.getArguments
+    val urlList = args(0).asInstanceOf[String].split("/")
+
+    if (urlList.length == 5) {
+      dataset.newBlockJson._3
+    }
+    else {
+      if (urlList.last == "header") {
+        dataset.newBlockJson._1
+      }
+      else if (urlList(urlList.length - 2) == "at") {
+        dataset.newBlockJson._2
+      }
+    }
+  })
+
 
 }

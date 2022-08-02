@@ -42,17 +42,14 @@ class StealthDAO @Inject() (protected val dbConfigProvider: DatabaseConfigProvid
   def insert(stealth: StealthModel): Future[Unit] = db.run(stealthQuery += stealth).map(_ => ())
 
   /**
-   * returns all addresses
+   * returns all StealthModel
    *
    */
   def all: Future[Seq[StealthModel]] = db.run(stealthQuery.result)
 
-  /**
-   * deletes all of addresses
-   *
-   */
-  def clear: Future[Unit] = db.run(stealthQuery.delete).map(_ => ())
-
+  def deleteAll(): Unit = {
+    db.run(stealthQuery.delete)
+  }
 
   /**
    * @param secret String

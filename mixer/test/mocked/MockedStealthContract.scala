@@ -11,7 +11,6 @@ import sigmastate.interpreter.CryptoConstants.dlogGroup
 import special.sigma.GroupElement
 import stealth.StealthContract
 import wallet.WalletHelper
-import wallet.WalletHelper.randomBoxId
 
 import scala.collection.mutable
 import scala.language.postfixOps
@@ -26,6 +25,12 @@ class MockedStealthContract {
 
   def getMockedStealthContract: StealthContract = mockedStealthContract
 
+  def randomId(): String = {
+    val randomBytes = Array.fill(32)((scala.util.Random.nextInt(256) - 128).toByte)
+    randomBytes.map("%02x" format _).mkString
+  }
+
+
   def generateStealthContract(g: GroupElement, x: BigInt, script: String): ErgoContract = {
     val networkUtils = new MockedNetworkUtils
 
@@ -38,7 +43,7 @@ class MockedStealthContract {
     val ur = Base64.encode(u.exp(r.bigInteger).getEncoded.toArray)
     val uy = Base64.encode(u.exp(y.bigInteger).getEncoded.toArray)
 
-    networkUtils.getMocked.usingClient(ctx=> {
+    networkUtils.getMocked.usingClient(ctx => {
       val newScript = script
         .replace("GR", gr)
         .replace("GY", gy)
@@ -52,27 +57,23 @@ class MockedStealthContract {
     })
   }
 
-  def getStealthBoxes(script: String): Seq[ErgoBox] = {
+  def getStealthBox(script: String): ErgoBox = {
     val networkUtils = new MockedNetworkUtils
 
     val x = WalletHelper.randBigInt
     val g: GroupElement = dlogGroup.generator
 
-    val outPuts = mutable.Buffer[ErgoBox]()
-    for (_ <- 0 until 5) {
-       networkUtils.getMocked.usingClient(ctx=> {
+    networkUtils.getMocked.usingClient(ctx => {
 
-        val txB = ctx.newTxBuilder()
-        val box = txB.outBoxBuilder()
-          .value(10000L)
-          .contract(generateStealthContract(g, x, script))
-          .build().convertToInputWith(randomBoxId(),1)
+      val txB = ctx.newTxBuilder()
+      val box = txB.outBoxBuilder()
+        .value(10000L)
+        .contract(generateStealthContract(g, x, script))
+        .build().convertToInputWith(randomId(), 1)
 
-        val ergoBox = new ErgoBox(box.getValue, box.getErgoTree, null  , null,  bytesToId("".getBytes()), 0, box.getCreationHeight)
-         outPuts += ergoBox
-      })
-    }
-    outPuts.toSeq
+      val ergoBox = new ErgoBox(box.getValue, box.getErgoTree, null, null, bytesToId("".getBytes()), 0, box.getCreationHeight)
+      ergoBox
+    })
   }
 
 }
