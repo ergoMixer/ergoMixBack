@@ -13,7 +13,7 @@ trait CovertDefaultsComponent {
     import profile.api._
 
     class CovertDefaultsTable(tag: Tag) extends Table[CovertAsset](tag, "COVERT_DEFAULTS") {
-        def covertId = column[String]("MIX_GROUP_ID")
+        def groupId = column[String]("MIX_GROUP_ID")
 
         def tokenId = column[String]("TOKEN_ID")
 
@@ -23,9 +23,9 @@ trait CovertDefaultsComponent {
 
         def lastActivity = column[Long]("LAST_ACTIVITY")
 
-        def * = (covertId, tokenId, ring, confirmedDeposit, lastActivity) <> (CovertAsset.tupled, CovertAsset.unapply)
+        def * = (groupId, tokenId, ring, confirmedDeposit, lastActivity) <> (CovertAsset.tupled, CovertAsset.unapply)
 
-        def pk = primaryKey("pk_COVERT_DEFAULTS", (covertId, tokenId))
+        def pk = primaryKey("pk_COVERT_DEFAULTS", (groupId, tokenId))
     }
 
 }
@@ -67,51 +67,51 @@ class CovertDefaultsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
     /**
      * checks if the pair of mixGroupId and tokenId exists in table or not
      *
-     * @param covertId String
+     * @param groupId String
      * @param tokenId String
      */
-    def exists(covertId: String, tokenId: String): Future[Boolean] = db.run(covertAssets.filter(asset => asset.covertId === covertId && asset.tokenId === tokenId).exists.result)
+    def exists(groupId: String, tokenId: String): Future[Boolean] = db.run(covertAssets.filter(asset => asset.groupId === groupId && asset.tokenId === tokenId).exists.result)
 
     /**
      * selects assets by mixGroupId
      *
-     * @param covertId String
+     * @param groupId String
      */
-    def selectAllAssetsByMixGroupId(covertId: String): Future[Seq[CovertAsset]] = db.run(covertAssets.filter(asset => asset.covertId === covertId).result)
+    def selectAllAssetsByMixGroupId(groupId: String): Future[Seq[CovertAsset]] = db.run(covertAssets.filter(asset => asset.groupId === groupId).result)
 
     /**
      * selects assets by mixGroupId and tokenId
      *
-     * @param covertId String
+     * @param groupId String
      * @param tokenId String
      */
-    def selectByGroupAndTokenId(covertId: String, tokenId: String): Future[Option[CovertAsset]] = db.run(covertAssets.filter(asset => asset.covertId === covertId && asset.tokenId === tokenId).result.headOption)
+    def selectByGroupAndTokenId(groupId: String, tokenId: String): Future[Option[CovertAsset]] = db.run(covertAssets.filter(asset => asset.groupId === groupId && asset.tokenId === tokenId).result.headOption)
 
     /**
-     * updates ring by pair of covertId and tokenId
+     * updates ring by pair of groupId and tokenId
      *
-     * @param covertId String
+     * @param groupId String
      * @param tokenId String
      * @param ring Long
      */
-    def updateRing(covertId: String, tokenId: String, ring: Long): Future[Unit] = {
+    def updateRing(groupId: String, tokenId: String, ring: Long): Future[Unit] = {
         val query = for {
-            asset <- covertAssets if asset.covertId === covertId && asset.tokenId === tokenId
+            asset <- covertAssets if asset.groupId === groupId && asset.tokenId === tokenId
         } yield asset.ring
         db.run(query.update(ring)).map(_ => ())
     }
 
     /**
-     * updates confirmedDeposit and lastActivity by pair of covertId and tokenId
+     * updates confirmedDeposit and lastActivity by pair of groupId and tokenId
      *
-     * @param covertId String
+     * @param groupId String
      * @param tokenId String
      * @param confirmedDeposit Long
      * @param lastActivity Long
      */
-    def updateConfirmedDeposit(covertId: String, tokenId: String, confirmedDeposit: Long, lastActivity: Long): Future[Unit] = {
+    def updateConfirmedDeposit(groupId: String, tokenId: String, confirmedDeposit: Long, lastActivity: Long): Future[Unit] = {
         val query = for {
-            asset <- covertAssets if asset.covertId === covertId && asset.tokenId === tokenId
+            asset <- covertAssets if asset.groupId === groupId && asset.tokenId === tokenId
         } yield (asset.confirmedDeposit, asset.lastActivity)
         db.run(query.update(confirmedDeposit, lastActivity)).map(_ => ())
     }
@@ -119,9 +119,9 @@ class CovertDefaultsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
     /**
      * deletes an asset if no ring has been set for it by the pair of mixGroupId and tokenId
      *
-     * @param covertId String
+     * @param groupId String
      * @param tokenId String
      */
-    def deleteIfRingIsEmpty(covertId: String, tokenId: String): Future[Unit] = db.run(covertAssets.filter(asset => asset.covertId === covertId && asset.tokenId === tokenId && asset.ring === 0L).delete).map(_ => ())
+    def deleteIfRingIsEmpty(groupId: String, tokenId: String): Future[Unit] = db.run(covertAssets.filter(asset => asset.groupId === groupId && asset.tokenId === tokenId && asset.ring === 0L).delete).map(_ => ())
 
 }

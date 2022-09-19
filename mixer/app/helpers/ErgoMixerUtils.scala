@@ -3,16 +3,26 @@ package helpers
 import java.io._
 import java.security.SecureRandom
 import java.util.zip.{ZipEntry, ZipInputStream, ZipOutputStream}
-
 import app.Configs
+import dao.DAOUtils
+
 import javax.inject.Inject
-import network.NetworkUtils
+import org.ergoplatform.appkit.BlockchainContext
 import play.api.Logger
 
-class ErgoMixerUtils @Inject()(networkUtils: NetworkUtils) {
+import java.text.SimpleDateFormat
+import java.util.Date
+
+class ErgoMixerUtils @Inject()(daoUtils: DAOUtils) {
   private val logger: Logger = Logger(this.getClass)
 
-  def getFee(tokenId: String, tokenAmount: Long, ergAmount: Long, isFull: Boolean): Long = {
+  def currentDateTimeString(pattern: String = "yyyy-MM-dd'T'HH-mm-ss"): String = {
+    val date = new Date()
+    val formatter = new SimpleDateFormat(pattern)
+    formatter.format(date)
+  }
+
+  def getFee(tokenId: String, isFull: Boolean): Long = {
     if (tokenId.nonEmpty) {
       if (isFull) Configs.defaultFullTokenFee
       else Configs.defaultHalfTokenFee
@@ -30,7 +40,7 @@ class ErgoMixerUtils @Inject()(networkUtils: NetworkUtils) {
     sw.toString
   }
 
-  def getRandomValidBoxId(origBoxIds: Seq[String]): Option[String] = networkUtils.usingClient { implicit ctx =>
+  def getRandomValidBoxId(origBoxIds: Seq[String])(implicit ctx: BlockchainContext): Option[String] = {
     val random = new SecureRandom()
     val boxIds = new scala.util.Random(random).shuffle(origBoxIds)
     boxIds.find { boxId =>
@@ -39,23 +49,23 @@ class ErgoMixerUtils @Inject()(networkUtils: NetworkUtils) {
         true
       } catch {
         case a: Throwable =>
-          logger.error(s"      Error reading boxId ${boxId}: " + a.getMessage)
+          logger.error(s"      Error reading boxId $boxId: " + a.getMessage)
           false
       }
     }
   }
 
-  def getRandom(seq: Seq[String]): Option[String] = networkUtils.usingClient { implicit ctx =>
+  def getRandom(seq: Seq[String]): Option[String] = {
     val random = new SecureRandom()
     new scala.util.Random(random).shuffle(seq).headOption
   }
 
 
   def backup(): String = {
-    val path = System.getProperty("user.home") + "/ergoMixer"
-    val zip = new File(path + "/ergoMixerBackup.zip")
+    val (dbUrl, baseDbUrl) = daoUtils.getDbUrl
+    val zip = new File(baseDbUrl + s"ergoMixerBackup-${currentDateTimeString()}.zip")
     if (zip.exists()) zip.delete()
-    val toZip = Seq(s"$path/database.mv.db", s"$path/database.trace.db")
+    val toZip = Seq(s"$dbUrl.mv.db", s"$dbUrl.trace.db")
     val buf = new Array[Byte](2048)
     val out = new ZipOutputStream(new FileOutputStream(zip))
     toZip.map(name => new File(name)).foreach(file => {
@@ -74,14 +84,14 @@ class ErgoMixerUtils @Inject()(networkUtils: NetworkUtils) {
   }
 
   def restore(): Unit = {
-    val path = System.getProperty("user.home") + "/ergoMixer"
-    val zip = new File(path + "/ergoMixerRestore.zip")
+    val (_, baseDbUrl) = daoUtils.getDbUrl
+    val zip = new File(baseDbUrl + "ergoMixerRestore.zip")
     if (zip.exists() && zip.length() > 0) {
       val buf = new Array[Byte](2048)
       val in = new ZipInputStream(new FileInputStream(zip))
       var zipEntry = in.getNextEntry
       while (zipEntry != null) {
-        val nf = new File(path, zipEntry.getName)
+        val nf = new File(baseDbUrl, zipEntry.getName)
         if (nf.exists()) nf.delete()
         val fos = new FileOutputStream(nf)
         var len = in.read(buf)

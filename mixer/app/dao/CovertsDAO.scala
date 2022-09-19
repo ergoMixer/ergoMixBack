@@ -1,6 +1,7 @@
 package dao
 
-import models.Models.{CovertAsset, MixCovertRequest}
+import models.Models.CovertAsset
+import models.Request.MixCovertRequest
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 
@@ -21,7 +22,7 @@ class CovertsDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvide
     /**
      * selects unspent and spent deposits by address
      *
-     * @param address String
+     * @param addresses String
      */
     def createCovert(req: MixCovertRequest, addresses: Seq[(String, String)], asset: CovertAsset): Future[Unit] = {
         val query = for {

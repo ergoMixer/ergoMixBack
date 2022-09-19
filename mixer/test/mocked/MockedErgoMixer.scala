@@ -14,7 +14,7 @@ class MockedErgoMixer extends MockitoSugar {
 
   def getMocked = ergoMixer
 
-  def setTestCases: Unit = {
+  def setTestCases(): Unit = {
     val withdrawFromHop = dataset_hopMixer.withdrawFromHop_ergoMixerMockedData
 
     setReturnValue_getMasterSecret(withdrawFromHop._1, withdrawFromHop._2)
@@ -37,6 +37,6 @@ class MockedErgoMixer extends MockitoSugar {
    */
   def setReturnValue_getWithdrawAddress(mixId: String, withdrawAddress: String): Unit = when(ergoMixer.getWithdrawAddress(mixId)).thenReturn(withdrawAddress)
 
-  setTestCases
+  setTestCases()
 
 }

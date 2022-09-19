@@ -12,13 +12,13 @@ trait CovertAddressesComponent {
     import profile.api._
 
     class CovertAddressesTable(tag: Tag) extends Table[(String, String)](tag, "COVERT_ADDRESSES") {
-        def covertId = column[String]("MIX_GROUP_ID")
+        def groupId = column[String]("MIX_GROUP_ID")
 
         def address = column[String]("ADDRESS")
 
-        def * = (covertId, address)
+        def * = (groupId, address)
 
-        def pk = primaryKey("pk_COVERT_DEFAULTS", (covertId, address))
+        def pk = primaryKey("pk_COVERT_DEFAULTS", (groupId, address))
     }
 
 }
@@ -47,26 +47,26 @@ class CovertAddressesDAO @Inject()(protected val dbConfigProvider: DatabaseConfi
     /**
      * inserts an address into COVERT_ADDRESSES table
      *
-     * @param covertId String
+     * @param groupId String
      * @param address String
      */
-    def insert(covertId: String, address: String): Future[Unit] = db.run(covertAddresses += (covertId, address)).map(_ => ())
+    def insert(groupId: String, address: String): Future[Unit] = db.run(covertAddresses += (groupId, address)).map(_ => ())
 
     /**
-     * delete the address from the table by covertId
+     * delete the address from the table by groupId
      *
-     * @param covertId String
+     * @param groupId String
      */
-    def delete(covertId: String): Future[Unit] = db.run(covertAddresses.filter(address => address.covertId === covertId).delete).map(_ => ())
+    def delete(groupId: String): Future[Unit] = db.run(covertAddresses.filter(address => address.groupId === groupId).delete).map(_ => ())
 
     /**
-     * selects the addresses by covertId
+     * selects the addresses by groupId
      *
-     * @param covertId String
+     * @param groupId String
      */
-    def selectAllAddressesByCovertId(covertId: String): Future[Seq[String]] = {
+    def selectAllAddressesByCovertId(groupId: String): Future[Seq[String]] = {
         val query = for {
-            address <- covertAddresses if address.covertId === covertId
+            address <- covertAddresses if address.groupId === groupId
         } yield address.address
         db.run(query.result)
     }

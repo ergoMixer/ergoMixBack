@@ -13,7 +13,7 @@ trait HopMixComponent {
     import profile.api._
 
     class HopMixTable(tag: Tag) extends Table[HopMix](tag, "HOP_MIX") {
-        def id = column[String]("MIX_ID")
+        def mixId = column[String]("MIX_ID")
 
         def round = column[Int]("ROUND")
 
@@ -21,9 +21,9 @@ trait HopMixComponent {
 
         def boxId = column[String]("BOX_ID")
 
-        def * = (id, round, createdTime, boxId) <> (HopMix.tupled, HopMix.unapply)
+        def * = (mixId, round, createdTime, boxId) <> (HopMix.tupled, HopMix.unapply)
 
-        def pk = primaryKey("pk_HOP_MIX", (id, round))
+        def pk = primaryKey("pk_HOP_MIX", (mixId, round))
     }
 
 }
@@ -57,13 +57,20 @@ class HopMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvider
     def clear: Future[Unit] = db.run(hopMixes.delete).map(_ => ())
 
     /**
+     * deletes hops by mixId
+     *
+     * @param mixId String
+     */
+    def delete(mixId: String): Future[Unit] = db.run(hopMixes.filter(hop => hop.mixId === mixId).delete).map(_ => ())
+
+    /**
      * deletes future hops by mixId
      *
      * @param mixId String
      * @param round Int
      */
     def deleteFutureRounds(mixId: String, round: Int): Future[Unit] = db.run(hopMixes
-      .filter(hop => hop.id === mixId && hop.round > round).delete).map(_ => ())
+      .filter(hop => hop.mixId === mixId && hop.round > round).delete).map(_ => ())
 
     /**
      * updates hop by id
@@ -71,7 +78,7 @@ class HopMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvider
      * @param hopMix HopMix
      */
     def updateById(hopMix: HopMix): Future[Unit] = db.run(DBIO.seq(
-        hopMixes.filter(hop => hop.id === hopMix.mixId && hop.round === hopMix.round).delete,
+        hopMixes.filter(hop => hop.mixId === hopMix.mixId && hop.round === hopMix.round).delete,
         hopMixes += hopMix
     ))
 
@@ -81,10 +88,19 @@ class HopMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvider
      * @param mixId String
      */
     def getHopRound(mixId: String): Future[Option[Int]] = db.run(hopMixes
-      .filter(hop => hop.id === mixId)
-      .groupBy(hop => hop.id)
-      .map{ case (id, group) => group.map(_.round).max.get }
+      .filter(hop => hop.mixId === mixId)
+      .groupBy(hop => hop.mixId)
+      .map{ case (_, group) => group.map(_.round).max.get }
       .result.headOption
     )
+
+    /**
+     * selects hopMixBoxId by mixId and round
+     *
+     * @param mixId String
+     * @param round Int
+     */
+    def getMixBoxIdByRound(mixId: String, round: Int): Future[Option[String]] = db.run(hopMixes.filter(mix =>
+        mix.mixId === mixId && mix.round === round).map(_.boxId).result.headOption)
 
 }

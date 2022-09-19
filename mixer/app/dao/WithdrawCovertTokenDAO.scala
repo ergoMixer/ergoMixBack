@@ -1,10 +1,11 @@
 package dao
 
-import javax.inject.{Inject, Singleton}
-import models.Models.{CovertAsset, CovertAssetWithdrawStatus, CovertAssetWithdrawTx}
+import models.Status.CovertAssetWithdrawStatus
+import models.Transaction.CovertAssetWithdrawTx
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 
+import javax.inject.{Inject, Singleton}
 import scala.concurrent.{ExecutionContext, Future}
 
 trait WithdrawCovertTokenComponent {
@@ -13,7 +14,7 @@ trait WithdrawCovertTokenComponent {
     import profile.api._
 
     class WithdrawCovertTokenTable(tag: Tag) extends Table[CovertAssetWithdrawTx](tag, "WITHDRAW_COVERT_TOKEN") {
-        def covertId = column[String]("MIX_GROUP_ID")
+        def groupId = column[String]("MIX_GROUP_ID")
 
         def tokenId = column[String]("TOKEN_ID")
 
@@ -27,9 +28,9 @@ trait WithdrawCovertTokenComponent {
 
         def tx = column[Array[Byte]]("TX")
 
-        def * = (covertId, tokenId, withdrawAddress, createdTime, withdrawStatus, txId, tx) <> (CovertAssetWithdrawTx.tupled, CovertAssetWithdrawTx.unapply)
+        def * = (groupId, tokenId, withdrawAddress, createdTime, withdrawStatus, txId, tx) <> (CovertAssetWithdrawTx.tupled, CovertAssetWithdrawTx.unapply)
 
-        def pk = primaryKey("pk_WITHDRAW_COVERT_TOKEN", (covertId, tokenId, createdTime))
+        def pk = primaryKey("pk_WITHDRAW_COVERT_TOKEN", (groupId, tokenId, createdTime))
     }
 
 }
@@ -65,7 +66,7 @@ class WithdrawCovertTokenDAO @Inject()(protected val dbConfigProvider: DatabaseC
      * checks if a non-complete request for withdraw of this asset is already exists or not
      *
      */
-    def isActiveRequest(covertId: String, tokenId: String): Future[Boolean] = db.run(covertTokenTx.filter(token => token.covertId === covertId && token.tokenId === tokenId && token.withdrawStatus =!= "complete").exists.result)
+    def isActiveRequest(covertId: String, tokenId: String): Future[Boolean] = db.run(covertTokenTx.filter(token => token.groupId === covertId && token.tokenId === tokenId && token.withdrawStatus =!= "complete").exists.result)
 
     /**
      * updates txId and txBytes for tokens of tokenIds in covert
@@ -75,7 +76,7 @@ class WithdrawCovertTokenDAO @Inject()(protected val dbConfigProvider: DatabaseC
      * @param txId String
      * @param tx Array[Byte]
      */
-    def updateTx(covertId: String, tokenIds: Seq[String], txId: String, tx: Array[Byte]): Future[Unit] = db.run(covertTokenTx.filter(token => token.covertId === covertId && token.withdrawStatus =!= CovertAssetWithdrawStatus.Complete.value && token.tokenId.inSet(tokenIds)).map(token => (token.txId, token.tx, token.withdrawStatus)).update(txId, tx, CovertAssetWithdrawStatus.Requested.value)).map(_ => ())
+    def updateTx(covertId: String, tokenIds: Seq[String], txId: String, tx: Array[Byte]): Future[Unit] = db.run(covertTokenTx.filter(token => token.groupId === covertId && token.withdrawStatus =!= CovertAssetWithdrawStatus.Complete.value && token.tokenId.inSet(tokenIds)).map(token => (token.txId, token.tx, token.withdrawStatus)).update(txId, tx, CovertAssetWithdrawStatus.Requested.value)).map(_ => ())
 
     /**
      * sets a request as complete by pair of covertId and tokenId
@@ -85,7 +86,7 @@ class WithdrawCovertTokenDAO @Inject()(protected val dbConfigProvider: DatabaseC
      */
     def setRequestComplete(covertId: String, tokenId: String): Future[Unit] = {
         val query = for {
-            token <- covertTokenTx if token.covertId === covertId && token.tokenId === tokenId && token.withdrawStatus === CovertAssetWithdrawStatus.Requested.value
+            token <- covertTokenTx if token.groupId === covertId && token.tokenId === tokenId && token.withdrawStatus === CovertAssetWithdrawStatus.Requested.value
         } yield token.withdrawStatus
         db.run(query.update("complete")).map(_ => ())
     }
@@ -98,7 +99,7 @@ class WithdrawCovertTokenDAO @Inject()(protected val dbConfigProvider: DatabaseC
      */
     def resetRequest(covertId: String, tokenId: String): Future[Unit] = {
         val query = for {
-            token <- covertTokenTx if token.covertId === covertId && token.tokenId === tokenId && token.withdrawStatus === CovertAssetWithdrawStatus.Requested.value
+            token <- covertTokenTx if token.groupId === covertId && token.tokenId === tokenId && token.withdrawStatus === CovertAssetWithdrawStatus.Requested.value
         } yield (token.txId, token.tx, token.withdrawStatus)
         db.run(query.update("", Array.empty[Byte], CovertAssetWithdrawStatus.NoWithdrawYet.value)).map(_ => ())
     }

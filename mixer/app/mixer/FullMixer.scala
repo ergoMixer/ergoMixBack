@@ -1,18 +1,21 @@
 package mixer
 
 import app.Configs
-import mixinterface.{AliceOrBob, TokenErgoMix}
+import dao._
 import helpers.ErgoMixerUtils
-import wallet.WalletHelper.now
-
-import javax.inject.Inject
-import models.Models.MixStatus.{Complete, Running}
-import models.Models.MixWithdrawStatus.{HopRequested, WithdrawRequested}
-import models.Models.{CreateMixTransaction, FullMix, HalfMix, MixHistory, MixState, MixTransaction, OutBox, PendingRescan, WithdrawTx}
+import mixinterface.{AliceOrBob, TokenErgoMix}
+import models.Box.OutBox
+import models.Models.{FullMix, HalfMix, MixHistory, MixState}
+import models.Rescan.PendingRescan
+import models.Status.MixStatus.Complete
+import models.Status.MixWithdrawStatus.{HopRequested, WithdrawRequested}
+import models.Transaction.{MixTransaction, WithdrawTx}
 import network.{BlockExplorer, NetworkUtils}
 import play.api.Logger
+import wallet.WalletHelper.now
 import wallet.{Wallet, WalletHelper}
-import dao.{AllMixDAO, DAOUtils, EmissionDAO, FullMixDAO, HalfMixDAO, MixStateDAO, MixStateHistoryDAO, MixTransactionsDAO, MixingRequestsDAO, RescanDAO, TokenEmissionDAO, WithdrawDAO}
+
+import javax.inject.Inject
 
 class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
                           networkUtils: NetworkUtils, explorer: BlockExplorer,
@@ -87,7 +90,7 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
     }
   }
 
-  private implicit val insertReason = "FullMixer.processFullMix"
+  private implicit val insertReason: String = "FullMixer.processFullMix"
 
   private def str(isAlice: Boolean) = if (isAlice) "Alice" else "Bob"
 
@@ -147,12 +150,12 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
               if (withdrawDAO.shouldWithdraw(mixId, fullMixBoxId) && optFeeEmissionBoxId.nonEmpty) {
                 val tx = if (withdrawStatus.equals(HopRequested.value)) {
                   val hopSecret = wallet.getSecret(0, toFirst = true)
-                  val hopAddress = WalletHelper.getProveDlogAddress(hopSecret, ctx)
+                  val hopAddress = WalletHelper.getAddressOfSecret(hopSecret)
                   val tx = aliceOrBob.spendFullMixBox(isAlice, secret, fullMixBoxId, hopAddress, Array[String](optFeeEmissionBoxId.get), Configs.defaultHalfFee, withdrawAddress, broadCast = false)
                   val txBytes = tx.toJson(false).getBytes("utf-16")
                   val new_withdraw = WithdrawTx(mixId, tx.getId, currentTime, fullMixBoxId + "," + optFeeEmissionBoxId.get, txBytes)
                   withdrawDAO.updateById(new_withdraw, HopRequested.value)
-                  logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] Hop txId: ${tx.getId}, is requested: ${(withdrawStatus.equals(WithdrawRequested.value) || withdrawStatus.equals(HopRequested.value))}")
+                  logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] Hop txId: ${tx.getId}, is requested: ${withdrawStatus.equals(WithdrawRequested.value) || withdrawStatus.equals(HopRequested.value)}")
                   tx
                 }
                 else {
@@ -160,7 +163,7 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
                   val txBytes = tx.toJson(false).getBytes("utf-16")
                   val new_withdraw = WithdrawTx(mixId, tx.getId, currentTime, fullMixBoxId + "," + optFeeEmissionBoxId.get, txBytes)
                   withdrawDAO.updateById(new_withdraw, WithdrawRequested.value)
-                  logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] Withdraw txId: ${tx.getId}, is requested: ${(withdrawStatus.equals(WithdrawRequested.value) || withdrawStatus.equals(HopRequested.value))}")
+                  logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] Withdraw txId: ${tx.getId}, is requested: ${withdrawStatus.equals(WithdrawRequested.value) || withdrawStatus.equals(HopRequested.value)}")
                   tx
                 }
 
@@ -190,10 +193,10 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
               val nextSecret = wallet.getSecret(nextRound)
 
               def nextAlice = {
-                val feeAmount = getFee(mixingTokenId, tokenAmount = fullMixBox.getToken(mixingTokenId), fullMixBox.amount, isFull = false)
+                val feeAmount = getFee(mixingTokenId, isFull = false)
                 val halfMixTx = aliceOrBob.spendFullMixBox_RemixAsAlice(isAlice, secret, fullMixBoxId, nextSecret, feeEmissionBoxId, feeAmount)
                 halfMixDAO.insertHalfMix(HalfMix(mixId, nextRound, currentTime, halfMixTx.getHalfMixBox.id, isSpent = false))
-                mixStateDAO.updateById(MixState(mixId, nextRound, true))
+                mixStateDAO.updateById(MixState(mixId, nextRound, isAlice = true))
                 mixStateHistoryDAO.insertMixHistory(MixHistory(mixId, nextRound, isAlice = true, currentTime))
                 val new_tx = halfMixTx.tx
                 mixTransactionsDAO.updateById(MixTransaction(halfMixTx.getHalfMixBox.id, new_tx.getId, new_tx.toJson(false).getBytes("utf-16")))
@@ -210,12 +213,12 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
               }
 
               def nextBob(halfMixBoxId: String) = {
-                val feeAmount = getFee(mixingTokenId, tokenAmount = fullMixBox.getToken(mixingTokenId), fullMixBox.amount, isFull = true)
+                val feeAmount = getFee(mixingTokenId, isFull = true)
                 val (fullMixTx, bit) = aliceOrBob.spendFullMixBox_RemixAsBob(isAlice, secret, fullMixBoxId, nextSecret, halfMixBoxId, feeEmissionBoxId, feeAmount)
                 val (left, right) = fullMixTx.getFullMixBoxes
                 val bobFullMixBox = if (bit) right else left
                 fullMixDAO.insertFullMix(FullMix(mixId, nextRound, currentTime, halfMixBoxId, bobFullMixBox.id))
-                mixStateDAO.updateById(MixState(mixId, nextRound, false))
+                mixStateDAO.updateById(MixState(mixId, nextRound, isAlice = false))
                 mixStateHistoryDAO.insertMixHistory(MixHistory(mixId, nextRound, isAlice = false, currentTime))
                 val new_tx = fullMixTx.tx
                 mixTransactionsDAO.updateById(MixTransaction(bobFullMixBox.id, new_tx.getId, new_tx.toJson(false).getBytes("utf-16")))
@@ -276,7 +279,7 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
                   // the halfMixBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
                   try {
                     logger.info(s"  [FULL:$mixId ($currentRound) ${str(isAlice)}] <-- Bob (undo). [full: $fullMixBoxId not spent while half: $halfMixBoxId or token: $tokenBoxId spent]")
-                    allMixDAO.undoMixStep(mixId, currentRound, fullMixBoxId, true)
+                    allMixDAO.undoMixStep(mixId, currentRound, fullMixBoxId, isFullMix = true)
                   } catch {
                     case a: Throwable =>
                       logger.error(getStackTraceStr(a))
@@ -287,7 +290,7 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
                       // the emissionBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
                       try {
                         logger.info(s"  [FULL:$mixId ($currentRound) ${str(isAlice)}] <-- Bob (undo). [full:$fullMixBoxId not spent while fee:$emissionBoxId spent]")
-                        allMixDAO.undoMixStep(mixId, currentRound, fullMixBoxId, true)
+                        allMixDAO.undoMixStep(mixId, currentRound, fullMixBoxId, isFullMix = true)
                       } catch {
                         case a: Throwable =>
                           logger.error(getStackTraceStr(a))

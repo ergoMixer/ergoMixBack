@@ -1,11 +1,11 @@
 package dao
 
-import models.Models.MixStatus.Complete
-import models.Models.MixWithdrawStatus.Withdrawn
-import models.Models.MixStatus.Queued
+import models.Status.MixStatus.{Queued, Complete}
+import models.Status.MixWithdrawStatus.Withdrawn
+import models.Status.MixStatus
+import models.Request.{MixRequest, MixingRequest}
 
 import javax.inject.{Inject, Singleton}
-import models.Models.{MixRequest, MixStatus, MixingRequest}
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 
@@ -29,7 +29,7 @@ trait MixingRequestsComponent {
         )
 
     class MixingRequestsTable(tag: Tag) extends Table[MixingRequest](tag, "MIXING_REQUESTS") {
-        def id = column[String]("MIX_ID", O.PrimaryKey)
+        def mixId = column[String]("MIX_ID", O.PrimaryKey)
 
         def groupId = column[String]("MIX_GROUP_ID")
 
@@ -61,9 +61,9 @@ trait MixingRequestsComponent {
 
         def masterKey = column[BigInt]("MASTER_SECRET")
 
-        def * = (id, groupId, amount, numRounds, mixStatus, createdTime, withdrawAddress, depositAddress, depositCompleted, neededAmount, numToken, withdrawStatus, mixingTokenAmount, neededTokenAmount, tokenId, masterKey) <> (MixingRequest.tupled, MixingRequest.unapply)
+        def * = (mixId, groupId, amount, numRounds, mixStatus, createdTime, withdrawAddress, depositAddress, depositCompleted, neededAmount, numToken, withdrawStatus, mixingTokenAmount, neededTokenAmount, tokenId, masterKey) <> (MixingRequest.tupled, MixingRequest.unapply)
 
-        def mixRequest = (id, groupId, amount, numRounds, mixStatus, createdTime, withdrawAddress, depositAddress, depositCompleted, neededAmount, numToken, withdrawStatus, mixingTokenAmount, neededTokenAmount, tokenId) <> (MixRequest.tupled, MixRequest.unapply)
+        def mixRequest = (mixId, groupId, amount, numRounds, mixStatus, createdTime, withdrawAddress, depositAddress, depositCompleted, neededAmount, numToken, withdrawStatus, mixingTokenAmount, neededTokenAmount, tokenId) <> (MixRequest.tupled, MixRequest.unapply)
     }
 
 }
@@ -105,7 +105,7 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      */
     def selectByMixId(mixID: String): Future[Option[MixRequest]] = {
         val query = for {
-            req <- mixingRequests if req.id === mixID
+            req <- mixingRequests if req.mixId === mixID
         } yield req.mixRequest
         db.run(query.result.headOption)
     }
@@ -115,7 +115,7 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      *
      * @param mixID String
      */
-    def selectAllByMixId(mixID: String): Future[Option[MixingRequest]] = db.run(mixingRequests.filter(req => req.id === mixID).result.headOption)
+    def selectAllByMixId(mixID: String): Future[Option[MixingRequest]] = db.run(mixingRequests.filter(req => req.mixId === mixID).result.headOption)
 
     /**
      * selects all requests (without masterKey) by groupId
@@ -137,7 +137,7 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
     def selectPartsByMixGroupId(groupId: String): Future[Seq[(String, Long, Long)]] = {
         val query = for {
             req <- mixingRequests if req.groupId === groupId
-        } yield (req.depositAddress, req.neededAmount, req.mixingTokenAmount)
+        } yield (req.depositAddress, req.neededAmount, req.neededTokenAmount)
         db.run(query.result)
     }
 
@@ -148,7 +148,7 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      */
     def selectMasterKey(mixID: String): Future[Option[BigInt]] = {
         val query = for {
-            req <- mixingRequests if req.id === mixID
+            req <- mixingRequests if req.mixId === mixID
         } yield req.masterKey
         db.run(query.result.headOption)
     }
@@ -207,7 +207,7 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      */
     def groupRequestsProgress(groupId: String, mixStatus: MixStatus): Future[Seq[(Int, Int)]] = {
         val query = for {
-            (request, state) <- mixingRequests.filter(req => req.groupId === groupId && req.mixStatus === mixStatus) join mixes on(_.id === _.id)
+            (request, state) <- mixingRequests.filter(req => req.groupId === groupId && req.mixStatus === mixStatus) join mixes on(_.mixId === _.mixId)
         } yield (request.numRounds, state.round)
         db.run(query.result)
     }
@@ -220,7 +220,7 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      */
     def updateAddress(mixID: String, address: String): Future[Unit] = {
         val query = for {
-            req <- mixingRequests if req.id === mixID
+            req <- mixingRequests if req.mixId === mixID
         } yield req.withdrawAddress
         db.run(query.update(address)).map(_ => ())
     }
@@ -231,7 +231,7 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      * @param mixId String
      * @param status String
      */
-    def updateQueryWithMixId(mixId: String, status: String) = mixingRequests.filter(req => req.id === mixId).map(_.withdrawStatus).update(status)
+    def updateQueryWithMixId(mixId: String, status: String) = mixingRequests.filter(req => req.mixId === mixId).map(_.withdrawStatus).update(status)
 
     /**
      * updates withdraw status by mixID
@@ -241,7 +241,7 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      */
     def updateWithdrawStatus(mixID: String, withdrawStatus: String): Future[Unit] = {
         val query = for {
-            req <- mixingRequests if req.id === mixID
+            req <- mixingRequests if req.mixId === mixID
         } yield req.withdrawStatus
         db.run(query.update(withdrawStatus)).map(_ => ())
     }
@@ -254,7 +254,7 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      */
     def updateMixStatus(mixID: String, mixStatus: MixStatus): Future[Unit] = {
         val query = for {
-            req <- mixingRequests if req.id === mixID
+            req <- mixingRequests if req.mixId === mixID
         } yield req.mixStatus
         db.run(query.update(mixStatus)).map(_ => ())
     }
@@ -266,7 +266,7 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      */
     def withdrawTheRequest(mixID: String): Future[Unit] = {
         val query = for {
-            req <- mixingRequests if req.id === mixID
+            req <- mixingRequests if req.mixId === mixID
         } yield (req.mixStatus, req.withdrawStatus)
         db.run(query.update((Complete, Withdrawn.value))).map(_ => ())
     }
@@ -311,7 +311,7 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      *
      * @param mixId String
      */
-    def delete(mixId: String): Future[Unit] = db.run(mixingRequests.filter(req => req.id === mixId).delete).map(_ => ())
+    def delete(mixId: String): Future[Unit] = db.run(mixingRequests.filter(req => req.mixId === mixId).delete).map(_ => ())
 
     /**
      * deletes request by mixId
@@ -350,6 +350,6 @@ class MixingRequestsDAO @Inject()(protected val dbConfigProvider: DatabaseConfig
      *
      * @param mixId String
      */
-    def isMixingErg(mixId: String): Future[Boolean] = db.run(mixingRequests.filter(req => req.id === mixId && req.tokenId === "").exists.result)
+    def isMixingErg(mixId: String): Future[Boolean] = db.run(mixingRequests.filter(req => req.mixId === mixId && req.tokenId === "").exists.result)
 
 }

@@ -1,7 +1,7 @@
 package dao
 
 import javax.inject.{Inject, Singleton}
-import models.Models.DistributeTx
+import models.Transaction.DistributeTx
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 
@@ -47,23 +47,23 @@ class DistributeTransactionsDAO @Inject()(protected val dbConfigProvider: Databa
     def insert(tx: DistributeTx): Future[Unit] = db.run(distributeTransactions += tx).map(_ => ())
 
     /**
-     * selects spent transactions inputs by covertId
+     * selects spent transactions inputs by groupId
      *
-     * @param covertId String
+     * @param groupId String
      */
-    def selectSpentTransactionsInputs(covertId: String): Future[Seq[String]] = {
+    def selectSpentTransactionsInputs(groupId: String): Future[Seq[String]] = {
         val query = for {
-            tx <- distributeTransactions if tx.mixGroupId === covertId && tx.order > 0
+            tx <- distributeTransactions if tx.mixGroupId === groupId && tx.order > 0
         } yield tx.inputs
         db.run(query.result)
     }
 
     /**
-     * selects spent transactions by covertId
+     * selects spent transactions by groupId
      *
-     * @param covertId String
+     * @param groupId String
      */
-    def selectSpentTransactions(covertId: String): Future[Seq[DistributeTx]] = db.run(distributeTransactions.filter(tx => tx.mixGroupId === covertId && tx.order > 0).result)
+    def selectSpentTransactions(groupId: String): Future[Seq[DistributeTx]] = db.run(distributeTransactions.filter(tx => tx.mixGroupId === groupId && tx.order > 0).result)
 
     /**
      * selects transactions by mixGroupId

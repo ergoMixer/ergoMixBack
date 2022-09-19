@@ -12,13 +12,13 @@ trait EmissionComponent {
     import profile.api._
 
     class EmissionTable(tag: Tag) extends Table[(String, Int, String)](tag, "EMISSION_BOX") {
-        def id = column[String]("MIX_ID")
+        def mixId = column[String]("MIX_ID")
 
         def round = column[Int]("ROUND")
 
         def boxId = column[String]("BOX_ID", O.PrimaryKey)
 
-        def * = (id, round, boxId)
+        def * = (mixId, round, boxId)
     }
 
 }
@@ -40,7 +40,7 @@ class EmissionDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      */
     def selectBoxId(mixId: String, round: Int): Future[Option[String]] = {
         val query = for {
-            box <- emissions if box.id === mixId && box.round === round
+            box <- emissions if box.mixId === mixId && box.round === round
         } yield box.boxId
         db.run(query.result.headOption)
     }
@@ -66,5 +66,5 @@ class EmissionDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      *
      * @param mixId String
      */
-    def delete(mixId: String): Unit = db.run(emissions.filter(box => box.id === mixId).delete).map(_ => ())
+    def delete(mixId: String): Unit = db.run(emissions.filter(box => box.mixId === mixId).delete).map(_ => ())
 }

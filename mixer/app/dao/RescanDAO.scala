@@ -1,7 +1,7 @@
 package dao
 
 import javax.inject.{Inject, Singleton}
-import models.Models.PendingRescan
+import models.Rescan.PendingRescan
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 
@@ -13,7 +13,7 @@ trait RescanComponent {
     import profile.api._
 
     class RescanTable(tag: Tag) extends Table[PendingRescan](tag, "RESCAN") {
-        def id = column[String]("MIX_ID", O.PrimaryKey)
+        def mixId = column[String]("MIX_ID", O.PrimaryKey)
 
         def createdTime = column[Long]("CREATED_TIME")
 
@@ -25,11 +25,11 @@ trait RescanComponent {
 
         def mixBoxId = column[String]("MIX_BOX_ID")
 
-        def * = (id, createdTime, round, goBackward, boxType, mixBoxId) <> (PendingRescan.tupled, PendingRescan.unapply)
+        def * = (mixId, createdTime, round, goBackward, boxType, mixBoxId) <> (PendingRescan.tupled, PendingRescan.unapply)
     }
 
     class RescanArchivedTable(tag: Tag) extends Table[(String, Long, Int, Boolean, String, String, String)](tag, "RESCAN_ARCHIVE") {
-        def id = column[String]("MIX_ID", O.PrimaryKey)
+        def mixId = column[String]("MIX_ID", O.PrimaryKey)
 
         def createdTime = column[Long]("CREATED_TIME")
 
@@ -43,7 +43,7 @@ trait RescanComponent {
 
         def reason = column[String]("REASON")
 
-        def * = (id, createdTime, round, goBackward, boxType, mixBoxId, reason)
+        def * = (mixId, createdTime, round, goBackward, boxType, mixBoxId, reason)
     }
 
 }
@@ -70,7 +70,7 @@ class RescanDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvider
      *
      * @param mixID String
      */
-    def delete(mixID: String): Future[Unit] = db.run(rescans.filter(rescan => rescan.id === mixID).delete).map(_ => ())
+    def delete(mixID: String): Future[Unit] = db.run(rescans.filter(rescan => rescan.mixId === mixID).delete).map(_ => ())
 
     /**
      * deletes rescan by mixID
@@ -78,8 +78,8 @@ class RescanDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvider
      * @param mixId String
      */
     def deleteWithArchive(mixId: String): Future[Unit] = db.run(DBIO.seq(
-        rescans.filter(rescan => rescan.id === mixId).delete,
-        rescansArchive.filter(rescan => rescan.id === mixId).delete
+        rescans.filter(rescan => rescan.mixId === mixId).delete,
+        rescansArchive.filter(rescan => rescan.mixId === mixId).delete
     ))
 
     /**
@@ -88,7 +88,7 @@ class RescanDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvider
      * @param new_rescan PendingRescan
      */
     def updateById(new_rescan: PendingRescan)(implicit insertReason: String): Future[Unit] = db.run(DBIO.seq(
-        rescans.filter(rescan => rescan.id === new_rescan.mixId).delete,
+        rescans.filter(rescan => rescan.mixId === new_rescan.mixId).delete,
         rescans += new_rescan,
         rescansArchive += (new_rescan.mixId, new_rescan.time, new_rescan.round, new_rescan.goBackward, new_rescan.boxType, new_rescan.mixBoxId, insertReason)
     ))

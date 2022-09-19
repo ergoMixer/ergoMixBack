@@ -1,19 +1,22 @@
 package mixer
 
-import java.util.UUID
 import app.Configs
-import wallet.WalletHelper._
-
-import javax.inject.Inject
-import models.Models.MixStatus.{Complete, Queued, Running}
-import models.Models.MixWithdrawStatus.{HopRequested, NoWithdrawYet, WithdrawRequested, Withdrawn}
+import dao._
+import models.Box.MixingBox
 import models.Models._
+import models.Request.{MixCovertRequest, MixGroupRequest, MixRequest, MixingRequest}
+import models.Status.MixStatus.{Queued, Running}
+import models.Status.MixWithdrawStatus.{HopRequested, NoWithdrawYet, WithdrawRequested, Withdrawn}
+import models.Status.{GroupMixStatus, MixStatus}
+import models.Transaction.{CreateWithdraw, Withdraw}
 import network.NetworkUtils
 import play.api.Logger
+import wallet.WalletHelper._
 import wallet.{Wallet, WalletHelper}
 
+import java.util.UUID
+import javax.inject.Inject
 import scala.collection.mutable
-import dao._
 
 
 class ErgoMixer @Inject()(
@@ -61,7 +64,7 @@ class ErgoMixer @Inject()(
       val req: MixCovertRequest = MixCovertRequest(nameCovert, mixId, now, depositAddress, numRounds, privateKey.nonEmpty, masterSecret)
       val covertAddresses = addresses.map({(mixId, _)})
       val asset = CovertAsset(mixId, "", lastErgRing, 0L, now)
-      covertsDAO.createCovert(req, covertAddresses, asset)
+      daoUtils.awaitResult(covertsDAO.createCovert(req, covertAddresses, asset))
       logger.info(s"covert address $mixId is created, addr: $depositAddress. you can add supported asset for it.")
       depositAddress
     }
@@ -267,9 +270,9 @@ class ErgoMixer @Inject()(
       val masterSecret = randBigInt
       val wallet = new Wallet(masterSecret)
       val depositSecret = wallet.getSecret(-1)
-      val depositAddress = WalletHelper.getProveDlogAddress(depositSecret, ctx)
+      val depositAddress = WalletHelper.getAddressOfSecret(depositSecret)
       val mixId = UUID.randomUUID().toString
-      val req = MixingRequest(mixId, topId, ergRing, numRounds, MixStatus.fromString(Queued.value), now, withdrawAddress, depositAddress, false, ergNeeded, numRounds, NoWithdrawYet.value, tokenRing, tokenNeeded, mixingTokenId, masterSecret)
+      val req = MixingRequest(mixId, topId, ergRing, numRounds, MixStatus.fromString(Queued.value), now, withdrawAddress, depositAddress, depositCompleted = false, ergNeeded, numRounds, NoWithdrawYet.value, tokenRing, tokenNeeded, mixingTokenId, masterSecret)
       mixingRequestsDAO.insert(req)
       depositAddress
     }
@@ -296,7 +299,7 @@ class ErgoMixer @Inject()(
       var mixingTokenAmount: Long = 0
       var mixingTokenId: String = ""
       val depositSecret = wallet.getSecret(-1)
-      val depositAddress = WalletHelper.getProveDlogAddress(depositSecret, ctx)
+      val depositAddress = WalletHelper.getAddressOfSecret(depositSecret)
       val mixId = UUID.randomUUID().toString
       mixRequests.foreach(mixBox => {
         val price = mixBox.price
@@ -321,14 +324,14 @@ class ErgoMixer @Inject()(
   /**
    * @return returns group mixes
    */
-  def getMixRequestGroups = {
+  def getMixRequestGroups: Seq[MixGroupRequest] = {
     daoUtils.awaitResult(mixingGroupRequestDAO.all)
   }
 
   /**
    * @return returns not completed group mixes
    */
-  def getMixRequestGroupsActive = {
+  def getMixRequestGroupsActive: Seq[MixGroupRequest] = {
     daoUtils.awaitResult(mixingGroupRequestDAO.active)
   }
 
@@ -363,7 +366,7 @@ class ErgoMixer @Inject()(
   /**
    * @return all group mixes
    */
-  def getMixRequestGroupsComplete = {
+  def getMixRequestGroupsComplete: Seq[MixGroupRequest] = {
     daoUtils.awaitResult(mixingGroupRequestDAO.completed)
   }
 
@@ -373,7 +376,7 @@ class ErgoMixer @Inject()(
    * @param id id of the group or covert request
    * @return mix box info list of a specific group, whether it is half or full box, and whether it is withdrawn or not including tx id
    */
-  def getMixes(id: String, status: String) = {
+  def getMixes(id: String, status: String): Seq[Mix] = {
     val boxes: Seq[MixRequest] = daoUtils.awaitResult({
       if (status == "all") mixingRequestsDAO.selectByMixGroupId(id)
       else if (status == "active") mixingRequestsDAO.selectActiveRequests(id, Withdrawn.value)

@@ -1,7 +1,9 @@
 package testHandlers
 
 import mocked.MockedNetworkUtils
-import models.Models.{CreateHopMix, CreateMixGroupRequest, CreateMixingRequest, CreateWithdrawTx, HopMix, MixGroupRequest, MixingRequest, WithdrawTx}
+import models.Models.{CreateHopMix, HopMix}
+import models.Request._
+import models.Transaction.{CreateWithdrawTx, WithdrawTx}
 import org.ergoplatform.appkit.SignedTransaction
 
 /**

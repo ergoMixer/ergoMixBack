@@ -13,7 +13,7 @@ trait MixStateHistoryComponent {
     import profile.api._
 
     class MixStateHistoryTable(tag: Tag) extends Table[MixHistory](tag, "MIX_STATE_HISTORY") {
-        def id = column[String]("MIX_ID", O.PrimaryKey)
+        def mixId = column[String]("MIX_ID", O.PrimaryKey)
 
         def round = column[Int]("ROUND")
 
@@ -21,11 +21,11 @@ trait MixStateHistoryComponent {
 
         def createdTime = column[Long]("CREATED_TIME")
 
-        def * = (id, round, isAlice, createdTime) <> (MixHistory.tupled, MixHistory.unapply)
+        def * = (mixId, round, isAlice, createdTime) <> (MixHistory.tupled, MixHistory.unapply)
     }
 
     class MixStateHistoryArchivedTable(tag: Tag) extends Table[(String, Int, Boolean, Long, String)](tag, "MIX_STATE_HISTORY_ARCHIVED") {
-        def id = column[String]("MIX_ID", O.PrimaryKey)
+        def mixId = column[String]("MIX_ID", O.PrimaryKey)
 
         def round = column[Int]("ROUND")
 
@@ -35,7 +35,7 @@ trait MixStateHistoryComponent {
 
         def reason = column[String]("REASON")
 
-        def * = (id, round, isAlice, createdTime, reason)
+        def * = (mixId, round, isAlice, createdTime, reason)
     }
 
 }
@@ -69,7 +69,7 @@ class MixStateHistoryDAO @Inject()(protected val dbConfigProvider: DatabaseConfi
      * @param mixID String
      * @param round Int
      */
-    def deleteFutureRounds(mixID: String, round: Int): Future[Unit] = db.run(mixHistories.filter(mix => mix.id === mixID && mix.round > round).delete).map(_ => ())
+    def deleteFutureRounds(mixID: String, round: Int): Future[Unit] = db.run(mixHistories.filter(mix => mix.mixId === mixID && mix.round > round).delete).map(_ => ())
 
     /**
      * updates mix state history by mixID
@@ -77,7 +77,7 @@ class MixStateHistoryDAO @Inject()(protected val dbConfigProvider: DatabaseConfi
      * @param mixHistory MixHistory
      */
     def updateById(mixHistory: MixHistory)(implicit insertReason: String): Future[Unit] = db.run(DBIO.seq(
-        mixHistories.filter(mix => mix.id === mixHistory.id && mix.round === mixHistory.round).delete,
+        mixHistories.filter(mix => mix.mixId === mixHistory.id && mix.round === mixHistory.round).delete,
         mixHistories += mixHistory,
         mixStatesArchive += (mixHistory.id, mixHistory.round, mixHistory.isAlice, mixHistory.time, insertReason)
     ))
@@ -98,7 +98,7 @@ class MixStateHistoryDAO @Inject()(protected val dbConfigProvider: DatabaseConfi
      * @param mixId String
      */
     def deleteWithArchive(mixId: String): Future[Unit] = db.run(DBIO.seq(
-        mixHistories.filter(mix => mix.id === mixId).delete,
-        mixStatesArchive.filter(mix => mix.id === mixId).delete
+        mixHistories.filter(mix => mix.mixId === mixId).delete,
+        mixStatesArchive.filter(mix => mix.mixId === mixId).delete
     ))
 }

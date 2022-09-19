@@ -3,8 +3,7 @@ package network
 import app._
 import javax.inject.{Inject, Singleton}
 import mixinterface.TokenErgoMix
-import models.Models
-import models.Models.OutBox
+import models.Box.OutBox
 import org.ergoplatform.appkit.{BlockchainContext, ErgoClient, InputBox}
 import play.api.Logger
 import wallet.WalletHelper
@@ -74,7 +73,7 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
       if (considerPool) txPool = explorer.getPoolTransactionsStr
       val unspentBoxes = getUnspentBoxes(tokenErgoMix.get.halfMixAddress.toString)
       unspentBoxes.filter(box => {
-        (!considerPool || !txPool.contains(s""""${box.id.toString}","transactionId"""")) && // not already in mempool
+        (!considerPool || !txPool.contains(s""""${box.id}","transactionId"""")) && // not already in mempool
           box.registers.contains("R4") &&
           !WalletHelper.poisonousHalfs.contains(box.ge("R4")) // not poisonous
       }).toList
@@ -111,7 +110,7 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
    * @param poolAmount mix ring
    * @return list of unspent full-boxes in a specific ring
    */
-  def getFullMixBoxes(poolAmount: Long = -1): Seq[Models.OutBox] = {
+  def getFullMixBoxes(poolAmount: Long = -1): Seq[OutBox] = {
     usingClient { implicit ctx =>
       val unspent = getUnspentBoxes(tokenErgoMix.get.fullMixAddress.toString)
       if (poolAmount != -1)
@@ -145,7 +144,7 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
    * @param boxId box id
    * @return tx spending the box with id boxId
    */
-  def getSpendingTxId(boxId: String) = {
+  def getSpendingTxId(boxId: String): Option[String] = {
     usingClient { implicit ctx =>
       explorer.getSpendingTxId(boxId)
     }

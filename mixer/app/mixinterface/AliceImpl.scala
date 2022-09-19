@@ -3,7 +3,8 @@ package mixinterface
 import java.math.BigInteger
 
 import mixinterface.ErgoMixBase._
-import models.Models.{EndBox, FullMixBox, HalfMixTx}
+import models.Box.{EndBox, FullMixBox}
+import models.Transaction.HalfMixTx
 import org.ergoplatform.appkit._
 import org.ergoplatform.appkit.impl.ErgoTreeContract
 import sigmastate.eval._

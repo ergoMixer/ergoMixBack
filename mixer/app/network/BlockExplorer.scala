@@ -6,8 +6,9 @@ import app.Configs
 import io.circe.Json
 
 import javax.inject.Singleton
-import models.Models.{InBox, OutBox, SpendTx}
-import org.ergoplatform.appkit.{ErgoToken, ErgoTreeTemplate}
+import models.Box.{InBox, OutBox}
+import models.Transaction.SpendTx
+import org.ergoplatform.appkit.ErgoToken
 
 import scala.util.{Failure, Success, Try}
 

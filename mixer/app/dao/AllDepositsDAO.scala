@@ -1,7 +1,6 @@
 package dao
 
 import javax.inject.{Inject, Singleton}
-import models.Models.Deposit
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 

@@ -1,6 +1,6 @@
 package testHandlers
 
-import models.Models.{InBox, OutBox}
+import models.Box.{InBox, OutBox}
 import org.ergoplatform.appkit.{ErgoId, InputBox, SignedInput, SignedTransaction}
 import org.mockito.Mockito.when
 import org.scalatestplus.mockito.MockitoSugar

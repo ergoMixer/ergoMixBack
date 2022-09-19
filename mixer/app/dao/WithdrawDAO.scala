@@ -1,8 +1,8 @@
 package dao
 
 import javax.inject.{Inject, Singleton}
-import models.Models.WithdrawTx
-import models.Models.MixWithdrawStatus.{AgeUSDRequested, HopRequested, UnderHop, WithdrawRequested}
+import models.Transaction.WithdrawTx
+import models.Status.MixWithdrawStatus.{AgeUSDRequested, HopRequested, UnderHop, WithdrawRequested}
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 
@@ -14,7 +14,7 @@ trait WithdrawComponent {
     import profile.api._
 
     class WithdrawTable(tag: Tag) extends Table[WithdrawTx](tag, "WITHDRAW") {
-        def id = column[String]("MIX_ID", O.PrimaryKey)
+        def mixId = column[String]("MIX_ID", O.PrimaryKey)
 
         def txId = column[String]("TX_ID")
 
@@ -26,11 +26,11 @@ trait WithdrawComponent {
 
         def additionalInfo = column[String]("ADDITIONAL_INFO")
 
-        def * = (id, txId, createdTime, boxId, tx, additionalInfo) <> (WithdrawTx.tupled, WithdrawTx.unapply)
+        def * = (mixId, txId, createdTime, boxId, tx, additionalInfo) <> (WithdrawTx.tupled, WithdrawTx.unapply)
     }
 
     class WithdrawArchivedTable(tag: Tag) extends Table[(String, String, Long, String, Array[Byte], String, String)](tag, "WITHDRAW_ARCHIVED") {
-        def id = column[String]("MIX_ID")
+        def mixId = column[String]("MIX_ID")
 
         def txId = column[String]("TX_ID")
 
@@ -44,7 +44,7 @@ trait WithdrawComponent {
 
         def reason = column[String]("REASON")
 
-        def * = (id, txId, createdTime, boxId, tx, additionalInfo, reason)
+        def * = (mixId, txId, createdTime, boxId, tx, additionalInfo, reason)
     }
 
 }
@@ -86,7 +86,7 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      *
      * @param mixID String
      */
-    def selectByMixId(mixID: String): Future[Option[WithdrawTx]] = db.run(withdraws.filter(tx => tx.id === mixID).result.headOption)
+    def selectByMixId(mixID: String): Future[Option[WithdrawTx]] = db.run(withdraws.filter(tx => tx.mixId === mixID).result.headOption)
 
     /**
      * inserts withdraw into withdraw and withdrawArchived tables and updates mixingRequests table
@@ -103,7 +103,7 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      * @param withdraw_stat String
      */
     def updateById(new_withdraw: WithdrawTx, withdraw_stat: String)(implicit insertReason: String): Future[Unit] = db.run(DBIO.seq(
-        withdraws.filter(withdraw => withdraw.id === new_withdraw.mixId).delete,
+        withdraws.filter(withdraw => withdraw.mixId === new_withdraw.mixId).delete,
         withdraws += new_withdraw,
         withdrawsArchive += (new_withdraw.mixId, new_withdraw.txId, new_withdraw.time, new_withdraw.boxId, new_withdraw.txBytes, new_withdraw.additionalInfo, insertReason),
         mixingRequestsDAO.updateQueryWithMixId(new_withdraw.mixId, withdraw_stat)
@@ -115,7 +115,7 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      * @param new_withdraw WithdrawTx
      */
     def insertAndArchive(new_withdraw: WithdrawTx)(implicit insertReason: String): Future[Unit] = db.run(DBIO.seq(
-        withdraws.filter(withdraw => withdraw.id === new_withdraw.mixId).delete,
+        withdraws.filter(withdraw => withdraw.mixId === new_withdraw.mixId).delete,
         withdraws += new_withdraw,
         withdrawsArchive += (new_withdraw.mixId, new_withdraw.txId, new_withdraw.time, new_withdraw.boxId, new_withdraw.txBytes, new_withdraw.additionalInfo, insertReason)
     ))
@@ -126,9 +126,9 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      */
     def getWithdrawals: Future[(Seq[WithdrawTx], Seq[WithdrawTx], Seq[WithdrawTx])] = {
         val query = for {
-            withdraw <- (mixingRequests.filter(req => req.withdrawStatus === WithdrawRequested.value || req.withdrawStatus === UnderHop.value) join withdraws on(_.id === _.id)).map(_._2).result
-            mint <- (mixingRequests.filter(req => req.withdrawStatus === AgeUSDRequested.value) join withdraws on(_.id === _.id)).map(_._2).result
-            hop <- (mixingRequests.filter(req => req.withdrawStatus === HopRequested.value) join withdraws on(_.id === _.id)).map(_._2).result
+            withdraw <- (mixingRequests.filter(req => req.withdrawStatus === WithdrawRequested.value || req.withdrawStatus === UnderHop.value) join withdraws on(_.mixId === _.mixId)).map(_._2).result
+            mint <- (mixingRequests.filter(req => req.withdrawStatus === AgeUSDRequested.value) join withdraws on(_.mixId === _.mixId)).map(_._2).result
+            hop <- (mixingRequests.filter(req => req.withdrawStatus === HopRequested.value) join withdraws on(_.mixId === _.mixId)).map(_._2).result
         } yield (withdraw, mint, hop)
         db.run(query)
     }
@@ -139,7 +139,7 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      */
     def getMintings: Future[Seq[WithdrawTx]] = {
         val query = for {
-            mint <- (mixingRequests.filter(req => req.withdrawStatus === AgeUSDRequested.value) join withdraws on(_.id === _.id)).map(_._2).result
+            mint <- (mixingRequests.filter(req => req.withdrawStatus === AgeUSDRequested.value) join withdraws on(_.mixId === _.mixId)).map(_._2).result
         } yield mint
         db.run(query)
     }
@@ -149,7 +149,7 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      *
      * @param mixId String
      */
-    def delete(mixId: String): Future[Unit] = db.run(withdraws.filter(withdraw => withdraw.id === mixId).delete).map(_ => ())
+    def delete(mixId: String): Future[Unit] = db.run(withdraws.filter(withdraw => withdraw.mixId === mixId).delete).map(_ => ())
 
     /**
      * delete withdraw request by mixId
@@ -157,8 +157,8 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      * @param mixId String
      */
     def deleteWithArchive(mixId: String): Future[Unit] = db.run(DBIO.seq(
-        withdraws.filter(withdraw => withdraw.id === mixId).delete,
-        withdrawsArchive.filter(withdraw => withdraw.id === mixId).delete
+        withdraws.filter(withdraw => withdraw.mixId === mixId).delete,
+        withdrawsArchive.filter(withdraw => withdraw.mixId === mixId).delete
     ))
 
     /**
@@ -168,7 +168,7 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      * @param boxId String
      */
     def shouldWithdraw(mixId: String, boxId: String)(implicit insertReason: String): Boolean = {
-        val withdrawMix = daoUtils.awaitResult(db.run(withdraws.filter(withdraw => withdraw.id === mixId).result.headOption)).getOrElse(return true)
+        val withdrawMix = daoUtils.awaitResult(db.run(withdraws.filter(withdraw => withdraw.mixId === mixId).result.headOption)).getOrElse(return true)
         !withdrawMix.boxId.contains(boxId)
     }
 
@@ -177,5 +177,5 @@ class WithdrawDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      *
      * @param mixID String
      */
-    def selectCreatedTimeByMixId(mixID: String): Future[Option[Long]] = db.run(withdraws.filter(tx => tx.id === mixID).map(_.createdTime).result.headOption)
+    def selectCreatedTimeByMixId(mixID: String): Future[Option[Long]] = db.run(withdraws.filter(tx => tx.mixId === mixID).map(_.createdTime).result.headOption)
 }

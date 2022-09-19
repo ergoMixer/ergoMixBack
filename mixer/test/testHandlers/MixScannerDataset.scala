@@ -1,9 +1,12 @@
 package testHandlers
 
 import mocked.MockedNetworkUtils
-import models.Models.MixStatus.Complete
-import models.Models.MixWithdrawStatus.UnderHop
+import models.Status.MixStatus.Complete
+import models.Status.MixWithdrawStatus.UnderHop
 import models.Models._
+import models.Transaction._
+import models.Request._
+import models.Rescan._
 
 /**
  * Dataset of test values for classes:
@@ -70,6 +73,29 @@ object MixScannerDataset extends DatasetSuite {
   private val sample16_hopRound = 0
   private val sample16_hopBoxType = "hop"
 
+  private val sample17_MixingRequest: MixingRequest = CreateMixingRequest(readJsonFile("./test/dataset/Sample17_MixRequest.json"))
+  private val sample17_mixId = sample17_MixingRequest.id
+  private val sample17_fullMixList = jsonToObjectList[FullMix](readJsonFile("./test/dataset/Sample17_FullMixList.json"), CreateFullMix.apply)
+  private val sample17_halfMixList = jsonToObjectList[HalfMix](readJsonFile("./test/dataset/Sample17_HalfMixList.json"), CreateHalfMix.apply)
+  private val sample17_hopMixList = jsonToObjectList[HopMix](readJsonFile("./test/dataset/Sample17_HopMixList.json"), CreateHopMix.apply)
+  private val sample17_fullRound = sample17_fullMixList.last.round
+  private val sample17_halfRound = sample17_halfMixList.last.round
+  private val sample17_hopRound = sample17_hopMixList.last.round
+  private val sample17_FullBox = sample17_fullMixList.last.fullMixBoxId
+  private val sample17_HalfBox = sample17_halfMixList.last.halfMixBoxId
+  private val sample17_HopBox = sample17_hopMixList.last.boxId
+  private val sample17_preHalfBox = sample17_halfMixList.head.halfMixBoxId
+  private val sample17_preFullBox = sample17_fullMixList.head.fullMixBoxId
+  private val sample17_preHopBox = sample17_hopMixList.head.boxId
+  private val sample17_masterSecret = sample17_MixingRequest.masterKey
+  private val sample17_followedMixList = Nil
+  private val sample17_followedHopList = Nil
+  private val sample17_followedWithdraw = Option.empty[FollowedWithdraw]
+  private val sample17_fullResult = sample17_fullMixList.map(mix => (mix.mixId, mix.round, mix.halfMixBoxId, mix.fullMixBoxId)).dropRight(1)
+  private val sample17_halfResult = sample17_halfMixList.map(mix => (mix.mixId, mix.round, mix.halfMixBoxId)).dropRight(1)
+  private val sample17_hopResult = sample17_hopMixList.map(mix => (mix.mixId, mix.round, mix.boxId)).dropRight(1)
+
+
   /**
    * apis for testing MixScanner.scanHopMix and MixScanner.followHopMix
    * spec data: (BigInt, Seq[FollowedHop], Option[FollowedWithdraw]), the mix request master secret and function expected return values
@@ -115,5 +141,27 @@ object MixScannerDataset extends DatasetSuite {
   def mockFollowHopMix: (String, Int, BigInt, Seq[FollowedHop], Option[FollowedWithdraw]) = (sample16_spentHopBoxId, sample16_hopRound, sample16_masterSecret, sample16_followedHopList, Option(sample16_followedWithdraw))
 
   def rescanHop_resultData = (sample16_hopMixList, sample16_WithdrawTx)
+
+  def backwardRescanHop_specData: (String, Int, Boolean, String, String) = (sample17_mixId, sample17_hopRound, true, "hop", sample17_HopBox)
+
+  def backwardRescanFull_specData: (String, Int, Boolean, String, String) = (sample17_mixId, sample17_fullRound, true, "full", sample17_FullBox)
+
+  def backwardRescanHalf_specData: (String, Int, Boolean, String, String) = (sample17_mixId, sample17_halfRound, true, "half", sample17_HalfBox)
+
+  def backwardRescanMix_dbData: (MixingRequest, Seq[FullMix], Seq[HalfMix]) = (sample17_MixingRequest, sample17_fullMixList, sample17_halfMixList)
+
+  def backwardRescanHop_dbData: (MixingRequest, Seq[HopMix]) = (sample17_MixingRequest, sample17_hopMixList)
+
+  def backwardRescan_mockedData = (mockBackwardFollowFullMix, mockBackwardFollowHopMix, mockBackwardFollowHalfMix)
+
+  def mockBackwardFollowFullMix: (String, Int, BigInt, Seq[FollowedMix]) = (sample17_preFullBox, sample17_fullRound - 1, sample17_masterSecret, sample17_followedMixList)
+
+  def mockBackwardFollowHalfMix: (String, Int, BigInt, Seq[FollowedMix]) = (sample17_preHalfBox, sample17_fullRound, sample17_masterSecret, sample17_followedMixList)
+
+  def mockBackwardFollowHopMix: (String, Int, BigInt, Seq[FollowedHop], Option[FollowedWithdraw]) = (sample17_preHopBox, sample17_hopRound - 1, sample17_masterSecret, sample17_followedHopList, sample17_followedWithdraw)
+
+  def backwardRescan_mixResultData = (sample17_fullResult, sample17_halfResult)
+
+  def backwardRescan_hopResultData = sample17_hopResult
 
 }

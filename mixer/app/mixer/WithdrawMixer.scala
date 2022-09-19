@@ -1,17 +1,20 @@
 package mixer
 
 import app.Configs
+import dao._
 import helpers.ErgoMixerUtils
+import models.Models.HopMix
+import models.Request.MixRequest
+import models.Status.GroupMixStatus
+import models.Status.MixStatus.Complete
+import models.Status.MixWithdrawStatus.{NoWithdrawYet, UnderHop}
+import models.Transaction.WithdrawTx
+import network.{BlockExplorer, NetworkUtils}
+import org.ergoplatform.appkit.BlockchainContext
+import play.api.Logger
+import wallet.WalletHelper
 
 import javax.inject.Inject
-import models.Models.MixStatus.Complete
-import models.Models.MixWithdrawStatus.{AgeUSDRequested, NoWithdrawYet, UnderHop, WithdrawRequested, Withdrawn}
-import models.Models.{CreateMixRequest, CreateWithdrawTx, GroupMixStatus, HopMix, MixRequest, WithdrawTx}
-import network.{BlockExplorer, NetworkUtils}
-import play.api.Logger
-import dao.{DAOUtils, HopMixDAO, MixingGroupRequestDAO, MixingRequestsDAO, WithdrawDAO}
-import org.ergoplatform.appkit.BlockchainContext
-import wallet.WalletHelper
 
 class WithdrawMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
                               networkUtils: NetworkUtils, explorer: BlockExplorer,
@@ -34,26 +37,24 @@ class WithdrawMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
     val minting = withdrawals._2
     val hopping = withdrawals._3
 
-    withdraws.foreach {
-      case tx =>
-        try {
-          processWithdraw(tx)
-        } catch {
-          case a: Throwable =>
-            logger.info(s" [WITHDRAW: ${tx.mixId}] txId: ${tx.txId} An error occurred. Stacktrace below")
-            logger.error(getStackTraceStr(a))
-        }
+    withdraws.foreach {tx =>
+      try {
+        processWithdraw(tx)
+      } catch {
+        case a: Throwable =>
+          logger.info(s" [WITHDRAW: ${tx.mixId}] txId: ${tx.txId} An error occurred. Stacktrace below")
+          logger.error(getStackTraceStr(a))
+      }
     }
 
-    minting.foreach {
-      case tx =>
-        try {
-          processWithdraw(tx, isMinting = true)
-        } catch {
-          case a: Throwable =>
-            logger.info(s" [WITHDRAW (minting): ${tx.mixId}] txId: ${tx.txId} An error occurred. Stacktrace below")
-            logger.error(getStackTraceStr(a))
-        }
+    minting.foreach {tx =>
+      try {
+        processWithdraw(tx, isMinting = true)
+      } catch {
+        case a: Throwable =>
+          logger.info(s" [WITHDRAW (minting): ${tx.mixId}] txId: ${tx.txId} An error occurred. Stacktrace below")
+          logger.error(getStackTraceStr(a))
+      }
     }
 
     hopping.foreach(tx => {

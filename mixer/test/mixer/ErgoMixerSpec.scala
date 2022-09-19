@@ -3,8 +3,10 @@ package mixer
 import wallet.WalletHelper
 import dao._
 import mocked.MockedNetworkUtils
-import models.Models.{CovertAsset, FullMix, HalfMix, HopMix, MixCovertRequest, MixState, MixingRequest, WithdrawTx}
-import models.Models.MixWithdrawStatus.{HopRequested, WithdrawRequested}
+import models.Models.{CovertAsset, FullMix, HalfMix, HopMix, MixState}
+import models.Request.{MixCovertRequest, MixingRequest}
+import models.Status.MixWithdrawStatus.{HopRequested, WithdrawRequested}
+import models.Transaction.WithdrawTx
 import org.scalatestplus.mockito.MockitoSugar.mock
 import play.api.db.slick.DatabaseConfigProvider
 import testHandlers.{ErgoMixerDataset, TestSuite}

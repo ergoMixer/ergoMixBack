@@ -1,8 +1,7 @@
 package network
 
-import java.net.{Authenticator, InetSocketAddress, PasswordAuthentication, Proxy}
+import java.net.{InetSocketAddress, Proxy}
 
-import app.Configs.readKey
 import app.Configs
 import helpers.{ErgoMixerUtils, TrayUtils}
 import javax.inject.Inject

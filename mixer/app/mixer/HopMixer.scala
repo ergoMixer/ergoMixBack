@@ -4,12 +4,12 @@ import app.Configs
 import dao._
 import helpers.ErgoMixerUtils
 import mixinterface.AliceOrBob
-import models.Models.MixWithdrawStatus.{UnderHop, WithdrawRequested}
-import models.Models.{FullMix, FullMixBox, HopMix, PendingRescan, WithdrawTx}
+import models.Models.HopMix
+import models.Rescan.PendingRescan
+import models.Transaction.WithdrawTx
 import network.{BlockExplorer, NetworkUtils}
-import org.ergoplatform.appkit.{BlockchainContext, InputBox}
+import org.ergoplatform.appkit.BlockchainContext
 import play.api.Logger
-import sigmastate.eval._
 import wallet.WalletHelper.now
 import wallet.{Wallet, WalletHelper}
 
@@ -83,7 +83,7 @@ class HopMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
       }
       else {
         val nextHopSecret = wallet.getSecret(hopBox.round + 1, toFirst = true)
-        val nextHopAddress = WalletHelper.getProveDlogAddress(nextHopSecret, ctx)
+        val nextHopAddress = WalletHelper.getAddressOfSecret(nextHopSecret)
 
         try {
           val tx = aliceOrBob.spendHopBox(secret, hopBox.boxId, nextHopAddress)
@@ -114,12 +114,23 @@ class HopMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
    * @param hopBox HopMix
    */
   private def investigateHopBoxStatus(hopBox: HopMix): Unit = {
-    explorer.getSpendingTxId(hopBox.boxId) match {
-      case Some(txId) =>
-        logger.error(s" [HOP:${hopBox.mixId} (${hopBox.round})] [ERROR] Rescanning because hop:$hopBox is spent in txId: $txId")
-        Thread.currentThread().getStackTrace foreach println
-        val new_scan = PendingRescan(hopBox.mixId, now, hopBox.round, goBackward = false, "hop", hopBox.boxId)
+    explorer.doesBoxExist(hopBox.boxId) match {
+      case Some(false) =>
+        // hopBox is no longer confirmed. This indicates a fork. We need to rescan
+        logger.error(s"  [HOP:${hopBox.mixId} (${hopBox.round})] [ERROR] Rescanning [hop:$hopBox disappeared]")
+        val new_scan = PendingRescan(hopBox.mixId, now, hopBox.round, goBackward = true, "hop", hopBox.boxId)
         rescanDAO.updateById(new_scan)
+      case Some(true) =>
+        explorer.getSpendingTxId(hopBox.boxId) match {
+          case Some(txId) =>
+            logger.error(s" [HOP:${hopBox.mixId} (${hopBox.round})] [ERROR] Rescanning because hop:$hopBox is spent in txId: $txId")
+            val new_scan = PendingRescan(hopBox.mixId, now, hopBox.round, goBackward = false, "hop", hopBox.boxId)
+            rescanDAO.updateById(new_scan)
+          case None =>
+            throw new Exception("this case should never happen")
+        }
+      case None =>
+        logger.error(s"  An error occurred while checking the hopBox ${hopBox.boxId} with explorer")
     }
   }
 

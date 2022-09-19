@@ -1,5 +1,8 @@
 <configuration>
 
+  <property resource="reference.conf" />
+  <property resource="application.conf" />
+
   <conversionRule conversionWord="coloredLevel" converterClass="play.api.libs.logback.ColoredLevel" />
 
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
@@ -8,8 +11,13 @@
     </encoder>
   </appender>
 
-  <appender name="FILE" class="ch.qos.logback.core.FileAppender">
-    <file>${user.home}/ergoMixer/application.log</file>
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${logPath}/application.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <fileNamePattern>${logPath}/log_%d{yyyy-MM-dd}_%i.zip</fileNamePattern>
+      <maxFileSize>${maxLogFileSize}</maxFileSize>
+      <maxHistory>${maxLogHistory}</maxHistory>
+    </rollingPolicy>
     <encoder>
       <pattern>%date [%level] from %logger in %thread - %message%n%xException</pattern>
     </encoder>

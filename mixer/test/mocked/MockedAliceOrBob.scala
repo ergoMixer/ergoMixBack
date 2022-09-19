@@ -17,7 +17,7 @@ class MockedAliceOrBob extends MockitoSugar {
 
   def getMocked = aliceOrBob
 
-  def setTestCases: Unit = {
+  def setTestCases(): Unit = {
     val withdrawFromHop = dataset_hopMixer.withdrawFromHop_aliceOrBobMockedData
     val nextHop = dataset_hopMixer.nextHop_aliceOrBobMockedData
 
@@ -35,6 +35,6 @@ class MockedAliceOrBob extends MockitoSugar {
    */
   def setReturnValue_spendHopBox(secret: BigInteger, boxId: String, destinationAddress: String, tx: SignedTransaction): Unit = when(aliceOrBob.spendHopBox(secret, boxId, destinationAddress)).thenReturn(tx)
 
-  setTestCases
+  setTestCases()
 
 }

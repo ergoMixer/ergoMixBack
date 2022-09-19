@@ -18,7 +18,7 @@ class MockedBlockchainContext extends MockitoSugar {
 
   def getMocked = context
 
-  def setTestCases: Unit = {
+  def setTestCases(): Unit = {
     val notMinedTx_initiateHop = dataset_withdrawMixer.notMinedWithdrawTx
 
     setReturnValue_signedTxFromJson(notMinedTx_initiateHop._1.toString, notMinedTx_initiateHop._2)
@@ -47,6 +47,6 @@ class MockedBlockchainContext extends MockitoSugar {
    */
   def setExceptionOnCall_sendTransaction(tx: SignedTransaction): Unit = when(context.sendTransaction(tx)).thenAnswer(_ => {throw new Throwable("Malformed transaction (unit-test case)")})
 
-  setTestCases
+  setTestCases()
 
 }

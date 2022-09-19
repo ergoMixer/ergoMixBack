@@ -1,10 +1,11 @@
 package mocked
 
-import models.Models.SpendTx
+import models.Transaction.SpendTx
 import org.scalatestplus.mockito.MockitoSugar
 import network.BlockExplorer
 import org.mockito.Mockito.when
 import testHandlers.{HopMixerDataset, MixScannerDataset, WithdrawMixerDataset}
+
 import javax.inject.Singleton
 
 @Singleton
@@ -17,7 +18,7 @@ class MockedBlockExplorer extends MockitoSugar {
 
   def getMocked = blockExplorer
 
-  def setTestCases: Unit = {
+  def setTestCases(): Unit = {
     val confirmedTx = dataset_withdrawMixer.confirmedTx_mockedData
     val notMinedTx = dataset_withdrawMixer.notMinedTx_mockedData
     val confirmedTx_initiateHop = dataset_withdrawMixer.confirmedTxInitiateHop_mockedData
@@ -89,6 +90,6 @@ class MockedBlockExplorer extends MockitoSugar {
    */
   def setReturnValue_getBoxIdsByAddress(address: String, boxIds: Seq[String]): Unit = when(blockExplorer.getBoxIdsByAddress(address)).thenReturn(boxIds)
 
-  setTestCases
+  setTestCases()
 
 }

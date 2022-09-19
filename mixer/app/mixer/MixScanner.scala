@@ -1,7 +1,9 @@
 package mixer
 
+import models.Box.{FBox, HBox}
+import models.Rescan.{FollowedHop, FollowedMix, FollowedWithdraw}
+
 import javax.inject.{Inject, Singleton}
-import models.Models.{FBox, FollowedHop, FollowedMix, FollowedWithdraw, HBox}
 import network.{BlockExplorer, NetworkUtils}
 import play.api.Logger
 import sigmastate.eval._
@@ -52,15 +54,6 @@ class MixScanner @Inject()(networkUtils: NetworkUtils, explorer: BlockExplorer) 
             FollowedMix(nextRound, isAlice = false, halfMixBoxId, Some(nextFullMixBoxId)) +: followFullMix(nextFullMixBoxId, nextRound, masterSecret)
           case _ => Nil
         }
-      }
-    }.getOrElse(Nil)
-  }
-
-  @deprecated("This takes a lot of time. Use followFullMix and followHalfMix", "1.0")
-  def followDeposit(boxId: String, masterSecret: BigInt, poolAmount: Long = 1000000000): Seq[FollowedMix] = {
-    getSpendingTx(boxId).map { tx =>
-      tx.outboxes.filter(_.amount == poolAmount).flatMap { outBox =>
-        followHalfMix(outBox.id, 0, masterSecret) ++ followFullMix(outBox.id, 0, masterSecret)
       }
     }.getOrElse(Nil)
   }

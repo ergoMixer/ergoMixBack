@@ -6,10 +6,12 @@ import helpers.ErgoMixerUtils
 import wallet.WalletHelper.now
 
 import javax.inject.Inject
-import models.Models
-import models.Models.MixStatus.Running
-import models.Models.MixWithdrawStatus.WithdrawRequested
-import models.Models.{Deposit, FullMix, HalfMix, MixHistory, MixRequest, MixState, MixTransaction, OutBox, SpentDeposit, WithdrawTx}
+import models.Status.MixStatus.Running
+import models.Status.MixWithdrawStatus.WithdrawRequested
+import models.Models.{Deposit, FullMix, HalfMix, MixHistory, MixState, SpentDeposit}
+import models.Box.OutBox
+import models.Request.MixRequest
+import models.Transaction.{MixTransaction, WithdrawTx}
 import network.NetworkUtils
 import org.ergoplatform.appkit.SignedTransaction
 import play.api.Logger
@@ -59,23 +61,22 @@ class NewMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
     if (reqs.nonEmpty) logger.info(s"[NEW] Processing following ids")
 
     reqs.foreach {
-      case req => logger.info(s"  > ${req.id} depositAddress: ${req.depositAddress}")
+      req => logger.info(s"  > ${req.id} depositAddress: ${req.depositAddress}")
     }
 
     halfs = null
-    reqs.foreach {
-      case req =>
-        try {
-          initiateMix(req.toMixRequest, req.masterKey)
-        } catch {
-          case a: Throwable =>
-            logger.error(s" [NEW: ${req.id}] An error occurred. Stacktrace below")
-            logger.error(getStackTraceStr(a))
-        }
+    reqs.foreach {req =>
+      try {
+        initiateMix(req.toMixRequest, req.masterKey)
+      } catch {
+        case a: Throwable =>
+          logger.error(s" [NEW: ${req.id}] An error occurred. Stacktrace below")
+          logger.error(getStackTraceStr(a))
+      }
     }
   }
 
-  private implicit val insertReason = "NewMixer.initiateMix"
+  private implicit val insertReason: String = "NewMixer.initiateMix"
 
   /**
    * starts mixing (as bob if possible or as alice)
@@ -110,7 +111,7 @@ class NewMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
       return
     }
 
-    def updateTablesMixes(isAlice: Boolean, mixRequestId: String, time: Long, tx: SignedTransaction, depositsToUse: Seq[Models.Deposit], optTokenBoxId: Option[String]): Unit = {
+    def updateTablesMixes(isAlice: Boolean, mixRequestId: String, time: Long, tx: SignedTransaction, depositsToUse: Seq[Deposit], optTokenBoxId: Option[String]): Unit = {
       depositsToUse.map { d =>
         val spent_deposit = SpentDeposit(d.address, d.boxId, d.amount, d.createdTime, d.tokenAmount, tx.getId, time, mixRequestId)
         spentDepositsDAO.insertDeposit(spent_deposit)
@@ -133,7 +134,7 @@ class NewMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
     val neededToken = mixRequest.neededTokenAmount
     // get a random token emission box
     val optTokenBoxId = getRandomValidBoxId(networkUtils.getTokenEmissionBoxes(numFeeToken, considerPool = true)
-        .filterNot(box => daoUtils.awaitResult(tokenEmissionDAO.existsByBoxId(box.id))).map(_.id.toString))
+        .filterNot(box => daoUtils.awaitResult(tokenEmissionDAO.existsByBoxId(box.id))).map(_.id))
 
     if (avbl < neededErg || avblToken < neededToken) { // should not happen because we are only considering completed deposits.
       throw new Exception(s"Insufficient funds. Needed $neededErg. Available $avbl")

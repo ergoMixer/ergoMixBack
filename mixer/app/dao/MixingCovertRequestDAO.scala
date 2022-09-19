@@ -1,7 +1,7 @@
 package dao
 
 import javax.inject.{Inject, Singleton}
-import models.Models.MixCovertRequest
+import models.Request.MixCovertRequest
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 
@@ -21,7 +21,7 @@ trait MixingCovertRequestComponent {
     class MixCovertRequestTable(tag: Tag) extends Table[MixCovertRequest](tag, "MIXING_COVERT_REQUEST") {
         def nameCovert = column[String]("NAME_COVERT")
 
-        def id = column[String]("MIX_GROUP_ID", O.PrimaryKey)
+        def groupId = column[String]("MIX_GROUP_ID", O.PrimaryKey)
 
         def createdTime = column[Long]("CREATED_TIME")
 
@@ -33,7 +33,7 @@ trait MixingCovertRequestComponent {
 
         def masterKey = column[BigInt]("MASTER_SECRET_GROUP")
 
-        def * = (nameCovert, id, createdTime, depositAddress, numRounds, isManualCovert, masterKey) <> (MixCovertRequest.tupled, MixCovertRequest.unapply)
+        def * = (nameCovert, groupId, createdTime, depositAddress, numRounds, isManualCovert, masterKey) <> (MixCovertRequest.tupled, MixCovertRequest.unapply)
     }
 
 }
@@ -70,19 +70,19 @@ class MixingCovertRequestDAO @Inject()(protected val dbConfigProvider: DatabaseC
     /**
      * checks if the covertId exists in table or not
      *
-     * @param covertId String
+     * @param groupId String
      */
-    def existsById(covertId: String): Future[Boolean] = db.run(covertRequests.filter(req => req.id === covertId).exists.result)
+    def existsById(groupId: String): Future[Boolean] = db.run(covertRequests.filter(req => req.groupId === groupId).exists.result)
 
     /**
      * updates nameCovert by covertId
      *
-     * @param covertId String
+     * @param groupId String
      * @param nameCovert String
      */
-    def updateNameCovert(covertId: String, nameCovert: String): Future[Unit] = {
+    def updateNameCovert(groupId: String, nameCovert: String): Future[Unit] = {
         val query = for {
-            req <- covertRequests if req.id === covertId
+            req <- covertRequests if req.groupId === groupId
         } yield req.nameCovert
         db.run(query.update(nameCovert)).map(_ => ())
     }
@@ -96,7 +96,7 @@ class MixingCovertRequestDAO @Inject()(protected val dbConfigProvider: DatabaseC
     /**
      * selects request by covertId
      *
-     * @param covertId String
+     * @param groupId String
      */
-    def selectCovertRequestByMixGroupId(covertId: String): Future[Option[MixCovertRequest]] = db.run(covertRequests.filter(req => req.id === covertId).result.headOption)
+    def selectCovertRequestByMixGroupId(groupId: String): Future[Option[MixCovertRequest]] = db.run(covertRequests.filter(req => req.groupId === groupId).result.headOption)
 }

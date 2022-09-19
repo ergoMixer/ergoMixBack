@@ -22,11 +22,8 @@ class MockedNetworkUtils
 
   /**
    * Set the output type of NetworkUtils.UsingClient
-   *  0: String
-   *
-   * @param t Int
    */
-  def setUsingClientReturnType[T]: Unit = {
+  def setUsingClientReturnType[T](): Unit = {
     when(networkUtils.usingClient(any())).thenAnswer((invocation: InvocationOnMock) => {
       val f = invocation.getArgument(0, classOf[BlockchainContext => T])
       val ergoClient: FileMockedErgoClient = createMockedErgoClient(MockData(Nil, Nil))
@@ -44,7 +41,7 @@ class MockedNetworkUtils
    */
   def jsonToSignedTx(jsonString: String): SignedTransaction = networkUtils.usingClient { implicit ctx => ctx.signedTxFromJson(jsonString)}
 
-  setUsingClientReturnType[String]
+  setUsingClientReturnType[String]()
 
   val tokenErgoMix: Option[TokenErgoMix] = networkUtils.usingClient { implicit ctx => Some(new TokenErgoMix(ctx)) }
   when(networkUtils.tokenErgoMix).thenReturn(tokenErgoMix)

@@ -1,9 +1,9 @@
 package mixinterface
 
 import java.math.BigInteger
-
 import app.Configs
-import models.Models._
+import models.Box.{EndBox, FullMixBox, HalfMixBox}
+import models.Transaction.{FullMixTx, HalfMixTx}
 import network.NetworkUtils
 import org.ergoplatform.ErgoLikeTransaction
 import org.ergoplatform.appkit._

@@ -38,7 +38,7 @@ class Deposits @Inject()(
     }
   }
 
-  private implicit val insertReason = "Deposits.insertDeposit"
+  private implicit val insertReason: String = "Deposits.insertDeposit"
 
   /**
    * inserts deposits into db

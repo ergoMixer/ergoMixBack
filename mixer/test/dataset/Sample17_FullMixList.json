@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "mixId": "9d791ee1-7b40-4a7b-9a71-7b61af3cde37",
+      "round": 2,
+      "createdTime": 1634197489046,
+      "halfMixBoxId": "e76ec269312eb6cd431af5aa83212d5be547e189f5585cceaa849fc80e32043a",
+      "fullMixBoxId": "1a643aeab506622b90b1a5616866082f295f525d428929604a7f94f994c0f1fa"
+    },
+    {
+      "mixId": "9d791ee1-7b40-4a7b-9a71-7b61af3cde37",
+      "round": 3,
+      "createdTime": 1634197489046,
+      "halfMixBoxId": "86c9641bdd9773bf79f8ffa391870a0b4339b8a51b6a2f9e16a707e3e363f547",
+      "fullMixBoxId": "801f4ea1f70e8b6198c9cb702ad0522630df022637827d6de307546aaa89d1ac"
+    }
+  ]
+}
+

@@ -2,7 +2,9 @@ package testHandlers
 
 import io.circe.{Json, parser}
 import models.Models._
-import testHandlers.MixScannerDataset.{jsonToObjectList, readJsonFile}
+import models.Transaction._
+import models.Request._
+import models.Box._
 
 import scala.collection.mutable
 

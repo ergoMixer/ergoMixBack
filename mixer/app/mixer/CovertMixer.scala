@@ -5,7 +5,7 @@ import mixinterface.AliceOrBob
 import helpers.ErgoMixerUtils
 
 import javax.inject.{Inject, Singleton}
-import models.Models.{CovertAsset, CovertAssetWithdrawStatus, CovertAssetWithdrawTx, DistributeTx, EndBox, MixCovertRequest, OutBox}
+import models.Models.CovertAsset
 import network.{BlockExplorer, NetworkUtils}
 import org.ergoplatform.ErgoAddressEncoder
 import org.ergoplatform.appkit.{Address, ErgoToken, ErgoTreeTemplate}
@@ -15,6 +15,10 @@ import wallet.{Wallet, WalletHelper}
 import scala.collection.mutable
 import scala.collection.JavaConverters._
 import dao.{CovertAddressesDAO, CovertDefaultsDAO, DAOUtils, DistributeTransactionsDAO, MixingCovertRequestDAO, MixingRequestsDAO, WithdrawCovertTokenDAO}
+import models.Box.{EndBox, OutBox}
+import models.Request.MixCovertRequest
+import models.Status.CovertAssetWithdrawStatus
+import models.Transaction.{CovertAssetWithdrawTx, DistributeTx}
 import scorex.crypto.hash.Sha256
 import scorex.util.encode.Base16
 import sigmastate.Values.ErgoTree
@@ -226,7 +230,7 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
                   case None =>
                     spendingTxId = ""
                 }
-                if ((!spendingTxId.isEmpty && spendingTxId != req.id) || outputs.contains(boxId)) {
+                if ((spendingTxId.nonEmpty && spendingTxId != req.id) || outputs.contains(boxId)) {
                   false
                 }
                 else true
@@ -283,7 +287,7 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
    *
    */
   def processRequestedWithdrawAsset(covertId: String, tokenId: String, txId: String, tx: Array[Byte]): Unit = {
-    logger.info(s"[covert: ${covertId}] processing withdraw request of token ${tokenId}...")
+    logger.info(s"[covert: $covertId] processing withdraw request of token $tokenId...")
     if (txId != "") {
       // check confirmation
       val confNum = explorer.getTxNumConfirmations(txId)
@@ -337,7 +341,7 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
    *
    */
   def withdrawAsset(covertId: String, withdrawAddress: String, tokenIds: Seq[String]): Unit = {
-    logger.info(s"[covert: ${covertId}] processing withdraw request of token list [${tokenIds.mkString(",")}]...")
+    logger.info(s"[covert: $covertId] processing withdraw request of token list [${tokenIds.mkString(",")}]...")
     val covertInfo = ergoMixer.covertInfoById(covertId)
     val depositAddress = covertInfo._1
     val proverDlogSecrets = covertInfo._2.bigInteger

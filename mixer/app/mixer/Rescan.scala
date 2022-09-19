@@ -1,17 +1,17 @@
 package mixer
 
+import dao._
+import models.Models.{FullMix, HalfMix, HopMix, MixHistory, MixState}
+import models.Rescan.{FollowedHop, FollowedMix, FollowedWithdraw, PendingRescan}
+import models.Status.MixStatus.Complete
+import models.Status.MixWithdrawStatus.UnderHop
+import models.Transaction.WithdrawTx
+import play.api.Logger
 import wallet.WalletHelper.now
 
 import javax.inject.Inject
-import models.Models.{FollowedHop, FollowedMix, FollowedWithdraw, FullMix, HalfMix, HopMix, MixHistory, MixState, PendingRescan, WithdrawTx}
-import dao.{DAOUtils, FullMixDAO, HalfMixDAO, HopMixDAO, MixStateDAO, MixStateHistoryDAO, MixingRequestsDAO, RescanDAO, WithdrawDAO}
-import models.Models.MixStatus.Complete
-import models.Models.MixWithdrawStatus.{UnderHop, WithdrawRequested}
-import network.NetworkUtils
-import org.ergoplatform.appkit.BlockchainContext
 
-class Rescan @Inject()(networkUtils: NetworkUtils,
-                       mixScanner: MixScanner,
+class Rescan @Inject()(mixScanner: MixScanner,
                        daoUtils: DAOUtils,
                        mixingRequestsDAO: MixingRequestsDAO,
                        rescanDAO: RescanDAO,
@@ -22,21 +22,28 @@ class Rescan @Inject()(networkUtils: NetworkUtils,
                        hopMixDAO: HopMixDAO,
                        withdrawDAO: WithdrawDAO) {
 
-  private implicit val insertReason = "rescan"
+  private val logger: Logger = Logger(this.getClass)
+
+  private implicit val insertReason: String = "rescan"
 
   def processRescanQueue(): Unit = {
     daoUtils.awaitResult(rescanDAO.all).foreach {
       case PendingRescan(mixId, _, round, goBackward, boxType, mixBoxId) =>
-        processRescan(mixId, round, goBackward, boxType, mixBoxId)
-        rescanDAO.delete(mixId)
+        try {
+          processRescan(mixId, round, goBackward, boxType, mixBoxId)
+          rescanDAO.delete(mixId)
+        }
+        catch {
+          case e: Throwable =>
+            logger.error(e.getMessage)
+        }
     }
   }
 
   def processRescan(mixId: String, round: Int, goBackward: Boolean, boxType: String, mixBoxId: String): Unit = {
-    val masterSecretFuture = mixingRequestsDAO.selectMasterKey(mixId)
-    val poolAmountFuture = mixingRequestsDAO.selectByMixId(mixId)
-    val masterSecret = daoUtils.awaitResult(masterSecretFuture).getOrElse(throw new Exception("Unable to read master secret"))
-    val poolAmount = daoUtils.awaitResult(poolAmountFuture).getOrElse(throw new Exception("Unable to read pool amount")).amount
+    logger.info(s" [RESCAN: $mixId] boxId: $mixBoxId processing. boxType: $boxType, goBackward: $goBackward")
+    val masterSecret = daoUtils.awaitResult(mixingRequestsDAO.selectMasterKey(mixId))
+      .getOrElse(throw new Exception("Unable to read master secret"))
 
     if (!goBackward) { // go forward
       boxType match {
@@ -61,9 +68,46 @@ class Rescan @Inject()(networkUtils: NetworkUtils,
       }
     }
     else { // go backward
-      // TODO: Rescan from last good box instead of beginning. For now doing from beginning
-      val followedMixes: Seq[FollowedMix] = mixScanner.followDeposit(mixBoxId, masterSecret, poolAmount)
-      applyMixes(mixId, followedMixes)
+      if (round == 0 && boxType != "hop") {
+        // TODO: in this case, should get deposit box and follow forward from it.
+        logger.warn(s"  backward rescan for $boxType in round 0 not implemented...")
+        return
+      }
+      boxType match {
+        case "half" =>
+          clearFutureRounds(mixId, round - 1)
+          val previousFullBox = daoUtils.awaitResult(fullMixDAO.getMixBoxIdByRound(mixId, round - 1))
+            .getOrElse(throw new Exception("Unable to retrieve previous full box"))
+
+          val followedMixes: Seq[FollowedMix] = mixScanner.followFullMix(previousFullBox, round - 1, masterSecret)
+          applyMixes(mixId, followedMixes)
+
+        case "full" =>
+          val previousHalfBox = daoUtils.awaitResult(halfMixDAO.getMixBoxIdByRound(mixId, round))
+          if (previousHalfBox.isDefined) {
+            daoUtils.awaitResult(mixStateHistoryDAO.deleteFutureRounds(mixId, round - 1))
+            daoUtils.awaitResult(fullMixDAO.deleteFutureRounds(mixId, round - 1))
+
+            val followedMixes: Seq[FollowedMix] = mixScanner.followHalfMix(previousHalfBox.get, round, masterSecret)
+            applyMixes(mixId, followedMixes)
+          }
+          else {
+            clearFutureRounds(mixId, round - 1)
+            val previousFullBox = daoUtils.awaitResult(fullMixDAO.getMixBoxIdByRound(mixId, round - 1))
+              .getOrElse(throw new Exception("Unable to retrieve previous full box"))
+
+            val followedMixes: Seq[FollowedMix] = mixScanner.followHalfMix(previousFullBox, round - 1, masterSecret)
+            applyMixes(mixId, followedMixes)
+          }
+
+        case "hop" =>
+          hopMixDAO.deleteFutureRounds(mixId, round - 1)
+          val previousHopBox = daoUtils.awaitResult(hopMixDAO.getMixBoxIdByRound(mixId, round - 1))
+            .getOrElse(throw new Exception("Unable to retrieve previous hop box"))
+          val (followedHop, followedWithdraw) = mixScanner.followHopMix(previousHopBox, round - 1, masterSecret)
+          applyHopMixes(mixId, followedHop)
+          if (followedWithdraw.isDefined) applyWithdrawTx(mixId, followedWithdraw.get, UnderHop.value)
+      }
     }
 
   }
@@ -85,32 +129,32 @@ class Rescan @Inject()(networkUtils: NetworkUtils,
     if (followedWithdraw.isDefined) applyWithdrawTx(mixId, followedWithdraw.get, UnderHop.value)
   }
 
-  private def updateMixHistory(mixId: String, round: Int, isAlice: Boolean) = {
+  private def updateMixHistory(mixId: String, round: Int, isAlice: Boolean): Unit = {
     val mixHistory = MixHistory(mixId, round, isAlice, now)
     daoUtils.awaitResult(mixStateHistoryDAO.updateById(mixHistory))
   }
 
-  private def updateFullMix(mixId: String, round: Int, halfMixBoxId: String, fullMixBoxId: String) = {
+  private def updateFullMix(mixId: String, round: Int, halfMixBoxId: String, fullMixBoxId: String): Unit = {
     val fullMix = FullMix(mixId, round, now, halfMixBoxId, fullMixBoxId)
     daoUtils.awaitResult(fullMixDAO.updateById(fullMix))
   }
 
-  private def updateHalfMix(mixId: String, round: Int, halfMixBoxId: String, isSpent: Boolean) = {
+  private def updateHalfMix(mixId: String, round: Int, halfMixBoxId: String, isSpent: Boolean): Unit = {
     val halfMix = HalfMix(mixId, round, now, halfMixBoxId, isSpent)
     daoUtils.awaitResult(halfMixDAO.updateById(halfMix))
   }
 
-  private def updateMixState(mixId: String, round: Int, isAlice: Boolean) = {
+  private def updateMixState(mixId: String, round: Int, isAlice: Boolean): Unit = {
     val mixState = MixState(mixId, round, isAlice)
     daoUtils.awaitResult(mixStateDAO.updateInRescan(mixState))
   }
 
-  private def updateHopMix(mixId: String, round: Int, hopBoxId: String) = {
+  private def updateHopMix(mixId: String, round: Int, hopBoxId: String): Unit = {
     val hopMix = HopMix(mixId, round, now, hopBoxId)
     daoUtils.awaitResult(hopMixDAO.updateById(hopMix))
   }
 
-  private def applyMix(mixId: String, followedMix: FollowedMix) = {
+  private def applyMix(mixId: String, followedMix: FollowedMix): Unit = {
     followedMix match {
       case FollowedMix(round, true, halfMixBoxId, Some(fullMixBoxId)) =>
 
@@ -131,7 +175,7 @@ class Rescan @Inject()(networkUtils: NetworkUtils,
         updateMixHistory(mixId, round, isAlice = false)
         updateMixState(mixId, round, isAlice = false)
 
-      case _ => ??? // should never happen
+      case _ => throw new Exception("this case should never happen")
     }
   }
 
@@ -151,7 +195,7 @@ class Rescan @Inject()(networkUtils: NetworkUtils,
     followedHopMixes.lastOption.map(lastHop => hopMixDAO.deleteFutureRounds(mixId, lastHop.round))
   }
 
-  private def applyWithdrawTx(mixId: String, tx: FollowedWithdraw, withdrawStatus: String) = {
+  private def applyWithdrawTx(mixId: String, tx: FollowedWithdraw, withdrawStatus: String): Unit = {
     val withdrawTx = WithdrawTx(mixId, tx.txId, now, tx.boxId, Array.empty[Byte], "generated by rescan")
     daoUtils.awaitResult(withdrawDAO.updateById(withdrawTx, withdrawStatus))
   }

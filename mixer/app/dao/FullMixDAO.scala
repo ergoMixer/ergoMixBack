@@ -13,7 +13,7 @@ trait FullMixComponent {
     import profile.api._
 
     class FullMixTable(tag: Tag) extends Table[FullMix](tag, "FULL_MIX") {
-        def id = column[String]("MIX_ID")
+        def mixId = column[String]("MIX_ID")
 
         def round = column[Int]("ROUND")
 
@@ -23,13 +23,13 @@ trait FullMixComponent {
 
         def fullMixBoxId = column[String]("FULL_MIX_BOX_ID")
 
-        def * = (id, round, createdTime, halfMixBoxId, fullMixBoxId) <> (FullMix.tupled, FullMix.unapply)
+        def * = (mixId, round, createdTime, halfMixBoxId, fullMixBoxId) <> (FullMix.tupled, FullMix.unapply)
 
-        def pk = primaryKey("pk_FULL_MIX", (id, round))
+        def pk = primaryKey("pk_FULL_MIX", (mixId, round))
     }
 
     class FullMixArchivedTable(tag: Tag) extends Table[(String, Int, Long, String, String, String)](tag, "FULL_MIX_ARCHIVED") {
-        def id = column[String]("MIX_ID")
+        def mixId = column[String]("MIX_ID")
 
         def round = column[Int]("ROUND")
 
@@ -41,9 +41,9 @@ trait FullMixComponent {
 
         def reason = column[String]("REASON")
 
-        def * = (id, round, createdTime, halfMixBoxId, fullMixBoxId, reason)
+        def * = (mixId, round, createdTime, halfMixBoxId, fullMixBoxId, reason)
 
-        def pk = primaryKey("pk_FULL_MIX_ARCHIVED", (id, round))
+        def pk = primaryKey("pk_FULL_MIX_ARCHIVED", (mixId, round))
     }
 
 }
@@ -88,7 +88,7 @@ class FullMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvide
     def selectFullBoxIdByMixId(mixId: String): Future[Option[String]] = {
         val query = for {
             (req, state) <- fullMix join mixes
-            if req.id === mixId && state.id === mixId && req.round === state.round
+            if req.mixId === mixId && state.mixId === mixId && req.round === state.round
         } yield req.fullMixBoxId
         db.run(query.result.headOption)
     }
@@ -101,7 +101,7 @@ class FullMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvide
      */
     def selectBoxId(mixId: String, round: Int): Future[Option[String]] = {
         val query = for {
-            mix <- fullMix if mix.id === mixId && mix.round === round
+            mix <- fullMix if mix.mixId === mixId && mix.round === round
         } yield mix.fullMixBoxId
         db.run(query.result.headOption)
     }
@@ -119,14 +119,14 @@ class FullMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvide
      * @param mixId String
      * @param round Int
      */
-    def selectOption(mixId: String, round: Int): Future[Option[FullMix]] = db.run(fullMix.filter(mix => mix.id === mixId && mix.round === round).result.headOption)
+    def selectOption(mixId: String, round: Int): Future[Option[FullMix]] = db.run(fullMix.filter(mix => mix.mixId === mixId && mix.round === round).result.headOption)
 
     /**
      * selects fullMix by mixId
      *
      * @param mixId String
      */
-    def boxIdByMixId(mixId: String): Future[Option[String]] = db.run(fullMix.filter(mix => mix.id === mixId).map(_.fullMixBoxId).result.headOption)
+    def boxIdByMixId(mixId: String): Future[Option[String]] = db.run(fullMix.filter(mix => mix.mixId === mixId).map(_.fullMixBoxId).result.headOption)
 
     /**
      * delete fullMix by mixId
@@ -134,8 +134,8 @@ class FullMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvide
      * @param mixId String
      */
     def deleteWithArchive(mixId: String): Future[Unit] = db.run(DBIO.seq(
-        fullMix.filter(mix => mix.id === mixId).delete,
-        fullMixArchive.filter(mix => mix.id === mixId).delete
+        fullMix.filter(mix => mix.mixId === mixId).delete,
+        fullMixArchive.filter(mix => mix.mixId === mixId).delete
     ))
 
     /**
@@ -144,7 +144,7 @@ class FullMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvide
      * @param mixId String
      * @param round Int
      */
-    def deleteFutureRounds(mixId: String, round: Int): Future[Unit] = db.run(fullMix.filter(mix => mix.id === mixId && mix.round > round).delete).map(_ => ())
+    def deleteFutureRounds(mixId: String, round: Int): Future[Unit] = db.run(fullMix.filter(mix => mix.mixId === mixId && mix.round > round).delete).map(_ => ())
 
     /**
      * updates full mix by mixId
@@ -152,7 +152,7 @@ class FullMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvide
      * @param new_mix FullMix
      */
     def updateById(new_mix: FullMix)(implicit insertReason: String): Future[Unit] = db.run(DBIO.seq(
-        fullMix.filter(mix => mix.id === new_mix.mixId && mix.round === new_mix.round).delete,
+        fullMix.filter(mix => mix.mixId === new_mix.mixId && mix.round === new_mix.round).delete,
         fullMix += new_mix,
         fullMixArchive += (new_mix.mixId, new_mix.round, new_mix.createdTime, new_mix.halfMixBoxId, new_mix.fullMixBoxId, insertReason)
     ))
@@ -166,4 +166,14 @@ class FullMixDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvide
         fullMix += new_fullMix,
         fullMixArchive += (new_fullMix.mixId, new_fullMix.round, new_fullMix.createdTime, new_fullMix.halfMixBoxId, new_fullMix.fullMixBoxId, insertReason),
     ))
+
+    /**
+     * selects fullMixBox by mixId and round
+     *
+     * @param mixId String
+     * @param round Int
+     */
+    def getMixBoxIdByRound(mixId: String, round: Int): Future[Option[String]] = db.run(fullMix.filter(mix =>
+        mix.mixId === mixId && mix.round === round).map(_.fullMixBoxId).result.headOption)
+
 }

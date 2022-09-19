@@ -3,7 +3,7 @@ package wallet
 import java.math.BigInteger
 import app.Configs
 import org.ergoplatform.{ErgoAddress, ErgoAddressEncoder}
-import org.ergoplatform.appkit.{Address, BlockchainContext, ConstantsBuilder, JavaHelpers, NetworkType}
+import org.ergoplatform.appkit.{Address, JavaHelpers, NetworkType}
 import sigmastate.basics.DLogProtocol.DLogProverInput
 import sigmastate.eval._
 import sigmastate.interpreter.CryptoConstants
@@ -32,17 +32,6 @@ object WalletHelper {
 
   def hexToGroupElement(hex: String): GroupElement = {
     JavaHelpers.decodeStringToGE(hex)
-  }
-
-  @deprecated("This needs blockchain context and compiles contract. Use getAddressOfSecret instead", "1.0")
-  def getProveDlogAddress(z: BigInt, ctx: BlockchainContext): String = {
-    val gZ: GroupElement = g.exp(z.bigInteger)
-      val contract = ctx.compileContract(
-        ConstantsBuilder.create().item(
-          "gZ", gZ
-        ).build(), "{proveDlog(gZ)}"
-      )
-      addressEncoder.fromProposition(contract.getErgoTree).get.toString
   }
 
   def getAddressOfSecret(secret: BigInt): String = new Address(JavaHelpers.createP2PKAddress(

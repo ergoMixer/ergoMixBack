@@ -3,7 +3,9 @@ package mixer
 import dao._
 import helpers.ErgoMixerUtils
 import mocked.{MockedAliceOrBob, MockedBlockExplorer, MockedBlockchainContext, MockedErgoMixer, MockedNetworkUtils}
-import models.Models.{HopMix, MixingRequest, WithdrawTx}
+import models.Models.HopMix
+import models.Request.MixingRequest
+import models.Transaction.WithdrawTx
 import org.ergoplatform.appkit.SignedTransaction
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.when

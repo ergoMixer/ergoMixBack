@@ -13,13 +13,13 @@ trait MixStateComponent {
     import profile.api._
 
     class MixStateTable(tag: Tag) extends Table[MixState](tag, "MIX_STATE") {
-        def id = column[String]("MIX_ID", O.PrimaryKey)
+        def mixId = column[String]("MIX_ID", O.PrimaryKey)
 
         def round = column[Int]("ROUND")
 
         def isAlice = column[Boolean]("IS_ALICE")
 
-        def * = (id, round, isAlice) <> (MixState.tupled, MixState.unapply)
+        def * = (mixId, round, isAlice) <> (MixState.tupled, MixState.unapply)
     }
 
 }
@@ -57,7 +57,7 @@ class MixStateDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      *
      * @param mixID String
      */
-    def selectByMixId(mixID: String): Future[Option[MixState]] = db.run(mixes.filter(state => state.id === mixID).result.headOption)
+    def selectByMixId(mixID: String): Future[Option[MixState]] = db.run(mixes.filter(state => state.mixId === mixID).result.headOption)
 
     /**
      * returns min of number of rounds in mixingRequest and mixState by mixID
@@ -67,7 +67,7 @@ class MixStateDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      */
     def minRoundsByMixId(mixID: String, numRounds: Int): Future[Int] = {
         val query = for {
-            state <- mixes.filter(state => state.id === mixID).result.headOption
+            state <- mixes.filter(state => state.mixId === mixID).result.headOption
             minRounds <- DBIO.successful(Math min(state.getOrElse(throw new Exception("corresponding mixId not found in MixState table")).round, numRounds))
         } yield minRounds
         db.run(query)
@@ -78,14 +78,14 @@ class MixStateDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      *
      * @param mixState MixState
      */
-    def updateById(mixState: MixState): Future[Unit] = db.run(mixes.filter(mix => mix.id === mixState.id).update(mixState)).map(_ => ())
+    def updateById(mixState: MixState): Future[Unit] = db.run(mixes.filter(mix => mix.mixId === mixState.id).update(mixState)).map(_ => ())
 
     /**
      * deletes mix state by mixID
      *
      * @param mixId String
      */
-    def delete(mixId: String): Future[Unit] = db.run(mixes.filter(mix => mix.id === mixId).delete).map(_ => ())
+    def delete(mixId: String): Future[Unit] = db.run(mixes.filter(mix => mix.mixId === mixId).delete).map(_ => ())
 
     /**
      * updates mix state by mixID, insert new mixStates if not exists (this happen in rescan process)
@@ -93,7 +93,7 @@ class MixStateDAO @Inject()(protected val dbConfigProvider: DatabaseConfigProvid
      * @param mixState MixState
      */
     def updateInRescan(mixState: MixState): Future[Unit] = db.run(DBIO.seq(
-        mixes.filter(mix => mix.id === mixState.id).delete,
+        mixes.filter(mix => mix.mixId === mixState.id).delete,
         mixes += mixState
     ))
 }

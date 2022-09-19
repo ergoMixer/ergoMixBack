@@ -1,20 +1,21 @@
 package mixer
 
 import app.Configs
-import mixinterface.AliceOrBob
+import dao._
 import helpers.ErgoMixerUtils
-import wallet.WalletHelper.now
-
-import javax.inject.Inject
-import models.Models.MixStatus.Running
-import models.Models.{CreateMixTransaction, FullMix, FullMixBox, HopMix, OutBox, PendingRescan, WithdrawTx}
-import models.Models.MixWithdrawStatus.{HopRequested, WithdrawRequested}
+import mixinterface.AliceOrBob
+import models.Box.OutBox
+import models.Models.FullMix
+import models.Rescan.PendingRescan
+import models.Status.MixWithdrawStatus.{HopRequested, WithdrawRequested}
+import models.Transaction.WithdrawTx
 import network.{BlockExplorer, NetworkUtils}
-import org.ergoplatform.appkit.InputBox
 import play.api.Logger
 import sigmastate.eval._
+import wallet.WalletHelper.now
 import wallet.{Wallet, WalletHelper}
-import dao.{AllMixDAO, DAOUtils, EmissionDAO, FullMixDAO, HalfMixDAO, HopMixDAO, MixTransactionsDAO, RescanDAO, SpentDepositsDAO, TokenEmissionDAO, WithdrawDAO}
+
+import javax.inject.Inject
 
 class HalfMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
                           networkUtils: NetworkUtils, explorer: BlockExplorer,
@@ -95,7 +96,7 @@ class HalfMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
 
             val tx = if (withdrawStatus.equals(HopRequested.value)) {
               val hopSecret = wallet.getSecret(0, toFirst = true)
-              val hopAddress = WalletHelper.getProveDlogAddress(hopSecret, ctx)
+              val hopAddress = WalletHelper.getAddressOfSecret(hopSecret)
               val tx = aliceOrBob.spendBox(halfMixBoxId, optFeeEmissionBoxId, hopAddress, Array(secret), Configs.defaultHalfFee, broadCast = false)
               val txBytes = tx.toJson(false).getBytes("utf-16")
 
@@ -176,7 +177,7 @@ class HalfMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
                   // logger.info(s"    [HalfMix $mixId] Zero conf. halfMixBoxId: $halfMixBoxId, currentRound: $currentRound while emissionBoxId $emissionBoxId spent")
                   // the emissionBox used in the fullMix has been spent, while the fullMixBox generated has zero confirmations.
                   try {
-                    allMixDAO.undoMixStep(mixId, currentRound, halfMixBoxId, false)
+                    allMixDAO.undoMixStep(mixId, currentRound, halfMixBoxId, isFullMix = false)
                     logger.info(s" [HALF:$mixId ($currentRound)] <-- (undo) [half:$halfMixBoxId not spent while fee:$emissionBoxId spent]")
                   } catch {
                     case a: Throwable =>
@@ -197,12 +198,12 @@ class HalfMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
                     }
                   }
                 }
-              case _ => {
+              case _ =>
                 // no emission box, so this is an entry.
                 // token emission box double spent check
                 if (networkUtils.isDoubleSpent(tokenBoxId, halfMixBoxId)) {
                   try {
-                    allMixDAO.undoMixStep(mixId, currentRound, halfMixBoxId, false)
+                    allMixDAO.undoMixStep(mixId, currentRound, halfMixBoxId, isFullMix = false)
                     logger.info(s" [HALF:$mixId ($currentRound)] <-- (undo) [half:$halfMixBoxId not spent while token:$tokenBoxId spent]")
                   } catch {
                     case a: Throwable =>
@@ -220,7 +221,6 @@ class HalfMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
                     rescanDAO.updateById(new_scan)
                   }
                 }
-              }
             }
         }
       }

@@ -22,33 +22,33 @@ GET         /rings                             controllers.ApiController.rings
 
 # Add withdraw to database
 +nocsrf
-POST        /mix/withdraw                      controllers.ApiController.withdraw
+POST        /mix/withdraw                      controllers.MixController.withdraw
 
 # New mixing backend with tokens
-POST        /mix/request                       controllers.ApiController.mixRequest
-GET         /mix/request/list                  controllers.ApiController.mixGroupRequestList
-GET         /mix/request/activeList            controllers.ApiController.mixGroupRequestActiveList
-GET         /mix/request/completeList          controllers.ApiController.mixGroupRequestCompleteList
-GET         /mix/request/:id/list              controllers.ApiController.mixRequestList(id: String, status ?= "all")
-GET         /mix/fee                           controllers.ApiController.mixingFee
-GET         /mix/supported                     controllers.ApiController.supported
+POST        /mix/request                       controllers.MixController.mixRequest
+GET         /mix/request/list                  controllers.MixController.mixGroupRequestList
+GET         /mix/request/activeList            controllers.MixController.mixGroupRequestActiveList
+GET         /mix/request/completeList          controllers.MixController.mixGroupRequestCompleteList
+GET         /mix/request/:id/list              controllers.MixController.mixRequestList(id: String, status ?= "all")
+GET         /mix/fee                           controllers.MixController.mixingFee
+GET         /mix/supported                     controllers.MixController.supported
 
-POST        /covert                            controllers.ApiController.covertRequest
-POST        /covert/:covertId/asset            controllers.ApiController.covertAddOrUpdate(covertId: String)
-POST        /covert/:covertId/name             controllers.ApiController.covertChangeName(covertId: String)
-GET         /covert/list                       controllers.ApiController.covertList
-GET         /covert/:covertId/asset            controllers.ApiController.covertAssetList(covertId: String)
-POST        /covert/:covertId/address          controllers.ApiController.setCovertAddresses(covertId: String)
-GET         /covert/:covertId/address          controllers.ApiController.getCovertAddresses(covertId: String)
-GET         /covert/keys                       controllers.ApiController.covertKeys
-GET         /covert/:covertId/key              controllers.ApiController.getCovertPrivateKey(covertId: String)
-POST        /covert/:covertId/withdraw         controllers.ApiController.withdrawCovertAsset(covertId: String)
+POST        /covert                            controllers.CovertController.covertRequest
+POST        /covert/:covertId/asset            controllers.CovertController.covertAddOrUpdate(covertId: String)
+POST        /covert/:covertId/name             controllers.CovertController.covertChangeName(covertId: String)
+GET         /covert/list                       controllers.CovertController.covertList
+GET         /covert/:covertId/asset            controllers.CovertController.covertAssetList(covertId: String)
+POST        /covert/:covertId/address          controllers.CovertController.setCovertAddresses(covertId: String)
+GET         /covert/:covertId/address          controllers.CovertController.getCovertAddresses(covertId: String)
+GET         /covert/keys                       controllers.CovertController.covertKeys
+GET         /covert/:covertId/key              controllers.CovertController.getCovertPrivateKey(covertId: String)
+POST        /covert/:covertId/withdraw         controllers.CovertController.withdrawCovertAsset(covertId: String)
 
-GET         /ageusd/height                     controllers.ApiController.currentHeight()
-GET         /ageusd/fee                        controllers.ApiController.ageusdFee()
-POST        /ageusd/mint                       controllers.ApiController.mint()
-GET         /ageusd/oracle/:tokenId            controllers.ApiController.oracleBox(tokenId: String)
-GET         /ageusd/bank/:tokenId              controllers.ApiController.bankBox(tokenId: String)
+GET         /ageusd/height                     controllers.AgeUSDController.currentHeight()
+GET         /ageusd/fee                        controllers.AgeUSDController.ageusdFee()
+POST        /ageusd/mint                       controllers.AgeUSDController.mint()
+GET         /ageusd/oracle/:tokenId            controllers.AgeUSDController.oracleBox(tokenId: String)
+GET         /ageusd/bank/:tokenId              controllers.AgeUSDController.bankBox(tokenId: String)
 
 
 GET         /dashboard                         controllers.ApiController.dashboard

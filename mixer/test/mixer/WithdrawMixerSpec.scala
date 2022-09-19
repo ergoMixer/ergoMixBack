@@ -3,7 +3,10 @@ package mixer
 import dao._
 import helpers.ErgoMixerUtils
 import mocked.{MockedBlockExplorer, MockedBlockchainContext, MockedNetworkUtils}
-import models.Models.{HopMix, MixGroupRequest, MixStatus, MixWithdrawStatus, MixingRequest, WithdrawTx}
+import models.Models.HopMix
+import models.Request.{MixGroupRequest, MixingRequest}
+import models.Status.{MixStatus, MixWithdrawStatus}
+import models.Transaction.WithdrawTx
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.when
 import org.scalatestplus.mockito.MockitoSugar.mock

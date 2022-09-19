@@ -1,7 +1,9 @@
 package dao
 
+import models.Request.MixGroupRequest
+import models.Status.GroupMixStatus
+
 import javax.inject.{Inject, Singleton}
-import models.Models.{MixGroupRequest, GroupMixStatus}
 import play.api.db.slick.{DatabaseConfigProvider, HasDatabaseConfigProvider}
 import slick.jdbc.JdbcProfile
 
@@ -19,7 +21,7 @@ trait MixingGroupRequestComponent {
         )
 
     class MixingGroupRequestTable(tag: Tag) extends Table[MixGroupRequest](tag, "MIXING_GROUP_REQUEST") {
-        def id = column[String]("MIX_GROUP_ID", O.PrimaryKey)
+        def groupId = column[String]("MIX_GROUP_ID", O.PrimaryKey)
 
         def neededAmount = column[Long]("AMOUNT")
 
@@ -43,7 +45,7 @@ trait MixingGroupRequestComponent {
 
         def masterKey = column[BigInt]("MASTER_SECRET_GROUP")
 
-        def * = (id, neededAmount, status, createdTime, depositAddress, doneDeposit, tokenDoneDeposit, mixingAmount, mixingTokenAmount, neededTokenAmount, tokenId, masterKey) <> (MixGroupRequest.tupled, MixGroupRequest.unapply)
+        def * = (groupId, neededAmount, status, createdTime, depositAddress, doneDeposit, tokenDoneDeposit, mixingAmount, mixingTokenAmount, neededTokenAmount, tokenId, masterKey) <> (MixGroupRequest.tupled, MixGroupRequest.unapply)
     }
 
 }
@@ -74,7 +76,7 @@ class MixingGroupRequestDAO @Inject()(protected val dbConfigProvider: DatabaseCo
      * selects id of all groupRequests
      *
      */
-    def allIds: Future[Seq[String]] = db.run(groupRequests.map(_.id).result)
+    def allIds: Future[Seq[String]] = db.run(groupRequests.map(_.groupId).result)
 
     /**
      * deletes all of requests
@@ -111,7 +113,7 @@ class MixingGroupRequestDAO @Inject()(protected val dbConfigProvider: DatabaseCo
      *
      * @param groupId String
      */
-    def delete(groupId: String): Unit = db.run(groupRequests.filter(req => req.id === groupId).delete).map(_ => ())
+    def delete(groupId: String): Unit = db.run(groupRequests.filter(req => req.groupId === groupId).delete).map(_ => ())
 
     /**
      * TODO: Remove this function later, because it's also in refactor-fullMixer
@@ -123,7 +125,7 @@ class MixingGroupRequestDAO @Inject()(protected val dbConfigProvider: DatabaseCo
      */
     def updateDepositById(mixGroupId: String, deposit: Long, tokenDeposit: Long): Unit = {
         val query = for {
-            request <- groupRequests.filter(req => req.id === mixGroupId)
+            request <- groupRequests.filter(req => req.groupId === mixGroupId)
         } yield (request.doneDeposit, request.tokenDoneDeposit)
         db.run(query.update(deposit, tokenDeposit))
     }
@@ -136,7 +138,7 @@ class MixingGroupRequestDAO @Inject()(protected val dbConfigProvider: DatabaseCo
      */
     def updateStatusById(mixGroupId: String, status: String): Unit = {
         val query = for {
-            request <- groupRequests.filter(req => req.id === mixGroupId)
+            request <- groupRequests.filter(req => req.groupId === mixGroupId)
         } yield request.status
         db.run(query.update(status))
     }

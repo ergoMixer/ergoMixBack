@@ -6,13 +6,15 @@ import helpers.ErgoMixerUtils
 
 import javax.inject.Inject
 import scala.collection.JavaConverters._
-import models.Models.GroupMixStatus._
-import models.Models.{DistributeTx, EndBox, MixGroupRequest}
+import models.Status.GroupMixStatus._
 import network.{BlockExplorer, NetworkUtils}
 import org.ergoplatform.appkit.{Address, ErgoToken}
 import play.api.Logger
 import wallet.{Wallet, WalletHelper}
 import dao.{DAOUtils, DistributeTransactionsDAO, MixingGroupRequestDAO, MixingRequestsDAO}
+import models.Box.EndBox
+import models.Request.MixGroupRequest
+import models.Transaction.DistributeTx
 
 class GroupMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
                            networkUtils: NetworkUtils, explorer: BlockExplorer,
@@ -109,7 +111,7 @@ class GroupMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtil
       requests(0) = (requests(0)._1, requests(0)._2 + excessErg, requests(0)._3 + excessToken)
       val reqEndBoxes = requests.map(cur => {
         var token: Seq[ErgoToken] = Seq()
-        if (!req.tokenId.isEmpty) token = Seq(new ErgoToken(req.tokenId, cur._3))
+        if (req.tokenId.nonEmpty) token = Seq(new ErgoToken(req.tokenId, cur._3))
         EndBox(Address.create(cur._1).getErgoAddress.script, Seq(), cur._2, token)
       })
       if (excessErg > 0) logger.info(s"  excess deposit: $excessErg...")

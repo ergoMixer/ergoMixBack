@@ -9,9 +9,9 @@ import mixinterface.ErgoMixBase._
 import javax.inject.{Inject, Singleton}
 import network.{BlockExplorer, NetworkUtils}
 import org.ergoplatform.appkit._
-import models.Models.{EndBox, FullMixBox, FullMixTx, HalfMixBox, HalfMixTx, TokenMap}
-import org.ergoplatform.ErgoBox
-import org.ergoplatform.ErgoBox.NonMandatoryRegisterId
+import models.Models.TokenMap
+import models.Box.{EndBox, FullMixBox, HalfMixBox}
+import models.Transaction.{FullMixTx, HalfMixTx}
 import org.ergoplatform.appkit.impl.ErgoTreeContract
 import wallet.WalletHelper
 

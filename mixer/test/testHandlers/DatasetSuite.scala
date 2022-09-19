@@ -3,7 +3,9 @@ package testHandlers
 import app.Configs
 import io.circe.parser.parse
 import io.circe.{Json, parser}
+import models.Box.{InBox, OutBox}
 import models.Models._
+import models.Transaction.SpendTx
 import org.ergoplatform.appkit.{ErgoToken, SignedTransaction}
 
 import scala.collection.mutable
@@ -23,7 +25,7 @@ class DatasetSuite {
     jsonString
   }
 
-  def setConfigData: Unit = {
+  def setConfigData(): Unit = {
     val idToParam = mutable.Map.empty[String, EntityInfo]
     rings.foreach(param => idToParam(param.id) = param)
     Configs.params = idToParam
@@ -107,5 +109,6 @@ class DatasetSuite {
     TestSignedTransaction(id, inBoxes, outBoxes)
   }
 
-  setConfigData
+  setConfigData()
+
 }
