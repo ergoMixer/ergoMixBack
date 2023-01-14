@@ -15,7 +15,7 @@ do
         "Pull and launch .jar")
             curl -s "https://get.sdkman.io" | bash
             source "$HOME/.sdkman/bin/sdkman-init.sh"
-            sdk install java $(sdk list java | grep -o "8\.[0-9]*\.[0-9]*\.hs-adpt" | head -1)
+            yes | sdk install java $(sdk list java | grep -o "11\.[0-9]*\.[0-9]*\-tem" | head -1)
             mkdir mixer
             cd mixer
             curl -s https://api.github.com/repos/ergoMixer/ergoMixBack/releases/latest | grep "browser_download_url.*jar" | cut -d '"' -f 4 | wget -qi-
@@ -25,12 +25,13 @@ do
             # SDKMAN
             curl -s "https://get.sdkman.io" | bash
             source "$HOME/.sdkman/bin/sdkman-init.sh"
-            sdk install java $(sdk list java | grep -o "8\.[0-9]*\.[0-9]*\.hs-adpt" | head -1)
+            yes | sdk install java $(sdk list java | grep -o "11\.[0-9]*\.[0-9]*\-tem" | head -1)
             echo "Installing NVM"
-            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
-            nvm install node 
-            sdk install sbt
-            
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.2/install.sh | bash
+            source "$NVM_DIR/nvm.sh"
+            nvm install 14
+            yes | sdk install sbt 1.2.7
+
             git clone https://github.com/ergoMixer/ergoMixBack.git
             cd ergoMixBack/
 
