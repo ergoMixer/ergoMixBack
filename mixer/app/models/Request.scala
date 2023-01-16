@@ -1,6 +1,6 @@
 package models
 
-import app.Configs
+import config.MainConfigs
 import io.circe.generic.auto._
 import io.circe.generic.semiauto.deriveDecoder
 import io.circe.syntax._
@@ -124,7 +124,7 @@ object Request {
 
     def getMinNeeded(ergRing: Long, tokenRing: Long): (Long, Long) = { // returns what is needed to distribute
       val needed = MixingBox.getPrice(ergRing, tokenRing, numRounds)
-      (needed._1 + Configs.distributeFee, needed._2)
+      (needed._1 + MainConfigs.distributeFee, needed._2)
     }
 
     def getMixingNeed(ergRing: Long, tokenRing: Long): (Long, Long) = { // returns what is needed for a single mix box

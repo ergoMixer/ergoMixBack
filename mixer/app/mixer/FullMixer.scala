@@ -1,6 +1,6 @@
 package mixer
 
-import app.Configs
+import config.MainConfigs
 import dao._
 import helpers.ErgoMixerUtils
 import mixinterface.{AliceOrBob, TokenErgoMix}
@@ -120,7 +120,7 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
 
     val fullMixBoxConfirmations = explorer.getConfirmationsForBoxId(fullMixBoxId)
 
-    if (fullMixBoxConfirmations >= Configs.numConfirmation) {
+    if (fullMixBoxConfirmations >= MainConfigs.numConfirmation) {
       // proceed only if full mix box is mature enough
       val currentTime = now
       explorer.getSpendingTxId(fullMixBoxId) match {
@@ -131,7 +131,7 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
             rescanDAO.updateById(new_scan)
           }
         case None => // not spent, good to go
-          val fullMixBox: OutBox = networkUtils.getOutBoxById(fullMixBoxId)
+          val fullMixBox: OutBox = explorer.getBoxById(fullMixBoxId)
           val numTokens = fullMixBox.getToken(TokenErgoMix.tokenId)
           var tokenSize = 1
           if (mixingTokenId.nonEmpty) tokenSize = 2
@@ -144,14 +144,14 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
 
           val wallet = new Wallet(masterSecret)
           val secret = wallet.getSecret(currentRound)
-          if (numTokens < 2 || (withdrawStatus.equals(WithdrawRequested.value) || withdrawStatus.equals(HopRequested.value)) || (currentRound >= maxRounds && Configs.stopMixingWhenReachedThreshold)) {
+          if (numTokens < 2 || (withdrawStatus.equals(WithdrawRequested.value) || withdrawStatus.equals(HopRequested.value)) || (currentRound >= maxRounds && MainConfigs.stopMixingWhenReachedThreshold)) {
             if (withdrawAddress.nonEmpty) {
               val optFeeEmissionBoxId = getRandomValidBoxId(getFeeBoxes.map(_.id).filterNot(id => daoUtils.awaitResult(emissionDAO.existsByBoxId(id))))
               if (withdrawDAO.shouldWithdraw(mixId, fullMixBoxId) && optFeeEmissionBoxId.nonEmpty) {
                 val tx = if (withdrawStatus.equals(HopRequested.value)) {
                   val hopSecret = wallet.getSecret(0, toFirst = true)
                   val hopAddress = WalletHelper.getAddressOfSecret(hopSecret)
-                  val tx = aliceOrBob.spendFullMixBox(isAlice, secret, fullMixBoxId, hopAddress, Array[String](optFeeEmissionBoxId.get), Configs.defaultHalfFee, withdrawAddress, broadCast = false)
+                  val tx = aliceOrBob.spendFullMixBox(isAlice, secret, fullMixBoxId, hopAddress, Array[String](optFeeEmissionBoxId.get), MainConfigs.defaultHalfFee, withdrawAddress, broadCast = false)
                   val txBytes = tx.toJson(false).getBytes("utf-16")
                   val new_withdraw = WithdrawTx(mixId, tx.getId, currentTime, fullMixBoxId + "," + optFeeEmissionBoxId.get, txBytes)
                   withdrawDAO.updateById(new_withdraw, HopRequested.value)
@@ -159,7 +159,7 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
                   tx
                 }
                 else {
-                  val tx = aliceOrBob.spendFullMixBox(isAlice, secret, fullMixBoxId, withdrawAddress, Array[String](optFeeEmissionBoxId.get), Configs.defaultHalfFee, withdrawAddress, broadCast = false)
+                  val tx = aliceOrBob.spendFullMixBox(isAlice, secret, fullMixBoxId, withdrawAddress, Array[String](optFeeEmissionBoxId.get), MainConfigs.defaultHalfFee, withdrawAddress, broadCast = false)
                   val txBytes = tx.toJson(false).getBytes("utf-16")
                   val new_withdraw = WithdrawTx(mixId, tx.getId, currentTime, fullMixBoxId + "," + optFeeEmissionBoxId.get, txBytes)
                   withdrawDAO.updateById(new_withdraw, WithdrawRequested.value)
@@ -236,7 +236,7 @@ class FullMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
 
               if (optHalfMixBoxId.isEmpty) {
                 // do nothing
-                if (Configs.mixOnlyAsBob) {
+                if (MainConfigs.mixOnlyAsBob) {
                   logger.info(s" [FULL:$mixId ($currentRound) ${str(isAlice)}] --> Ignored because mixOnlyAsBob is set to true and no half-box is available currently!")
                   return
                 }

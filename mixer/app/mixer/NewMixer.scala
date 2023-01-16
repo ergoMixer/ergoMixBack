@@ -1,6 +1,6 @@
 package mixer
 
-import app.Configs
+import config.MainConfigs
 import mixinterface.{AliceOrBob, TokenErgoMix}
 import helpers.ErgoMixerUtils
 import wallet.WalletHelper.now
@@ -94,7 +94,7 @@ class NewMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
         val wallet = new Wallet(masterSecret)
         val secret = wallet.getSecret(-1).bigInteger
         assert(boxIds.size == 1)
-        val tx = aliceOrBob.spendBox(boxIds.head, Option.empty, mixRequest.withdrawAddress, Array(secret), Configs.defaultHalfFee, broadCast = true)
+        val tx = aliceOrBob.spendBox(boxIds.head, Option.empty, mixRequest.withdrawAddress, Array(secret), MainConfigs.defaultHalfFee, broadCast = true)
         val txBytes = tx.toJson(false).getBytes("utf-16")
         val new_withdraw = WithdrawTx(id, tx.getId, now, boxIds.head, txBytes)
         withdrawDAO.updateById(new_withdraw, WithdrawRequested.value)
@@ -163,7 +163,7 @@ class NewMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
       if (optHalfMixBoxId.nonEmpty) {
         // half-mix box exists... behave as Bob
         val halfMixBoxId = optHalfMixBoxId.get
-        val (fullMixTx, bit) = aliceOrBob.spendHalfMixBox(secret, halfMixBoxId, inputBoxIds :+ optTokenBoxId.get, Configs.startFee, depositAddress, Array(dLogSecret), broadCast = false, numFeeToken)
+        val (fullMixTx, bit) = aliceOrBob.spendHalfMixBox(secret, halfMixBoxId, inputBoxIds :+ optTokenBoxId.get, MainConfigs.startFee, depositAddress, Array(dLogSecret), broadCast = false, numFeeToken)
         val (left, right) = fullMixTx.getFullMixBoxes
         val bobFullMixBox = if (bit) right else left
         val new_fullMix = FullMix(id, round = 0, currentTime, halfMixBoxId, bobFullMixBox.id)
@@ -185,12 +185,12 @@ class NewMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils,
         // half-mix box does not exist... behave as Alice
 
         // do nothing
-        if (Configs.mixOnlyAsBob) {
+        if (MainConfigs.mixOnlyAsBob) {
           logger.info(s" [NEW:$id] --> Ignored because mixOnlyAsBob is set to true and no half-box is available currently!")
           return
         }
 
-        val tx = aliceOrBob.createHalfMixBox(secret, inputBoxIds :+ optTokenBoxId.get, Configs.startFee,
+        val tx = aliceOrBob.createHalfMixBox(secret, inputBoxIds :+ optTokenBoxId.get, MainConfigs.startFee,
           depositAddress, Array(dLogSecret), broadCast = false, poolAmount, numFeeToken, mixRequest.tokenId, mixRequest.mixingTokenAmount)
         val new_halfMix = HalfMix(id, round = 0, currentTime, tx.getHalfMixBox.id, isSpent = false)
         halfMixDAO.insertHalfMix(new_halfMix)

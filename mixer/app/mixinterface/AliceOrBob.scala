@@ -2,9 +2,9 @@ package mixinterface
 
 
 import java.math.BigInteger
-import app.Configs
 import io.circe.Json
 import mixinterface.ErgoMixBase._
+import config.MainConfigs
 
 import javax.inject.{Inject, Singleton}
 import network.{BlockExplorer, NetworkUtils}
@@ -12,7 +12,7 @@ import org.ergoplatform.appkit._
 import models.Models.TokenMap
 import models.Box.{EndBox, FullMixBox, HalfMixBox}
 import models.Transaction.{FullMixTx, HalfMixTx}
-import org.ergoplatform.appkit.impl.ErgoTreeContract
+import scorex.util.encode.Base64
 import wallet.WalletHelper
 
 import scala.collection.JavaConverters._
@@ -51,25 +51,25 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
         else tokens.add(token)
       })
       var outputBuilder = txC.outBoxBuilder()
-        .contract(new ErgoTreeContract(Address.create(withdrawAddress).getErgoAddress.script))
+        .contract(ctx.newContract(Address.create(withdrawAddress).getErgoAddress.script))
       if (!tokens.isEmpty) outputBuilder = outputBuilder.tokens(tokens.asScala: _*)
       if (feeBox.nonEmpty && distrBurnTokenAmount > 0) {
         outputs.add(outputBuilder.value(input.getValue).build())
         val fee = ctx.getBoxesById(feeBox.get)(0)
         inputs.add(fee)
         outputs.add(txC.outBoxBuilder()
-          .contract(new ErgoTreeContract(fee.getErgoTree))
+          .contract(ctx.newContract(fee.getErgoTree))
           .value(fee.getValue - feeAmount)
           .registers(fee.getRegisters.asScala: _*)
           .build())
       } else outputs.add(outputBuilder.value(input.getValue - feeAmount).build())
 
       val distrBurnToken = new ErgoToken(TokenErgoMix.tokenId, distrBurnTokenAmount)
-      val preTxB = ctx.newTxBuilder()
-        .boxesToSpend(inputs)
-        .outputs(outputs.asScala: _*)
+      val preTxB = txC
+        .addInputs(inputs.asScala: _*)
+        .addOutputs(outputs.asScala: _*)
+        .sendChangeTo(Address.create(withdrawAddress))
         .fee(feeAmount)
-        .sendChangeTo(Address.create(withdrawAddress).getErgoAddress)
       val uTx = if (distrBurnTokenAmount > 0) preTxB.tokensToBurn(distrBurnToken).build() else preTxB.build()
       val tx = prover.sign(uTx)
       if (broadCast) ctx.sendTransaction(tx)
@@ -110,25 +110,25 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
             outTokens(tok.getId.toString) = outTokens.getOrElse(tok.getId.toString, 0L) + tok.getValue
           })
           val outB = txB.outBoxBuilder()
-            .contract(new ErgoTreeContract(out.receiverBoxScript))
+            .contract(ctx.newContract(out.receiverBoxScript))
             .value(out.value)
           if (out.tokens.nonEmpty) outB.tokens(out.tokens: _*).build()
           else outB.build()
         })
-        val remErg = boxesToSpend.map(_.getValue.toLong).sum - outBoxes.map(_.getValue).sum - feeAmount
+        val remErg = boxesToSpend.map(_.getValue).sum - outBoxes.map(_.getValue).sum - feeAmount
         if (remErg > 0) {
           val tokens = inTokens.filter(tok => tok._2 - outTokens.getOrElse(tok._1, 0L) > 0)
             .map(tok => new ErgoToken(tok._1, tok._2 - outTokens.getOrElse(tok._1, 0L)))
           var changeBox = txB.outBoxBuilder()
             .value(remErg)
-            .contract(new ErgoTreeContract(Address.create(changeAddress).getErgoAddress.script))
+            .contract(ctx.newContract(Address.create(changeAddress).getErgoAddress.script))
           if (tokens.nonEmpty) changeBox = changeBox.tokens(tokens.toSeq: _*)
           outBoxes = outBoxes :+ changeBox.build()
         }
-        val tx = txB.boxesToSpend(boxesToSpend.toList.asJava)
+        val tx = txB.addInputs(boxesToSpend: _*)
+          .addOutputs(outBoxes: _*)
           .fee(feeAmount)
-          .outputs(outBoxes: _*)
-          .sendChangeTo(Address.create(changeAddress).getErgoAddress)
+          .sendChangeTo(Address.create(changeAddress))
           .build()
         val signed = prover.sign(tx)
         transactions.add(signed)
@@ -140,54 +140,19 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
   }
 
   /**
+   * sign a mint transaction and broadcast tx
+   * @param reducedTransaction mint transaction
+   * @param inputBoxId
+   * @param secret
+   * @param isAlice
+   * @param sendTx if false doesn't send transaction
+   * @return signed transaction
    */
-  def mint(ourIn: String, secret: BigInteger, isAlice: Boolean, withdrawAddr: String, req: Json, prevBank: InputBox, sendTx: Boolean): SignedTransaction = {
+  def mint(reducedTransaction: String, inputBoxId: String, secret: BigInteger, isAlice: Boolean, sendTx: Boolean): SignedTransaction = {
     usingClient { implicit ctx =>
-      val txB = ctx.newTxBuilder()
-      val dataInput = ctx.getBoxesById(req.hcursor.downField("dataInputs").as[Seq[String]].getOrElse(Seq()).head)
-      val ourInBox = ctx.getBoxesById(ourIn)
-      val inputs: Seq[InputBox] = prevBank +: ourInBox
-      var distrBurnTokenAmount: Long = 0
-      ourInBox.toSeq.headOption.getOrElse(throw new Exception(s"box with id $ourIn for withdraw doesn't exist, please try again!")).getTokens.forEach(token => {
-        if (token.getId.toString == TokenErgoMix.tokenId) distrBurnTokenAmount += token.getValue
-      })
-
-      val prover = getProver(secret, isAlice).getProver(FullMixBox(inputs.last))
-
-      val fee = req.hcursor.downField("fee").as[Long].getOrElse(Configs.ageusdFee)
-      var reqs = req.hcursor.downField("requests").as[Seq[Json]].getOrElse(Seq())
-      reqs = reqs.take(2) ++ reqs.drop(3)
-
-      val insm = inputs.map(_.getValue.longValue()).sum
-      val outsm = reqs.map(_.hcursor.downField("value").as[Long].getOrElse(0L)).sum + fee
-
-      val outs: Seq[OutBox] = reqs.map(out => {
-        var value = out.hcursor.downField("value").as[Long].getOrElse(throw new Exception("value is required"))
-        val addr = out.hcursor.downField("address").as[String].getOrElse(throw new Exception("address is required"))
-        if (addr == withdrawAddr) value += insm - (outsm)
-        val tokens = out.hcursor.downField("assets").as[Seq[Json]].getOrElse(Seq()).map(tok => {
-          new ErgoToken(tok.hcursor.downField("tokenId").as[String].getOrElse(""), tok.hcursor.downField("amount").as[Long].getOrElse(0L))
-        })
-        val regs = out.hcursor.downField("registers").as[mutable.HashMap[String, String]].getOrElse(mutable.HashMap.empty)
-          .toList.reverse.map(reg => ErgoValue.fromHex(reg._2))
-        var outB = txB.outBoxBuilder()
-        outB = outB.value(value)
-        outB = outB.contract(new ErgoTreeContract(Address.create(addr).getErgoAddress.script))
-        if (tokens.nonEmpty) outB = outB.tokens(tokens: _*)
-        if (regs.nonEmpty) outB = outB.registers(regs: _*)
-        outB.build()
-      })
-
-      val distrBurnToken = new ErgoToken(TokenErgoMix.tokenId, distrBurnTokenAmount)
-      val preTxB = txB.boxesToSpend(inputs.toList.asJava)
-        .fee(fee)
-        .outputs(outs: _*)
-        .sendChangeTo(Address.create(withdrawAddr).getErgoAddress)
-        .withDataInputs(dataInput.toList.asJava)
-
-      val tx = if (distrBurnTokenAmount > 0) preTxB.tokensToBurn(distrBurnToken).build() else preTxB.build()
-
-      val signed = prover.sign(tx)
+      val ourInBox = ctx.getBoxesById(inputBoxId)
+      val prover = getProver(secret, isAlice).getProver(FullMixBox(ourInBox.last))
+      val signed = prover.signReduced(ctx.parseReducedTransaction(Base64.decode(reducedTransaction).get), 0)
       if (sendTx) ctx.sendTransaction(signed)
       return signed
     }
@@ -213,15 +178,15 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
       val txB = ctx.newTxBuilder()
       val output = {
         val outB = txB.outBoxBuilder()
-          .contract(new ErgoTreeContract(outBox.receiverBoxScript))
+          .contract(ctx.newContract(outBox.receiverBoxScript))
           .value(outBox.value)
         if (outBox.tokens.nonEmpty) outB.tokens(outBox.tokens: _*).build()
         else outB.build()
       }
-      val tx = txB.boxesToSpend(inputs.toList.asJava)
+      val tx = txB.addInputs(inputs: _*)
         .fee(feeAmount)
-        .outputs(output)
-        .sendChangeTo(Address.create(changeAddress).getErgoAddress)
+        .addOutputs(output)
+        .sendChangeTo(Address.create(changeAddress))
         .build()
       val signed = prover.sign(tx)
       if (sendTx) ctx.sendTransaction(signed)
@@ -242,7 +207,7 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
    * @param broadCast       whether to broadcast or just return
    * @return tx withdrawing the full-box
    */
-  def spendFullMixBox(isAlice: Boolean, secret: BigInt, fullMixBoxId: String, withdrawAddress: String, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String, broadCast: Boolean) = {
+  def spendFullMixBox(isAlice: Boolean, secret: BigInt, fullMixBoxId: String, withdrawAddress: String, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String, broadCast: Boolean): SignedTransaction = {
     val ergoMix = tokenErgoMix.get
     usingClient { implicit ctx =>
       val alice_or_bob = getProver(secret, isAlice)
@@ -281,7 +246,7 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
   def spendFullMixBox_RemixAsAlice(isAlice: Boolean, secret: BigInt, fullMixBoxId: String, nextSecret: BigInt, feeEmissionBoxId: String, feeAmount: Long): HalfMixTx = {
     usingClient { implicit ctx =>
       val feeEmissionBox = ctx.getBoxesById(feeEmissionBoxId)(0)
-      val feeEmissionBoxAddress = WalletHelper.addressEncoder.fromProposition(feeEmissionBox.getErgoTree).get.toString
+      val feeEmissionBoxAddress = WalletHelper.getAddress(feeEmissionBox.getErgoTree).toString
       spendFullMixBox_RemixAsAlice(isAlice, secret, fullMixBoxId, nextSecret, Array(feeEmissionBoxId), feeAmount, feeEmissionBoxAddress, Seq(), broadCast = false)
     }
   }
@@ -315,7 +280,7 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
                                  halfBoxId: String, feeEmissionBoxId: String, feeAmount: Long): (FullMixTx, Boolean) = {
     usingClient { implicit ctx =>
       val feeEmissionBox = ctx.getBoxesById(feeEmissionBoxId)(0)
-      val feeEmissionBoxAddress = WalletHelper.addressEncoder.fromProposition(feeEmissionBox.getErgoTree).get.toString
+      val feeEmissionBoxAddress = WalletHelper.getAddress(feeEmissionBox.getErgoTree).toString
       spendFullMixBox_RemixAsBob(isAlice, secret, fullMixBoxId, nextSecret, halfBoxId, Array(feeEmissionBoxId), feeAmount, feeEmissionBoxAddress, Seq(), broadCast = false)
     }
   }
@@ -347,7 +312,7 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
    * @param numToken          number of mixing tokens, i.e. mixing level
    * @return tx spending half-box and inputs and enter mixing as bob
    */
-  def spendHalfMixBox(y: BigInt, halfMixBoxId: String, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String, proverDlogSecrets: Array[String], broadCast: Boolean, numToken: Int = 0) = {
+  def spendHalfMixBox(y: BigInt, halfMixBoxId: String, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String, proverDlogSecrets: Array[String], broadCast: Boolean, numToken: Int = 0): (FullMixTx, Boolean) = {
     usingClient { implicit ctx =>
       val bob = new BobImpl(y.bigInteger, tokenErgoMix.get)
       val halfMixBox: InputBox = ctx.getBoxesById(halfMixBoxId)(0)
@@ -375,7 +340,7 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
    */
   def createHalfMixBox(x: BigInt, inputBoxIds: Array[String], feeAmount: Long, changeAddress: String,
                        proverDlogSecrets: Array[String], broadCast: Boolean, poolAmount: Long, numToken: Int = 0,
-                       mixingTokenId: String, mixingTokenAmount: Long) = {
+                       mixingTokenId: String, mixingTokenAmount: Long): HalfMixTx = {
     usingClient { implicit ctx =>
       val alice = new AliceImpl(x.bigInteger, tokenErgoMix.get)
       val dlogs: Array[BigInteger] = proverDlogSecrets.map(BigInt(_).bigInteger)
@@ -412,15 +377,15 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
       val txC = ctx.newTxBuilder()
 
       val nextHopBox = txC.outBoxBuilder()
-        .value(input.getValue - Configs.distributeFee)
-        .contract(new ErgoTreeContract(Address.create(destinationAddress).getErgoAddress.script))
+        .value(input.getValue - MainConfigs.distributeFee)
+        .contract(ctx.newContract(Address.create(destinationAddress).getErgoAddress.script))
         .build()
 
-      val uTx = ctx.newTxBuilder()
-        .boxesToSpend(inputs)
-        .outputs(nextHopBox)
-        .fee(Configs.distributeFee)
-        .sendChangeTo(Address.create(destinationAddress).getErgoAddress)
+      val uTx = txC
+        .addInputs(inputs.asScala: _*)
+        .addOutputs(nextHopBox)
+        .fee(MainConfigs.distributeFee)
+        .sendChangeTo(Address.create(destinationAddress))
         .build()
       val tx = prover.sign(uTx)
       tx
@@ -454,11 +419,11 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
       })
 
       // if there is not enough Erg in inputBoxes, get more box
-      if (inputErgValues < Configs.distributeFee + outBoxCount * Configs.minPossibleErgInBox) {
+      if (inputErgValues < MainConfigs.distributeFee + outBoxCount * MainConfigs.minPossibleErgInBox) {
         val allBoxes = explorer.getUnspentBoxes(depositAddress)
         allBoxes.foreach(box => {
           // while erg is not enough, add box to input
-          if (inputErgValues < Configs.distributeFee + outBoxCount * Configs.minPossibleErgInBox && !inputIds.contains(box.id)) {
+          if (inputErgValues < MainConfigs.distributeFee + outBoxCount * MainConfigs.minPossibleErgInBox && !inputIds.contains(box.id)) {
             val input = ctx.getBoxesById(box.id)(0)
             inputErgValues = inputErgValues + input.getValue
             // split box tokens
@@ -467,21 +432,21 @@ class AliceOrBob @Inject()(implicit val networkUtils: NetworkUtils, explorer: Bl
           }
         })
         // throw exception if there is not enough erg to generate transaction
-        if (inputErgValues < Configs.distributeFee + outBoxCount * Configs.minPossibleErgInBox) throw new Exception(s"Not enough erg. current value: $inputErgValues, required: ${Configs.distributeFee + outBoxCount * Configs.minPossibleErgInBox}")
+        if (inputErgValues < MainConfigs.distributeFee + outBoxCount * MainConfigs.minPossibleErgInBox) throw new Exception(s"Not enough erg. current value: $inputErgValues, required: ${MainConfigs.distributeFee + outBoxCount * MainConfigs.minPossibleErgInBox}")
       }
       val txC = ctx.newTxBuilder()
 
       val withdrawBox = txC.outBoxBuilder()
-        .value(Configs.minPossibleErgInBox)
-        .contract(new ErgoTreeContract(Address.create(withdrawAddress).getErgoAddress.script))
+        .value(MainConfigs.minPossibleErgInBox)
+        .contract(ctx.newContract(Address.create(withdrawAddress).getErgoAddress.script))
         .tokens(withdrawBoxTokensMap.toJavaArray.asScala: _*)
         .build()
 
-      val uTx = ctx.newTxBuilder()
-        .boxesToSpend(inputs)
-        .outputs(withdrawBox)
-        .fee(Configs.distributeFee)
-        .sendChangeTo(Address.create(depositAddress).getErgoAddress)
+      val uTx = txC
+        .addInputs(inputs.asScala: _*)
+        .addOutputs(withdrawBox)
+        .fee(MainConfigs.distributeFee)
+        .sendChangeTo(Address.create(depositAddress))
         .build()
       val tx = prover.sign(uTx)
       tx

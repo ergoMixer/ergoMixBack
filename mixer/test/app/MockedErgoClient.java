@@ -23,4 +23,3 @@ public interface MockedErgoClient extends ErgoClient {
      */
     List<String> getExplorerResponses();
 }
-

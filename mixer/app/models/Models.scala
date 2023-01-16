@@ -3,7 +3,7 @@ package models
 import io.circe.generic.auto._
 import io.circe.generic.semiauto.deriveDecoder
 import io.circe.syntax._
-import io.circe._
+import io.circe.{Json, Encoder, Decoder, parser, HCursor}
 import models.Request.MixRequest
 import models.Transaction.Withdraw
 import org.ergoplatform.appkit.{ErgoToken, InputBox}
@@ -39,8 +39,6 @@ object Models {
     }
 
     def isErg: Boolean = tokenId.isEmpty
-
-
   }
 
   object CreateCovertAsset {
@@ -250,8 +248,9 @@ object Models {
   }
 
   case class EntityInfo(name: String, id: String, rings: Seq[Long], decimals: Int, dynamicFeeRate: Long) {
-    def toJson: String = {
+    def toJson(more: String = ""): String = {
       s"""{
+         |  $more
          |  "name": "$name",
          |  "id": "$id",
          |  "rings": [${rings.mkString(",")}],

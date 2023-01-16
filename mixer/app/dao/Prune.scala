@@ -1,6 +1,6 @@
 package dao
 
-import app.Configs
+import config.MainConfigs
 import helpers.ErgoMixerUtils
 import network.BlockExplorer
 import models.Status.MixWithdrawStatus.Withdrawn
@@ -29,14 +29,14 @@ class Prune @Inject()(ergoMixerUtils: ErgoMixerUtils, explorer: BlockExplorer,
                       rescanDAO: RescanDAO,
                       hopMixDAO: HopMixDAO) {
   private val logger: Logger = Logger(this.getClass)
-  private val pruneAfterMilliseconds = Configs.dbPruneAfter * 120L * 1000L // 120 for almost 2 minutes per block mining, 1000 for converting to milliseconds
+  private val pruneAfterMilliseconds = MainConfigs.dbPruneAfter * 120L * 1000L // 120 for almost 2 minutes per block mining, 1000 for converting to milliseconds
 
   /**
    * prunes group mixes and covert mixes
    */
   def processPrune(): Unit = {
     try {
-      if (Configs.dbPrune) {
+      if (MainConfigs.dbPrune) {
         pruneGroupMixes()
         pruneCovertMixes()
       }
@@ -67,7 +67,7 @@ class Prune @Inject()(ergoMixerUtils: ErgoMixerUtils, explorer: BlockExplorer,
         mixes.foreach(mix => {
           val txId: String = daoUtils.awaitResult(withdrawDAO.selectByMixId(mix.id)).getOrElse(throw new Exception(s"mixId ${mix.id} not found in Withdraw")).txId
           val numConf = explorer.getTxNumConfirmations(txId)
-          shouldPrune &= numConf >= Configs.dbPruneAfter
+          shouldPrune &= numConf >= MainConfigs.dbPruneAfter
         })
       }
       if (shouldPrune) {
@@ -93,7 +93,7 @@ class Prune @Inject()(ergoMixerUtils: ErgoMixerUtils, explorer: BlockExplorer,
         if ((currentTime - withdrawTime) >= pruneAfterMilliseconds) {
           val txId: String = daoUtils.awaitResult(withdrawDAO.selectByMixId(mix.id)).getOrElse(throw new Exception(s"mixId ${mix.id} not found in Withdraw")).txId
           val numConf = explorer.getTxNumConfirmations(txId)
-          if (numConf >= Configs.dbPruneAfter) {
+          if (numConf >= MainConfigs.dbPruneAfter) {
             logger.info(s"  will prune covert mix box ${mix.id}")
             deleteMixBox(mix)
           }
@@ -103,7 +103,7 @@ class Prune @Inject()(ergoMixerUtils: ErgoMixerUtils, explorer: BlockExplorer,
       val distributedTxs = daoUtils.awaitResult(distributeTransactionsDAO.zeroChainByMixGroupIdAndTime(req.id, currentTime - pruneAfterMilliseconds))
       distributedTxs.foreach(tx => {
         val numConf = explorer.getTxNumConfirmations(tx.txId)
-        if (numConf >= Configs.dbPruneAfter) {
+        if (numConf >= MainConfigs.dbPruneAfter) {
           logger.info(s"  will prune distributed tx of covert ${req.id}, txId: ${tx.txId}, confNum: $numConf")
           distributeTransactionsDAO.delete(tx.txId)
         }

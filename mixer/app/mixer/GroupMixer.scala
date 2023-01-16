@@ -1,6 +1,6 @@
 package mixer
 
-import app.Configs
+import config.MainConfigs
 import mixinterface.AliceOrBob
 import helpers.ErgoMixerUtils
 
@@ -34,8 +34,8 @@ class GroupMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtil
         var confirmedErgDeposits = 0L
         var confirmedTokenDeposits = 0L
         allBoxes.foreach(box => {
-          val conf = networkUtils.getConfirmationsForBoxId(box.id)
-          if (conf >= Configs.numConfirmation) {
+          val conf = explorer.getConfirmationsForBoxId(box.id)
+          if (conf >= MainConfigs.numConfirmation) {
             confirmedErgDeposits += box.amount
             confirmedTokenDeposits += box.getToken(req.tokenId)
           }
@@ -78,7 +78,7 @@ class GroupMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtil
       daoUtils.awaitResult(distributeTransactionsDAO.selectByMixGroupId(req.id))
         .foreach(tx => {
           val confNum = explorer.getTxNumConfirmations(tx.txId)
-          allTxsConfirmed &= confNum >= Configs.numConfirmation
+          allTxsConfirmed &= confNum >= MainConfigs.numConfirmation
           if (confNum == -1) { // not mined yet, broadcast tx again!
             logger.info(s"  broadcasting tx ${tx.txId}...")
             ctx.sendTransaction(ctx.signedTxFromJson(tx.toString))
@@ -94,18 +94,7 @@ class GroupMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtil
       logger.info("  distributing deposits to start mixing...")
       val wallet = new Wallet(req.masterKey)
       val secret = wallet.getSecret(-1).bigInteger
-      /*val requests = mixRequestsTable.select(depositAddressCol, neededCol, mixingTokenNeeded)
-        .where(mixGroupIdCol === req.id)
-        .as { arr =>
-          val i = arr.toIterator
-          (
-            i.next.as[String],
-            i.next.as[Long], // erg
-            i.next.as[Long] // token
-          )
-        }.toArray*/
       val requests = daoUtils.awaitResult(mixingRequestsDAO.selectPartsByMixGroupId(req.id)).toArray
-
       val excessErg = req.doneDeposit - req.neededAmount
       val excessToken = req.tokenDoneDeposit - req.neededTokenAmount
       requests(0) = (requests(0)._1, requests(0)._2 + excessErg, requests(0)._3 + excessToken)
@@ -117,7 +106,7 @@ class GroupMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtil
       if (excessErg > 0) logger.info(s"  excess deposit: $excessErg...")
       if (excessToken > 0) logger.info(s"  excess token deposit: $excessToken...")
 
-      val transactions = aliceOrBob.distribute(allBoxes.map(_.id).toArray, reqEndBoxes, Array(secret), Configs.distributeFee, req.depositAddress, Configs.maxOuts)
+      val transactions = aliceOrBob.distribute(allBoxes.map(_.id).toArray, reqEndBoxes, Array(secret), MainConfigs.distributeFee, req.depositAddress, MainConfigs.maxOuts)
       for (i <- transactions.indices) {
         val tx = transactions(i)
         val inputs = tx.getSignedInputs.asScala.map(_.getId).mkString(",")

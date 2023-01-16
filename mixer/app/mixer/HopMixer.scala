@@ -1,6 +1,6 @@
 package mixer
 
-import app.Configs
+import config.MainConfigs
 import dao._
 import helpers.ErgoMixerUtils
 import mixinterface.AliceOrBob
@@ -53,13 +53,13 @@ class HopMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
   private def processHopBox(hopBox: HopMix)(implicit ctx: BlockchainContext): Unit = {
     logger.info(s" [HOP: ${hopBox.mixId}] boxId: ${hopBox.boxId} processing.")
     val hopMixBoxConfirmations = explorer.getConfirmationsForBoxId(hopBox.boxId)
-    if (hopMixBoxConfirmations >= Configs.numConfirmation) {
+    if (hopMixBoxConfirmations >= MainConfigs.numConfirmation) {
       logger.info(s" [HOP:${hopBox.mixId} (${hopBox.round})] Sufficient confirmations ($hopMixBoxConfirmations) [boxId:${hopBox.boxId}].")
       val masterSecret = ergoMixer.getMasterSecret(hopBox.mixId)
       val wallet = new Wallet(masterSecret)
       val secret = wallet.getSecret(hopBox.round, toFirst = true).bigInteger
 
-      if (hopBox.round >= Configs.hopRounds - 1) {
+      if (hopBox.round >= MainConfigs.hopRounds - 1) {
         if (withdrawDAO.shouldWithdraw(hopBox.mixId, hopBox.boxId)) {
           val withdrawAddress = ergoMixer.getWithdrawAddress(hopBox.mixId)
 

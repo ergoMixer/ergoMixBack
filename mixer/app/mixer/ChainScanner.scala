@@ -1,15 +1,15 @@
 package mixer
 
-import app.Configs
+import config.MainConfigs
+
 import javax.inject.Inject
-import mixinterface.TokenErgoMix
+import models.Box.OutBox
 import models.Models.EntityInfo
 import network.{BlockExplorer, NetworkUtils}
 import special.collection.Coll
 
 import scala.collection.mutable
 import scala.compat.Platform
-import scala.collection.JavaConverters._
 
 class ChainScanner @Inject()(networkUtils: NetworkUtils, explorer: BlockExplorer) {
   /**
@@ -20,34 +20,31 @@ class ChainScanner @Inject()(networkUtils: NetworkUtils, explorer: BlockExplorer
   def ringStats(): mutable.Map[String, mutable.Map[Long, mutable.Map[String, Long]]] = {
     val result = mutable.Map.empty[String, mutable.Map[Long, mutable.Map[String, Long]]]
     // Limit for get transaction from explorer
-    val limitGetTransaction = Configs.limitGetTransaction
-    val periodTime: Long = Platform.currentTime - Configs.periodTimeRings
-    networkUtils.usingClient { implicit ctx =>
-      // Get full Box address
-      val ergoMix = networkUtils.tokenErgoMix.get
-      val fullBoxAddress = ergoMix.fullMixAddress.toString
-      val halfBoxAddress = ergoMix.halfMixAddress.toString
-      // Get unspent halfMixBox boxes
-      val halfMixBoxes = networkUtils.getAllHalfBoxes
-      // Add value of halfMixBoxes to result
-      for (halfMixBox <- halfMixBoxes) {
-        var coin = "erg"
-        var ring = halfMixBox.amount
-        if (halfMixBox.tokens.length > 1) {
-          coin = halfMixBox.tokens.last.getId.toString
-          ring = halfMixBox.getToken(coin)
-        }
-        if (!result.contains(coin)) result(coin) = mutable.Map(ring -> mutable.Map("unspentHalf" -> 1, "spentHalf" -> 0))
-        else {
-          if (!result(coin).contains(ring)) result(coin)(ring) = mutable.Map("unspentHalf" -> 0, "spentHalf" -> 0)
-          val cur = result(coin)(ring)
-          result(coin).update(ring, mutable.Map(
-            "unspentHalf" -> (cur("unspentHalf") + 1),
-            "spentHalf" -> cur("spentHalf")
-          ))
-        }
+    val limitGetTransaction = MainConfigs.limitGetTransaction
+    val periodTime: Long = Platform.currentTime - MainConfigs.periodTimeRings
+    // Get full Box address
+    val ergoMix = networkUtils.tokenErgoMix.get
+    val fullBoxAddress = ergoMix.fullMixAddress.toString
+    val halfBoxAddress = ergoMix.halfMixAddress.toString
+    // Get unspent halfMixBox boxes
+    val halfMixBoxes = networkUtils.getAllHalfBoxes
+    // Add value of halfMixBoxes to result
+    for (halfMixBox <- halfMixBoxes) {
+      var coin = "erg"
+      var ring = halfMixBox.amount
+      if (halfMixBox.tokens.length > 1) {
+        coin = halfMixBox.tokens.last.getId.toString
+        ring = halfMixBox.getToken(coin)
       }
-      // Create connection to explorer
+      if (!result.contains(coin)) result(coin) = mutable.Map(ring -> mutable.Map("unspentHalf" -> 1, "spentHalf" -> 0))
+      else {
+        if (!result(coin).contains(ring)) result(coin)(ring) = mutable.Map("unspentHalf" -> 0, "spentHalf" -> 0)
+        val cur = result(coin)(ring)
+        result(coin).update(ring, mutable.Map(
+          "unspentHalf" -> (cur("unspentHalf") + 1),
+          "spentHalf" -> cur("spentHalf")
+        ))
+      }
       var i = 0
       var timeFlag: Boolean = true
       while (timeFlag) {
@@ -92,7 +89,7 @@ class ChainScanner @Inject()(networkUtils: NetworkUtils, explorer: BlockExplorer
    * @return tuple containing a map (level -> price) and entering fee
    */
   def scanTokens: (Map[Int, Long], Int) = {
-    val tokenBoxes = networkUtils.getTokenEmissionBoxes(0)
+    val tokenBoxes: List[OutBox] = networkUtils.getTokenEmissionBoxes()
     if (tokenBoxes.nonEmpty) {
       val token = tokenBoxes.head
       val tokenBox = networkUtils.getUnspentBoxById(token.id)
@@ -111,11 +108,6 @@ class ChainScanner @Inject()(networkUtils: NetworkUtils, explorer: BlockExplorer
    * @return list of supported entities
    */
   def scanParams: Seq[EntityInfo] = {
-    networkUtils.usingClient { implicit ctx =>
-      val maxErg = (1e9*1e8).toLong
-      return ctx.getCoveringBoxesFor(TokenErgoMix.paramAddress, maxErg, Seq.empty.asJava).getBoxes.asScala
-        .filter(box => box.getTokens.size() > 0 && box.getTokens.get(0).getId.toString.equals(TokenErgoMix.tokenId))
-        .map(EntityInfo(_))
-    }
+    networkUtils.getParamBoxes.map(EntityInfo(_))
   }
 }

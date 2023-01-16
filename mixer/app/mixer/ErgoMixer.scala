@@ -1,7 +1,8 @@
 package mixer
 
-import app.Configs
+import config.MainConfigs
 import dao._
+import mixinterface.TokenErgoMix
 import models.Box.MixingBox
 import models.Models._
 import models.Request.{MixCovertRequest, MixGroupRequest, MixRequest, MixingRequest}
@@ -10,6 +11,7 @@ import models.Status.MixWithdrawStatus.{HopRequested, NoWithdrawYet, WithdrawReq
 import models.Status.{GroupMixStatus, MixStatus}
 import models.Transaction.{CreateWithdraw, Withdraw}
 import network.NetworkUtils
+import org.ergoplatform.appkit.InputBox
 import play.api.Logger
 import wallet.WalletHelper._
 import wallet.{Wallet, WalletHelper}
@@ -17,6 +19,7 @@ import wallet.{Wallet, WalletHelper}
 import java.util.UUID
 import javax.inject.Inject
 import scala.collection.mutable
+import scala.collection.JavaConverters._
 
 
 class ErgoMixer @Inject()(
@@ -60,7 +63,7 @@ class ErgoMixer @Inject()(
       val depositSecret = wallet.getSecret(-1, privateKey.nonEmpty)
       val depositAddress = WalletHelper.getAddressOfSecret(depositSecret)
       val mixId = UUID.randomUUID().toString
-      val lastErgRing = Configs.params.filter(_._1.isEmpty).head._2.rings.last
+      val lastErgRing = MainConfigs.params.filter(_._1.isEmpty).head._2.rings.last
       val req: MixCovertRequest = MixCovertRequest(nameCovert, mixId, now, depositAddress, numRounds, privateKey.nonEmpty, masterSecret)
       val covertAddresses = addresses.map({(mixId, _)})
       val asset = CovertAsset(mixId, "", lastErgRing, 0L, now)
@@ -190,7 +193,7 @@ class ErgoMixer @Inject()(
   def withdrawMixNow(mixId: String): Unit = {
     val address = getWithdrawAddress(mixId)
     if (address.nonEmpty) {
-      if (daoUtils.awaitResult(mixingRequestsDAO.isMixingErg(mixId)) && Configs.hopRounds > 0)
+      if (daoUtils.awaitResult(mixingRequestsDAO.isMixingErg(mixId)) && MainConfigs.hopRounds > 0)
         daoUtils.awaitResult(mixingRequestsDAO.updateWithdrawStatus(mixId, HopRequested.value))
       else daoUtils.awaitResult(mixingRequestsDAO.updateWithdrawStatus(mixId, WithdrawRequested.value))
     } else throw new Exception("Set a valid withdraw address first!")
@@ -291,9 +294,9 @@ class ErgoMixer @Inject()(
       // if here then addresses are valid
       val masterSecret = randBigInt
       val wallet = new Wallet(masterSecret)
-      val numOut = Configs.maxOuts
+      val numOut = MainConfigs.maxOuts
       val numTxToDistribute = (mixRequests.size + numOut - 1) / numOut
-      var totalNeededErg: Long = numTxToDistribute * Configs.distributeFee
+      var totalNeededErg: Long = numTxToDistribute * MainConfigs.distributeFee
       var totalNeededToken: Long = 0
       var mixingAmount: Long = 0
       var mixingTokenAmount: Long = 0
@@ -427,21 +430,6 @@ class ErgoMixer @Inject()(
   }
 
   /**
-   * TODO: remove this after next release
-   * checks and updates state of group mixes which are already complete
-   *
-   */
-  def updateGroupMixesStates(): Unit = {
-    val groupIds: Seq[String] = daoUtils.awaitResult(mixingGroupRequestDAO.allIds)
-    groupIds.foreach(groupId => {
-      val numRunning = daoUtils.awaitResult(mixingRequestsDAO.countNotWithdrawn(groupId))
-      if (numRunning == 0) { // group mix is done because all mix boxes are withdrawn
-        mixingGroupRequestDAO.updateStatusById(groupId, GroupMixStatus.Complete.value)
-      }
-    })
-  }
-
-  /**
    * returns last round number of mixId
    *
    * @param mixId String
@@ -449,6 +437,16 @@ class ErgoMixer @Inject()(
   def getHopRound(mixId: String): Int = {
     val hopRounds = daoUtils.awaitResult(hopMixDAO.getHopRound(mixId))
     if (hopRounds.nonEmpty) hopRounds.get else -1
+  }
+
+  /**
+   * calculate needed burn tokens for ageusd minting
+   * @param ergoBox our Box for mining
+   * @return tuple of tokenId and amount
+   */
+  def calcNeededBurnTokensForAgeUsdMint(ergoBox: InputBox): Seq[(String, Long)] = {
+    val tokens = ergoBox.getTokens.asScala.filter(_.getId.toString == TokenErgoMix.tokenId)
+    tokens.map(token => (token.getId.toString, token.getValue))
   }
 
 }

@@ -6,7 +6,6 @@ import mixinterface.ErgoMixBase._
 import models.Box.{EndBox, FullMixBox}
 import models.Transaction.HalfMixTx
 import org.ergoplatform.appkit._
-import org.ergoplatform.appkit.impl.ErgoTreeContract
 import sigmastate.eval._
 import special.collection.Coll
 import special.sigma.GroupElement
@@ -36,7 +35,7 @@ class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit
     val txB: UnsignedTransactionBuilder = ctx.newTxBuilder
 
     val outBoxes: Seq[OutBox] = endBoxes.map { endBox =>
-      var outBoxBuilder = txB.outBoxBuilder().value(endBox.value).contract(new ErgoTreeContract(endBox.receiverBoxScript))
+      var outBoxBuilder = txB.outBoxBuilder().value(endBox.value).contract(ctx.newContract(endBox.receiverBoxScript))
       if (endBox.tokens.nonEmpty)
         outBoxBuilder = outBoxBuilder.tokens(endBox.tokens: _*)
       (if (endBox.receiverBoxRegs.isEmpty) outBoxBuilder else outBoxBuilder.registers(endBox.receiverBoxRegs: _*)).build()
@@ -51,10 +50,10 @@ class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit
       inputs.add(0, f.inputBox)
     }
 
-    val preTxB = txB.boxesToSpend(inputs)
-      .outputs(outBoxes: _*)
+    val preTxB = txB.addInputs(inputs.asScala: _*)
+      .addOutputs(outBoxes: _*)
       .fee(feeAmount)
-      .sendChangeTo(getAddress(changeAddress))
+      .sendChangeTo(Address.create(changeAddress))
     val txToSign = if (burnTokens.nonEmpty) preTxB.tokensToBurn(burnTokens: _*).build() else preTxB.build()
 
     val alice: ErgoProver = additionalDHTuples.foldLeft(
@@ -117,7 +116,7 @@ class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit
         assert(tokenCommission.getValue >= mixingTokenAmount / rate)
       }
     }
-    val excessErg = inputBoxes.map(_.getValue.toLong).sum - feeAmount - poolAmount - tokenBox.getValue
+    val excessErg = inputBoxes.map(_.getValue).sum - feeAmount - poolAmount - tokenBox.getValue
     assert(excessErg >= ergCommission + batchPrice)
     val copy = ctx.newTxBuilder().outBoxBuilder
       .value(tokenBox.getValue)
@@ -135,10 +134,10 @@ class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit
     val inputs = new java.util.ArrayList[InputBox]()
     inputs.addAll(inputBoxes.toList.asJava)
 
-    val txToSign = txB.boxesToSpend(inputs)
-      .outputs(newBox, payBox, copy)
+    val txToSign = txB.addInputs(inputs.asScala: _*)
+      .addOutputs(newBox, payBox, copy)
       .fee(feeAmount)
-      .sendChangeTo(getAddress(changeAddress))
+      .sendChangeTo(Address.create(changeAddress))
       .build()
 
     val alice: ErgoProver = additionalDHTuples.foldLeft(

@@ -1,6 +1,6 @@
 package mixer
 
-import app.Configs
+import config.MainConfigs
 import dao._
 import helpers.ErgoMixerUtils
 import models.Models.HopMix
@@ -109,7 +109,7 @@ class WithdrawMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
               }
             } else {
               // we check the first bank box. It should either be unspent or be spent by our transaction
-              // otherwise, our whole chain is invalid
+              // otherwise, our whole chain is invalid (if the first txId in a chain spent by another person this chain will be invalid)
               val firstBankId = tx.additionalInfo.split(",").head // first bank box in our chain - is being spent in our first tx
               val firstTxId = tx.additionalInfo.split(",").last // first tx in the chain of txs - is spending the first bank box
               val bankSpendingTxId = explorer.getSpendingTxId(firstBankId)
@@ -122,7 +122,7 @@ class WithdrawMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
             }
           }
       }
-    } else if (numConf >= Configs.numConfirmation) { // tx is confirmed enough, mix is done!
+    } else if (numConf >= MainConfigs.numConfirmation) { // tx is confirmed enough, mix is done!
       logger.info(s"  transaction is confirmed enough. Mix is done.")
       daoUtils.awaitResult(mixingRequestsDAO.withdrawTheRequest(tx.mixId))
       val mix: MixRequest = daoUtils.awaitResult(mixingRequestsDAO.selectByMixId(tx.mixId)).getOrElse(throw new Exception(s"mixId ${tx.mixId} not found in MixingRequests"))
@@ -163,7 +163,7 @@ class WithdrawMixer @Inject()(ergoMixerUtils: ErgoMixerUtils,
           }
       }
     }
-    else if (numConf >= Configs.numConfirmation) {
+    else if (numConf >= MainConfigs.numConfirmation) {
       logger.info(s"  transaction is confirmed enough. Hop is initiated.")
       val tx = ctx.signedTxFromJson(withdrawTx.toString)
       val hopBoxId = tx.getOutputsToSpend.get(0).getId.toString

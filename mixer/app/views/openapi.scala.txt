@@ -1,0 +1,1638 @@
+@(isAdmin: Boolean)
+openapi: "3.0.2"
+
+info:
+  version: "4.3.0"
+  title: Ergo Mixer API
+  description: API docs for Ergo mixer.
+
+components:
+
+  schemas:
+    ApiError:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          description: status
+          example: false
+        message:
+          type: string
+          nullable: true
+          description: Detailed error description
+    ApiSuccess:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: status
+          example: true
+
+paths:
+@if(!isAdmin) {
+  /mix/request:
+   post:
+     summary: Create a new mix address with/without tokens
+     operationId: mixRequest
+     tags:
+       - mix
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: Create a mix request with/without tokens
+             type: array
+             items:
+               format: object
+             example: [
+               {
+                 "amount": 100000000000,
+                 "withdraw": "9g1p6UU8XoAeU4yGPLpbTHYiG8aBHwfCFzQqJZrfzuLnmF3zb7P",
+                 "token": 30,
+                 "mixingTokenId": "",
+                 "mixingTokenAmount": 0
+               },
+               {
+                 "amount": 100000000000,
+                 "withdraw": "9g1p6UU8XoAeU4yGPLpbTHYiG8aBHwfCFzQqJZrfzuLnmF3zb7P",
+                 "token": 30,
+                 "mixingTokenId": "",
+                 "mixingTokenAmount": 0
+               },
+               {
+                 "amount": 250000000000,
+                 "withdraw": "9g1p6UU8XoAeU4yGPLpbTHYiG8aBHwfCFzQqJZrfzuLnmF3zb7P",
+                 "token": 30,
+                 "mixingTokenId": "",
+                 "mixingTokenAmount": 0
+               },
+               {
+                 "amount": 250000000000,
+                 "withdraw": "9g1p6UU8XoAeU4yGPLpbTHYiG8aBHwfCFzQqJZrfzuLnmF3zb7P",
+                 "token": 30,
+                 "mixingTokenId": "",
+                 "mixingTokenAmount": 0
+               }
+             ]
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               type: object
+               required:
+                 - status
+               example: {
+                 "success": true,
+                 "mixId": "d35bfc0e-acff-475d-bd6d-60dc168672f1"
+               }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /mix/request/list:
+   get:
+     summary: returns list of all mixes
+     operationId: mixGroupRequestList
+     tags:
+       - mix
+     responses:
+       '200':
+         description: list of all mixes
+         content:
+           application/json:
+             schema:
+               items:
+                 example: [
+                   {
+                     "id": "3443bb64-0fe7-4973-bb91-b0bb35141d56",
+                     "amount": 100624000000,
+                     "tokenAmount": 0,
+                     "createdDate": "2020-12-20 20:16:46",
+                     "deposit": "9eYCS99j64guuSUGcgrTVWWduCHk9Dfd1txnZv5JFBrZwXQzivY",
+                     "status": "queued",
+                     "mixingAmount": 100000000000,
+                     "mixingTokenId": "",
+                     "mixingTokenAmount": 0,
+                     "doneDeposit": 0,
+                     "doneTokenDeposit": 0,
+                     "groupStat": null
+                   },
+                   {
+                     "id": "5305a847-c5cb-440d-bd9a-961cfc819f26",
+                     "amount": 100624000000,
+                     "tokenAmount": 0,
+                     "createdDate": "2020-12-20 20:17:37",
+                     "deposit": "9hNn8pQt9T7PcjyntG2JSZn1MqwQ2tnjyekQdgx5uabXSCoKLJX",
+                     "status": "queued",
+                     "mixingAmount": 100000000000,
+                     "mixingTokenId": "",
+                     "mixingTokenAmount": 0,
+                     "doneDeposit": 0,
+                     "doneTokenDeposit": 0,
+                     "groupStat": null
+                   }
+                 ]
+  /mix/request/activeList:
+   get:
+     summary: returns list of active mixes
+     operationId: mixGroupRequestActiveList
+     tags:
+       - mix
+     responses:
+       '200':
+         description: returns active group mixes. contains more info to be shown about deposits and ...
+         content:
+           application/json:
+             schema:
+               items:
+                 example: [
+                   {
+                     "id": "3443bb64-0fe7-4973-bb91-b0bb35141d56",
+                     "amount": 100624000000,
+                     "tokenAmount": 0,
+                     "createdDate": "2020-12-23 20:16:46",
+                     "deposit": "9eYCS99j64guuSUGcgrTVWWduCHk9Dfd1txnZv5JFBrZwXQzivY",
+                     "status": "queued",
+                     "mixingAmount": 100000000000,
+                     "mixingTokenId": "",
+                     "mixingTokenAmount": 0,
+                     "doneDeposit": 0,
+                     "doneTokenDeposit": 0,
+                     "groupStat": {
+                       "numBoxes": 1,
+                       "numComplete": 0,
+                       "numWithdrawn": 0,
+                       "totalMixRound": 0,
+                       "doneMixRound": 0
+                     }
+                   },
+                   {
+                     "id": "5305a847-c5cb-440d-bd9a-961cfc819f26",
+                     "amount": 100624000000,
+                     "tokenAmount": 0,
+                     "createdDate": "2020-12-23 20:17:37",
+                     "deposit": "9hNn8pQt9T7PcjyntG2JSZn1MqwQ2tnjyekQdgx5uabXSCoKLJX",
+                     "status": "queued",
+                     "mixingAmount": 100000000000,
+                     "mixingTokenId": "",
+                     "mixingTokenAmount": 0,
+                     "doneDeposit": 0,
+                     "doneTokenDeposit": 0,
+                     "groupStat": {
+                       "numBoxes": 1,
+                       "numComplete": 0,
+                       "numWithdrawn": 0,
+                       "totalMixRound": 0,
+                       "doneMixRound": 0
+                     }
+                   }
+                 ]
+  /mix/request/completeList:
+   get:
+     summary: returns list of completed mixes
+     operationId: mixGroupRequestCompleteList
+     tags:
+       - mix
+     responses:
+       '200':
+         description: list of completed mixes
+         content:
+           application/json:
+             schema:
+               items:
+                 example: [
+                   {
+                     "id": "833c4e1d-e933-4bfb-b084-9c3bb84b35a2",
+                     "amount": 30369000000,
+                     "tokenAmount": 0,
+                     "createdDate": "2020-12-21 16:25:35",
+                     "deposit": "9hNn8pQt9T7PcjyntG2JSZn1MqwQ2tnjyekQdgx5uabXSCoKLJX",
+                     "status": "complete",
+                     "mixingAmount": 30000000000,
+                     "mixingTokenId": "",
+                     "mixingTokenAmount": 0,
+                     "doneDeposit": 30369000000,
+                     "doneTokenDeposit": 0,
+                     "groupStat": null
+                   }
+                 ]
+  /mix/request/{id}/list:
+   get:
+     summary: returns all boxes of a mix or covert address
+     operationId: mixRequestList
+     tags:
+       - mix
+     parameters:
+       - in: path
+         name: id
+         required: true
+         description: ID of a wanted mix or covert
+         schema:
+           type: string
+     responses:
+       '200':
+         description: mix boxes of a specific group or covert request
+         content:
+           application/json:
+             schema:
+               type: array
+               items:
+                 format: object
+               example: [
+                 {
+                   "id": "ae2fbaf2-df4a-4a97-b7bb-9899d0effb59",
+                   "createdDate": "14:17:37",
+                   "amount": 100000000000,
+                   "rounds": 0,
+                   "status": "queued",
+                   "deposit": "9g4tcxcrWUVEcyW5C9oanhEb3HCEVRy1Ed92jdjx8XFY3i91wR7",
+                   "withdraw": "",
+                   "boxType": "None",
+                   "withdrawStatus": "nothing",
+                   "withdrawTxId": "",
+                   "lastMixTime": "None",
+                   "mixingTokenId": "",
+                   "mixingTokenAmount": 0,
+                   "hopRounds": -1
+                 }
+               ]
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /mix/{mixId}/box:
+   get:
+     summary: get InputBox of a mixId
+     operationId: getMixBox
+     tags:
+       - mix
+     parameters:
+       - in: path
+         name: mixId
+         required: true
+         description: ID of a mix request
+         schema:
+           type: string
+     responses:
+       '200':
+         description: input box of a specific mix
+         content:
+           application/json:
+             schema:
+               type: array
+               items:
+                 format: object
+               example: {
+                          "box":{
+                            "boxId":"db80c15a4120ef28374623451e1d79a5c77ceaab006d9c97",
+                            "value":10000000000,
+                            "ergoTree":"10060e2002d154141734923037d115d63f204000402040004040e201a6a8c16e4b1cc9d23423b8e79dd84198cb66beeed7d3463e0da2b98d803d601e4c6a70507d602d901026393cbc27202e4c6a7070ed6037300ea02eb02cd7201cedb6a01dde4c6a70407e4c6a706077201d1ececedda720201b2a573010093cbc2b2a47302007203edda720201b2a473030093cbc2b2a47304007203afa5d9010463afdb63087204d901064d0e948c7206017305",
+                            "creationHeight":787966,
+                            "assets":[
+                              {
+                                "tokenId":"1a6a8c16e4b1cc9d73d03183565cfb8e79dd84198cb66beeed7d3463e0da2b98",
+                                "amount":33
+                              }
+                            ],
+                            "additionalRegisters":{
+                              "R4":"0702e3654f87645678901662962922725976789c96c82ffe0eb",
+                              "R5":"0702e3654f87645678901662962922725976789c96c82ffe0eb",
+                              "R6":"0702e3654f87645678901662962922725976789c96c82ffe0eb",
+                              "R7":"0702e3654f87645678901662962922725976789c96c82ffe0eb"
+                            },
+                            "transactionId":"39ce27e22757e960e345678765434567876543567876dec1ad0f",
+                            "index":1
+                          },
+                          "burnTokens":[
+                            {
+                              "tokenId":"1a6a8c16e4b1cc9d73d03183565cfb8e79dd84198cb66beeed7d3463e0da2b98",
+                              "amount":33
+                            }
+                          ]
+                        }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /mix/fee:
+   get:
+     summary: returns info about current fee parameters
+     operationId: mixingFee
+     tags:
+       - mix
+     responses:
+       '200':
+         description: info about current fee parameters
+         content:
+           application/json:
+             schema:
+               type: object
+               example: {
+                 "boxInTransaction": 10,
+                 "distributeFee": 1500000,
+                 "startFee": 2500000,
+                 "180": 720000000,
+                 "90": 360000000,
+                 "60": 240000000,
+                 "30": 120000000,
+                 "rate": 200
+               }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /mix/supported:
+   get:
+     summary: returns list of supported assets
+     operationId: supported
+     tags:
+       - mix
+     responses:
+       '200':
+         description: list of supported assets
+         content:
+           application/json:
+             schema:
+               type: array
+               items:
+                 format: object
+               example: [
+                 {
+                   "name": "ERG",
+                   "id": "",
+                   "rings": [
+                       1000000000,
+                       10000000000,
+                       100000000000,
+                       250000000000
+                   ],
+                   "decimals": 9
+                 },
+                 {
+                   "name": "TestToken",
+                   "id": "faea358564f4f14dd0f3eb4827bbfc9006d4c3cb76d5b461274f11f982fe1df8",
+                   "rings": [
+                       1000000,
+                       5000000,
+                       10000000,
+                       100000000
+                   ],
+                   "decimals": 7
+                 }
+               ]
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /mix/withdraw:
+   post:
+     summary: set or edit withdraw address and/or withdraw request
+     operationId: withdraw
+     tags:
+       - mix
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: Add withdraw address to database or change status withdraw
+             type: array
+             items:
+               format: object
+             example: {
+               "nonStayAtMix": true,
+               "withdrawAddress": "9gPTjYj7E9mix5rEF8Gvny2E6AiskhZF4G9YH2Noj8MqDU1aw9A",
+               "mixId": "3ea899b5-f632-42b6-953c-6510a348b02f"
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiSuccess'
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+
+  /covert/list:
+   get:
+     summary: returns list of covert addresses
+     operationId: covertList
+     tags:
+       - covert
+     responses:
+       '200':
+         description: list covert info to be shown, includes covert's supported assets sorted based on latest activity
+         content:
+           application/json:
+             schema:
+               items:
+                 example: [
+                   {
+                     "nameCovert": "test1",
+                     "id": "af7480a0-8566-4bc9-b0e0-dd0b5f8857af",
+                     "createdDate": "2020-12-22 16:24:14",
+                     "deposit": "9hB26hp4tRr7r4rc4MxWWNL7hSKGVGgjc8Wyjdzs7fDK5dGDXLk",
+                     "numRounds": 30,
+                     "assets": [
+                       {
+                         "tokenId": "",
+                         "ring": 250000000000,
+                         "need": 251372500000,
+                         "confirmedDeposit": 0,
+                         "lastActivity": "2020-12-22 16:24:14",
+                         "currentMixingAmount": 0
+                       },
+                       {
+                         "tokenId": "faea358564f4f14dd0f3eb4827bbfc9006d4c3cb76d5b461274f11f982fe1df8",
+                         "ring": 5000000,
+                         "need": 5025000,
+                         "confirmedDeposit": 0,
+                         "lastActivity": "2020-12-22 17:33:34",
+                         "currentMixingAmount": 0
+                       }
+                     ],
+                     "isManualCovert": false
+                   }
+                 ]
+  /covert:
+   post:
+     summary: Create covert address
+     operationId: covertRequest
+     tags:
+       - covert
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: Create covert address
+             type: object
+             required:
+               - addresses
+               - numRounds
+               - nameCovert
+             example: {
+               "addresses": [
+                   "9g1p6UU8XoAeU4yGPLpbTHYiG8aBHwfCFzQqJZrfzuLnmF3zb7P"
+               ],
+               "numRounds": 30,
+               "nameCovert": "test1"
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               type: object
+               example: {
+                 "success": true,
+                 "depositAddress": "9hB26hp4tRr7r4rc4MxWWNL7hSKGVGgjc8Wyjdzs7fDK5dGDXLk"
+               }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /covert/{covertId}/asset:
+   get:
+     summary: returns list of a covert's assets
+     operationId: covertAssetList
+     tags:
+       - covert
+     parameters:
+       - in: path
+         name: covertId
+         required: true
+         description: ID of a wanted covert
+         schema:
+           type: string
+     responses:
+       '200':
+         description: list of a covert's assets
+         content:
+           application/json:
+             schema:
+               type: object
+               example: {
+                 "nameCovert": "test1",
+                 "id": "af7480a0-8566-4bc9-b0e0-dd0b5f8857af",
+                 "createdDate": "2020-12-22 16:24:14",
+                 "deposit": "9hB26hp4tRr7r4rc4MxWWNL7hSKGVGgjc8Wyjdzs7fDK5dGDXLk",
+                 "numRounds": 30,
+                 "assets": [
+                   {
+                     "tokenId": "",
+                     "ring": 250000000000,
+                     "need": 251372500000,
+                     "confirmedDeposit": 0,
+                     "lastActivity": "2020-12-22 16:24:14",
+                     "currentMixingAmount": 0
+                   }
+                 ],
+                 "isManualCovert": false
+               }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+   post:
+     summary: Add or update a covert's assets
+     operationId: covertAddOrUpdate
+     tags:
+       - covert
+     parameters:
+       - in: path
+         name: covertId
+         required: true
+         description: ID of a wanted covert
+         schema:
+           type: string
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: Create covert address
+             type: object
+             required:
+               - tokenId
+               - ring
+             example: {
+               "tokenId": "",
+               "ring": 100000000000
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiSuccess'
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /covert/{covertId}/address:
+   get:
+     summary: returns list of withdraw addresses of a covert request
+     operationId: getCovertAddresses
+     tags:
+       - covert
+     parameters:
+       - in: path
+         name: covertId
+         required: true
+         description: ID of a wanted covert
+         schema:
+           type: string
+     responses:
+       '200':
+         description: list of addresses
+         content:
+           application/json:
+             schema:
+               type: array
+               items:
+                 format: string
+               example: [ "9g1p6UU8XoAeU4yGPLpbTHYiG8aBHwfCFzQqJZrfzuLnmF3zb7P" ]
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+   post:
+     summary: update list of withdraw addresses of a covert request
+     operationId: setCovertAddresses
+     tags:
+       - covert
+     parameters:
+       - in: path
+         name: covertId
+         required: true
+         description: ID of a wanted covert
+         schema:
+           type: string
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: update list of withdraw addresses of a covert request
+             type: object
+             required:
+               - addresses
+             example: {
+               "addresses": [
+                   "9g1p6UU8XoAeU4yGPLpbTHYiG8aBHwfCFzQqJZrfzuLnmF3zb7P"
+               ]
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiSuccess'
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /covert/{covertId}/name:
+   post:
+     summary: Update name of a covert
+     operationId: covertChangeName
+     tags:
+       - covert
+     parameters:
+       - in: path
+         name: covertId
+         required: true
+         description: ID of a wanted covert
+         schema:
+           type: string
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: Create covert address
+             type: object
+             required:
+               - name
+             example: {
+               "name": "test1"
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiSuccess'
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /covert/keys:
+   get:
+     summary: downloads a file containing name, address and private key of all coverts
+     operationId: covertKeys
+     tags:
+       - covert
+     responses:
+       '200':
+         description: download the covertKeys
+         content:
+           text/csv:
+             schema:
+               type: string
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+
+  /covert/{covertId}/key:
+   get:
+     summary: returns the address and private key of a covert
+     operationId: getCovertPrivateKey
+     tags:
+       - covert
+     parameters:
+       - in: path
+         name: covertId
+         required: true
+         description: ID of a wanted covert
+         schema:
+           type: string
+     responses:
+       '200':
+         description: the address and private key of corresponding covert
+         content:
+           application/json:
+             schema:
+               items:
+                 example: {
+                   "address": "9f7nfgc48ytASi6RB6rfGsCBVzsGxdsbMfx6rLdVhcEmb69yqp1",
+                   "privateKey": "1db0b06b6bc8a1b25a03fcdad7b9e05c72c3b886a7ea1f27e4d3843064395565"
+                 }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /covert/{covertId}/withdraw:
+   post:
+     summary: adds list of tokens to withdraw from the covert
+     operationId: withdrawCovertAsset
+     tags:
+       - covert
+     parameters:
+       - in: path
+         name: covertId
+         required: true
+         description: ID of a wanted covert
+         schema:
+           type: string
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: withdraw request for some tokens of the covert
+             type: object
+             required:
+               - tokenIds
+               - withdrawAddress
+             example: {
+               "tokenIds": [
+                   "a3faf2cb326571cbf0458d91b9f2e9021bb6c046afbefbe2824aaafe9252b4f",
+                   "4d612894187117f139929f0cab093f5b62e1bc7709f88949285d043c5c4dd15"
+               ],
+               "withdrawAddress": "9g1p6UU8XoAeU4yGPLpbTHYiG8aBHwfCFzQqJZrfzuLnmF3zb7P"
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiSuccess'
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+
+  /ageusd/height:
+   get:
+     summary: returns current blockchain height
+     operationId: currentHeight
+     tags:
+       - ageusd
+     responses:
+       '200':
+         description: current blockchain height
+         content:
+           application/json:
+             schema:
+               items:
+                 example: {
+                   "height": 460602
+                 }
+  /ageusd/fee:
+   get:
+     summary: returns tx fee needed for ageUSD minting
+     operationId: ageusdFee
+     tags:
+       - ageusd
+     responses:
+       '200':
+         description: tx fee needed for ageUSD minting
+         content:
+           application/json:
+             schema:
+               items:
+                 example: {
+                   "fee": 5000000
+                 }
+  /ageusd/mint:
+   post:
+     summary: A end-point for minting AgeUSD (sigusd, sigrsv)
+     operationId: mint
+     tags:
+       - ageusd
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: minting AgeUSD (sigusd, sigrsv)
+             type: object
+             required:
+               - reducedTransaction
+               - mixId
+             example: {
+               "mixId": "ef37eeac-4bd3-49ee-810f-32a2bdf6f84b",
+               "reducedTransaction": "mint transaction in base64 encoded"
+             }
+     responses:
+       '200':
+         description: minting tx json
+         content:
+           application/json:
+             schema:
+               type: object
+               example: {
+                 "id": "c26dbb39de998cb4a2c5c3b004db82557402f08abf30eb726cfb85672879ec05",
+                 "inputs": [
+                   {
+                     "boxId": "2ce6f20a1d73020dd1f85dbb54727ed038d7ea4faad7985ca1dd8a9f4a57ad0c",
+                     "spendingProof": {
+                       "proofBytes": "",
+                       "extension": {
+
+                       }
+                     }
+                   },
+                   {
+                     "boxId": "4a88630c62df2ee921d1171c2ad7d6f715b782b124f8b67179ef03428d84533f",
+                     "spendingProof": {
+                       "proofBytes": 
+"c3808ac129c4207bf2503e5d1ed596f2df780d462cb4ea714500bf64ac8e32058c50f2ef4ad71fcd2079eb15749da398fd1b509625dda60eb84740d12265462e474b5772ecc488cfb87ad98f92622a7c3ea639d4288d9e1f773264e6e98c58c28ecb807634f6d340ef270219c1dcb268",
+                       "extension": {
+
+                       }
+                     }
+                   }
+                 ],
+                 "dataInputs": [
+                   {
+                     "boxId": "7a2946b0ed5d9647c002dd9b725945f906fdd52390cec89cf8a008ac8bdc4dd9"
+                   }
+                 ],
+                 "outputs": [
+                   {
+                     "boxId": "a787d55ce19e5361c8dc4c04910e207761dc53264732c970b8d149c59b3c148b",
+                     "value": 1319109516823351,
+                     "ergoTree": 
+"102a0400040004000e20011d3364de07e5a26f0c4eef0852cddb387039a921b7154ef3cab22c6eda887f0400040204020400040004020500050005c8010500050005feffffffffffffffff0105000580897a05000580897a040405c80104c0933805c00c0580a8d6b907050005c8010580dac40905000500040404040500050005a0060101050005a0060100040004000e20239c170b7e82f94e6b05416f14b8a2a57e0bfff0e3c93f4abbcd160b6a5b271ad801d601db6501fed1ec9591b172017300d821d602b27201730100d603938cb2db63087202730200017303d604b2a5730400d605c17204d606db6308a7d607b27206730500d6088c720702d609db63087204d60ab27209730600d60b8c720a02d60c947208720bd60db27206730700d60e8c720d02d60fb27209730800d6108c720f02d61194720e7210d612e4c6a70505d613e4c672040505d614e4c6a70405d615e4c672040405d616b2a5730900d617e4c672160405d61895720c730a7217d61995720c7217730bd61ac1a7d61be4c672160505d61c9de4c672020405730cd61da2a1721a9c7214721c730dd61e9572119ca1721c95937214730e730f9d721d72147218d801d61e99721a721d9c9593721e7310731195937212731273139d721e72127219d61f9d9c721e7e7314057315d6209c7215721cd6219591a3731673177318d62295937220731972219d9c7205731a7220edededed7203ededededed927205731b93c27204c2a7edec720c7211efed720c7211ed939a720872129a720b7213939a720e72149a72107215edededed939a721472187215939a721272197213939a721a721b7205927215731c927213731deded938c720f018c720d01938c720a018c720701938cb27209731e00018cb27206731f000193721b9a721e958f721f7320f0721f721f957211959172187321927222732273239591721973249072227221927222732572037326938cb2db6308b2a4732700732800017329",
+                     "creationHeight": 460757,
+                     "assets": [
+                       {
+                         "tokenId": "03faf2cb329f2e90d6d23b58d91bbb6c046aa143261cc21f52fbe2824bfcbf04",
+                         "amount": 9999998959796
+                       },
+                       {
+                         "tokenId": "003bd19d0187117f130b62e1bcab0939929ff5c7709f843c5c4dd158949285d0",
+                         "amount": 9998906384810
+                       },
+                       {
+                         "tokenId": "7d672d1def471720ca5782fd6473e47e796d9ac0c138d9911346f118b2f6d9d9",
+                         "amount": 1
+                       }
+                     ],
+                     "additionalRegisters": {
+                       "R4": "059afd7e",
+                       "R5": "05aef9f99208"
+                     },
+                     "transactionId": "c26dbb39de998cb4a2c5c3b004db82557402f08abf30eb726cfb85672879ec05",
+                     "index": 0
+                   },
+                   {
+                     "boxId": "dd14c6d12440d8ea65040acdcc95b84991c13821d39ee532d3a162dc52225cc6",
+                     "value": 218192864,
+                     "ergoTree": "0008cd02c4fac8bfd09d8b59faf3c6fa1614462f22c315436a7ae5ee5bb2ac43aa8c828f",
+                     "creationHeight": 460757,
+                     "assets": [
+                       {
+                         "tokenId": "03faf2cb329f2e90d6d23b58d91bbb6c046aa143261cc21f52fbe2824bfcbf04",
+                         "amount": 2292
+                       }
+                     ],
+                     "additionalRegisters": {
+                       "R4": "05e823",
+                       "R5": "05c0f3f1eb48"
+                     },
+                     "transactionId": "c26dbb39de998cb4a2c5c3b004db82557402f08abf30eb726cfb85672879ec05",
+                     "index": 1
+                   },
+                   {
+                     "boxId": "c41bf9cf89253eb23f9c02f34e74c4baa41695f4be692ef6b52d82258ed3a400",
+                     "value": 5000000,
+                     "ergoTree": 
+"1005040004000e36100204a00b08cd0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798ea02d192a39a8cc7a701730073011001020402d19683030193a38cc7b2a57300000193c2b2a57301007473027303830108cdeeac93b1a57304",
+                     "creationHeight": 460757,
+                     "assets": [
+
+                     ],
+                     "additionalRegisters": {
+
+                     },
+                     "transactionId": "c26dbb39de998cb4a2c5c3b004db82557402f08abf30eb726cfb85672879ec05",
+                     "index": 2
+                   }
+                 ]
+               }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /ageusd/oracle/{tokenId}:
+   get:
+     summary: returns current oracle box
+     operationId: oracleBox
+     tags:
+       - ageusd
+     parameters:
+       - in: path
+         name: tokenId
+         required: true
+         description: ID of token
+         schema:
+           type: string
+     responses:
+       '200':
+         description: returns current oracle box
+         content:
+           application/json:
+             schema:
+               type: object
+               example: {
+                 "boxId": "6cc345f88301268bd7a8f6f7d96329ad9ce223b95338d2d276e7775fe9169aa7",
+                 "transactionId": "5a454945500458db5b1c976a9b0bdd02a8b1370a30a7c7c97d3069b1875006e4",
+                 "blockId": "0f920577ffdf4be9f85d1d8913dcd9f2fd11112515fb0dd787c424c51eac01fb",
+                 "value": 5270500000,
+                 "index": 0,
+                 "creationHeight": 460761,
+                 "ergoTree": 
+"1014040004000e208c27dd9d8a35aac1e3167d58858c0a8b4059b277da790552e37eba22df9b903504000400040204020101040205a0c21e040204080500040c040204a0c21e0402050a05c8010402d806d601b2a5730000d602b5db6501fed9010263ed93e4c67202050ec5a7938cb2db63087202730100017302d603b17202d604e4c6b272027303000605d605d90105049590720573047204e4c6b272029972057305000605d606b07202860273067307d901063c400163d803d6088c720601d6098c720801d60a8c72060286029a72097308ededed8c72080293c2b2a5720900d0cde4c6720a040792c1b2a5720900730992da720501997209730ae4c6720a0605ea02d1ededededededed93cbc27201e4c6a7060e927203730b93db63087201db6308a793e4c6720104059db07202730cd9010741639a8c720701e4c68c72070206057e72030593e4c6720105049ae4c6a70504730d92c1720199c1a77e9c9a7203730e730f058c72060292da720501998c72060173109972049d9c720473117312b2ad7202d9010763cde4c672070407e4c6b2a5731300040400",
+                 "address": 
+"NTkuk55NdwCXkF1e2nCABxq7bHjtinX3wH13zYPZ6qYT71dCoZBe1gZkh9FAr7GeHo2EpFoibzpNQmoi89atUjKRrhZEYrTapdtXrWU4kq319oY7BEWmtmRU9cMohX69XMuxJjJP5hRM8WQLfFnffbjshhEP3ck9CKVEkFRw1JDYkqVke2JVqoMED5yxLVkScbBUiJJLWq9BSbE1JJmmreNVskmWNxWE6V7ksKPxFMoqh1SVePh3UWAaBgGQRZ7TWf4dTBF5KMVHmRXzmQqEu2Fz2yeSLy23sM3pfqa78VuvoFHnTFXYFFxn3DNttxwq3EU3Zv25SmgrWjLKiZjFcEcqGgH6DJ9FZ1DfucVtTXwyDJutY3ksUBaEStRxoUQyRu4EhDobixL3PUWRcxaRJ8JKA9b64ALErGepRHkAoVmS8DaE6VbroskyMuhkTo7LbrzhTyJbqKurEzoEfhYxus7bMpLTePgKcktgRRyB7MjVxjSpxWzZedvzbjzZaHLZLkWZESk1WtdM25My33wtVLNXiTvficEUbjA23sNd24pv1YQ72nY1aqUHa2",
+                 "assets": [
+                   {
+                     "tokenId": "011d3364de07e5a26f0c4eef0852cddb387039a921b7154ef3cab22c6eda887f",
+                     "index": 0,
+                     "amount": 1,
+                     "name": "ERGUSD-NFT",
+                     "decimals": 0,
+                     "type": "EIP-004"
+                   }
+                 ],
+                 "additionalRegisters": {
+                   "R4": {
+                     "serializedValue": "05b4bbef8c03",
+                     "sigmaType": "SLong",
+                     "renderedValue": "416149210"
+                   },
+                   "R5": {
+                     "serializedValue": "04b89f38",
+                     "sigmaType": "SInt",
+                     "renderedValue": "460764"
+                   },
+                   "R6": {
+                     "serializedValue": "0e20f7ef73c4a4ab91b84bb0a2905108d534114472ec057be3a57a9dfc9b1fbd85c1",
+                     "sigmaType": "Coll[SByte]",
+                     "renderedValue": "f7ef73c4a4ab91b84bb0a2905108d534114472ec057be3a57a9dfc9b1fbd85c1"
+                   }
+                 },
+                 "spentTransactionId": null,
+                 "mainChain": true
+               }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /ageusd/bank/{tokenId}:
+   get:
+     summary: returns current bank box - unconfirmed if available
+     operationId: bankBox
+     tags:
+       - ageusd
+     parameters:
+       - in: path
+         name: tokenId
+         required: true
+         description: ID of token
+         schema:
+           type: string
+     responses:
+       '200':
+         description: returns current bank box - unconfirmed if available
+         content:
+           application/json:
+             schema:
+               type: object
+               example: {
+                 "boxId": "2ce6f20a1d73020dd1f85dbb54727ed038d7ea4faad7985ca1dd8a9f4a57ad0c",
+                 "transactionId": "d295b306a174045a0e5e469dbb6b5ba943c8dc5c68ecb912c3ce736bfc598bf1",
+                 "blockId": "ea0f533299c0b2dc2af37aa690bfd3762ebccdafb7abcf9fc12ab70491cb9fab",
+                 "value": 1319099740016215,
+                 "index": 0,
+                 "creationHeight": 460592,
+                 "ergoTree": 
+"102a0400040004000e20011d3364de07e5a26f0c4eef0852cddb387039a921b7154ef3cab22c6eda887f0400040204020400040004020500050005c8010500050005feffffffffffffffff0105000580897a05000580897a040405c80104c0933805c00c0580a8d6b907050005c8010580dac40905000500040404040500050005a0060101050005a0060100040004000e20239c170b7e82f94e6b05416f14b8a2a57e0bfff0e3c93f4abbcd160b6a5b271ad801d601db6501fed1ec9591b172017300d821d602b27201730100d603938cb2db63087202730200017303d604b2a5730400d605c17204d606db6308a7d607b27206730500d6088c720702d609db63087204d60ab27209730600d60b8c720a02d60c947208720bd60db27206730700d60e8c720d02d60fb27209730800d6108c720f02d61194720e7210d612e4c6a70505d613e4c672040505d614e4c6a70405d615e4c672040405d616b2a5730900d617e4c672160405d61895720c730a7217d61995720c7217730bd61ac1a7d61be4c672160505d61c9de4c672020405730cd61da2a1721a9c7214721c730dd61e9572119ca1721c95937214730e730f9d721d72147218d801d61e99721a721d9c9593721e7310731195937212731273139d721e72127219d61f9d9c721e7e7314057315d6209c7215721cd6219591a3731673177318d62295937220731972219d9c7205731a7220edededed7203ededededed927205731b93c27204c2a7edec720c7211efed720c7211ed939a720872129a720b7213939a720e72149a72107215edededed939a721472187215939a721272197213939a721a721b7205927215731c927213731deded938c720f018c720d01938c720a018c720701938cb27209731e00018cb27206731f000193721b9a721e958f721f7320f0721f721f957211959172187321927222732273239591721973249072227221927222732572037326938cb2db6308b2a4732700732800017329",
+                 "address": 
+"MUbV38YgqHy7XbsoXWF5z7EZm524Ybdwe5p9WDrbhruZRtehkRPT92imXer2eTkjwPDfboa1pR3zb3deVKVq3H7Xt98qcTqLuSBSbHb7izzo5jphEpcnqyKJ2xhmpNPVvmtbdJNdvdopPrHHDBbAGGeW7XYTQwEeoRfosXzcDtiGgw97b2aqjTsNFmZk7khBEQywjYfmoDc9nUCJMZ3vbSspnYo3LarLe55mh2Np8MNJqUN9APA6XkhZCrTTDRZb1B4krgFY1sVMswg2ceqguZRvC9pqt3tUUxmSnB24N6dowfVJKhLXwHPbrkHViBv1AKAJTmEaQW2DN1fRmD9ypXxZk8GXmYtxTtrj3BiunQ4qzUCu1eGzxSREjpkFSi2ATLSSDqUwxtRz639sHM6Lav4axoJNPCHbY8pvuBKUxgnGRex8LEGM8DeEJwaJCaoy8dBw9Lz49nq5mSsXLeoC4xpTUmp47Bh7GAZtwkaNreCu74m9rcZ8Di4w1cmdsiK1NWuDh9pJ2Bv7u3EfcurHFVqCkT3P86JUbKnXeNxCypfrWsFuYNKYqmjsix82g9vWcGMmAcu5nagxD4iET86iE2tMMfZZ5vqZNvntQswJyQqv2Wc6MTh4jQx1q2qJZCQe4QdEK63meTGbZNNKMctHQbp3gRkZYNrBtxQyVtNLR8xEY8zGp85GeQKbb37vqLXxRpGiigAdMe3XZA4hhYPmAAU5hpSMYaRAjtvvMT3bNiHRACGrfjvSsEG9G2zY5in2YWz5X9zXQLGTYRsQ4uNFkYoQRCBdjNxGv6R58Xq74zCgt19TxYZ87gPWxkXpWwTaHogG1eps8WXt8QzwJ9rVx6Vu9a5GjtcGsQxHovWmYixgBU8X9fPNJ9UQhYyAWbjtRSuVBtDAmoV1gCBEPwnYVP5GCGhCocbwoYhZkZjFZy6ws4uxVLid3FxuvhWvQrVEDYp7WRvGXbNdCbcSXnbeTrPMey1WPaXX",
+                 "assets": [
+                   {
+                     "tokenId": "03faf2cb329f2e90d6d23b58d91bbb6c046aa143261cc21f52fbe2824bfcbf04",
+                     "index": 0,
+                     "amount": 9999998962088,
+                     "name": "SigUSD",
+                     "decimals": 2,
+                     "type": "EIP-004"
+                   },
+                   {
+                     "tokenId": "003bd19d0187117f130b62e1bcab0939929ff5c7709f843c5c4dd158949285d0",
+                     "index": 1,
+                     "amount": 9998906384810,
+                     "name": "SigRSV",
+                     "decimals": 0,
+                     "type": "EIP-004"
+                   },
+                   {
+                     "tokenId": "7d672d1def471720ca5782fd6473e47e796d9ac0c138d9911346f118b2f6d9d9",
+                     "index": 2,
+                     "amount": 1,
+                     "name": "SUSD Bank V2 NFT",
+                     "decimals": 0,
+                     "type": "EIP-004"
+                   }
+                 ],
+                 "additionalRegisters": {
+                   "R4": {
+                     "serializedValue": "05b2d97e",
+                     "sigmaType": "SLong",
+                     "renderedValue": "1037913"
+                   },
+                   "R5": {
+                     "serializedValue": "05aef9f99208",
+                     "sigmaType": "SLong",
+                     "renderedValue": "1093615191"
+                   }
+                 },
+                 "spentTransactionId": null,
+                 "mainChain": true
+               }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+
+ } else {
+  /admin/income:
+   get:
+     summary: calculates commission and token selling income from start to end inclusive
+     operationId: income
+     tags:
+       - admin
+     parameters:
+       - in: query
+         name: start
+         required: false
+         description: timestamp in mili-seconds from
+         schema:
+           type: integer
+           format: long
+           minimum: 0
+       - in: query
+         name: end
+         required: false
+         description: timestamp in mili-seconds end
+         schema:
+           type: integer
+           format: long
+           minimum: 0
+     responses:
+       '200':
+         description: commission and token selling income from start to end inclusive
+         content:
+           application/json:
+             schema:
+               example: {
+                 "commission": {
+                   "": {
+                     "ringStat": {
+                       "1000000": 1,
+                       "1000000000": 2,
+                       "10000000000": 2,
+                       "100000000000": 100,
+                       "250000000000": 200
+                     },
+                     "totalCommission": 445000,
+                     "totalDonation": 0,
+                     "totalEntered": 4440000
+                   },
+                   "0cd8c9f416e5b1ca9f986a7f10a84191dfb85941619e49e53c0dc30ebf83324b": {
+                     "ringStat": {
+                       "100000": 1
+                     },
+                     "totalCommission": 500,
+                     "totalDonation": 0,
+                     "totalEntered": 100000
+                   }
+                 },
+                 "tokenSelling": {
+                   "levelStat": {
+                     "30": 22,
+                     "60": 22,
+                     "90": 22,
+                     "180": 233
+                   },
+                   "total": 10000000000
+                 }
+               }
+  /admin/incomeParams:
+   get:
+     summary: get current income parameters
+     operationId: getIncomeParams
+     tags:
+       - admin
+     responses:
+       '200':
+         description: an endpoint to get current income parameters
+         content:
+           application/json:
+             schema:
+               example: {
+                 "commissionFee": 200,
+                 "levels": [ {
+                   "amount": 30,
+                   "price": 120000000
+                 },{
+                   "amount": 60,
+                   "price": 240000000
+                 },{
+                   "amount": 90,
+                   "price": 360000000
+                 },{
+                   "amount": 180,
+                   "price": 720000000
+                 } ],
+                 "total": 100,
+                 "numOk": 100
+               }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+   post:
+     summary: set income parameters by admin
+     operationId: setIncomeParams
+     tags:
+       - admin
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: set income parameters
+             type: object
+             required:
+               - commissionFee
+               - levels
+             example: {
+               "levels": [
+                 {
+                   "amount": 30,
+                   "price": 120000000
+                 },
+                 {
+                   "amount": 60,
+                   "price": 240000000
+                 },
+                 {
+                   "amount": 90,
+                   "price": 360000000
+                 },
+                 {
+                   "amount": 180,
+                   "price": 720000000
+                 }
+               ],
+               "commissionFee": 200
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiSuccess'
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /admin/feeParams:
+   get:
+     summary: get current fee parameters
+     operationId: getFeeParams
+     tags:
+       - admin
+     responses:
+       '200':
+         description: an endpoint to get current fee parameters
+         content:
+           application/json:
+             schema:
+               example: {
+                 "maxFee": 2000000,
+                 "dynamicFee": 1000,
+                 "dynamicOk": true,
+                 "numOk": 100,
+                 "total": 100
+               }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+   post:
+     summary: set fee parameters by admin
+     operationId: setFeeParams
+     tags:
+       - admin
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: set fee parameters
+             type: object
+             required:
+               - maxFee
+               - dynamicFee
+             example: {
+               "maxFee": 2000000,
+               "dynamicFee": 1000
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiSuccess'
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /admin/getSupport:
+   get:
+     summary: get current supported assets
+     operationId: getSupport
+     tags:
+       - admin
+     responses:
+       '200':
+         description: an endpoint to get current supported assets
+         content:
+           application/json:
+             schema:
+               example: [
+                 {
+                   "pendingRemoval": false,
+                   "pendingToAdd": false,
+                   "name": "ERG",
+                   "id": "",
+                   "rings": [
+                       1000000000,
+                       10000000000,
+                       100000000000,
+                       250000000000
+                   ],
+                   "decimals": 9
+                 },
+                 {
+                   "pendingRemoval": false,
+                   "pendingToAdd": false,
+                   "name": "kushti",
+                   "id": "fbbaac7337d051c10fc3da0ccb864f4d32d40027551e1c3ea3ce361f39b91e40",
+                   "rings": [
+                       1000,
+                       10000,
+                       100000
+                   ],
+                   "decimals": 0
+                 }
+               ]
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /admin/removeSupport:
+   post:
+     summary: remove support
+     operationId: removeSupport
+     tags:
+       - admin
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: an endpoint to remove support
+             type: object
+             required:
+               - name
+               - id
+               - rings
+               - decimals
+             example: {
+               "name": "kushti",
+               "id": "fbbaac7337d051c10fc3da0ccb864f4d32d40027551e1c3ea3ce361f39b91e40",
+               "rings": [
+                   1000,
+                   10000,
+                   100000
+               ],
+               "decimals": 0
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiSuccess'
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /admin/addSupport:
+   post:
+     summary: add support
+     operationId: addSupport
+     tags:
+       - admin
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: an endpoint to add support
+             type: object
+             required:
+               - name
+               - id
+               - rings
+               - decimals
+             example: {
+               "name": "kushti",
+               "id": "fbbaac7337d051c10fc3da0ccb864f4d32d40027551e1c3ea3ce361f39b91e40",
+               "rings": [
+                   1000,
+                   10000,
+                   100000
+               ],
+               "decimals": 0
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiSuccess'
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+ }
+
+  /rings:
+    get:
+      summary: returns rings statistics
+      operationId: rings
+      tags:
+        - statistics
+      responses:
+        '200':
+          description: calculate number of unSpent halfBox and number of spent halfBox in `periodTime`
+          content:
+            application/json:
+              schema:
+                items:
+                  example: {
+                    "991594920258238d11d7713af0e9a1ebcf49a765bc5e5066bfde95bcf720a585": {
+                      "1000": {
+                        "spentHalf": 0,
+                        "unspentHalf": 6
+                      }
+                    },
+                    "erg": {
+                      "250000000000": {
+                        "spentHalf": 398,
+                        "unspentHalf": 3
+                      },
+                      "100000000000": {
+                        "spentHalf": 562,
+                        "unspentHalf": 8
+                      }
+                    }
+                  }
+  /blocks:
+    get:
+      summary: returns blocks from blockchain
+      operationId: getBlocks
+      parameters:
+        - in: query
+          name: offset
+          required: false
+          schema:
+            type: integer
+            format: integer
+            minimum: 0
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            format: integer
+            minimum: 0
+      tags:
+        - statistics
+      responses:
+        '200':
+          description: list of blocks
+          content:
+            application/json:
+              schema:
+                items:
+                  example: {
+                    "blocks": [{"id":"fb2d717cfe168229a933f7429478f248de8d3ce655a56bcfa81bc26f08109901","parentId":"7df50178f9a80b90be386131fc8be4d7d479a882bb1331c265c141127f60b55e","version":3,"timestamp":1673096207215,"height":913078,"nBits":118248921,"votes":"000000","stateRoot":"155e84e9281ba69e5b8e04f1a0876cb49024c62e68a6591c1053266c6dce5b5e19","adProofsRoot":"5e86b3aa4cdfd8d49a9c5cd03344f0236a6b5cce9cc63cdef40587edc0d220ed","transactionsRoot":"659b673c05eeced8b0d5055dcee798f4469bc37fb8754adc322ef0bfe08bb894","extensionHash":"ba0220fc2acf3bc6300701b9eda0a78931d797f229c576b4e5d6954f0fdeb574","powSolutions":{"pk":"02f5924b14325a1ffa8f95f8c00006118728ce3785a648e8b269820a3d3bdfd40d","w":"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","n":"6d66001f88b5da24","d":"0"}}]
+                  }
+  /info:
+    get:
+      summary: returns general information of Mixer
+      operationId: getInfo
+      tags:
+        - info
+      responses:
+        '200':
+          description: information of Mixer
+          content:
+            application/json:
+              schema:
+                items:
+                  example: {
+                    "isWindows": false,
+                    "versionMixer": "3.1.0",
+                    "ergoExplorer": "https://api.ergoplatform.com",
+                    "ergoExplorerFront": "https://explorer.ergoplatform.com",
+                    "ergoNode": [
+                      {
+                        "url": "http://88.198.13.202:9053",
+                        "canConnect": true
+                      },
+                      {
+                        "url": "http://159.65.11.55:9053",
+                        "canConnect": true
+                      },
+                      {
+                        "url": "http://165.227.26.175:9053",
+                        "canConnect": true
+                      },
+                      {
+                        "url": "http://159.89.116.15:9053",
+                        "canConnect": true
+                      }
+                    ]
+                  }
+  /address/generate/from_node:
+    post:
+      summary: recives addresses form node
+      operationId: generateAddress
+      tags:
+        - utils
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: Status of operation
+              type: object
+              required:
+                - nodeAddress
+                - apiKey
+                - countAddress
+              example: {
+                "nodeAddress": "http://127.0.0.1:9053",
+                "apiKey": "abc",
+                "countAddress": 2
+              }
+      responses:
+        '200':
+          description: List of addresses
+          content:
+            application/json:
+              schema:
+                description: List of wallet address
+                type: array
+                items:
+                  format: string
+                example: [
+                    "3WwpvNSXu6r8bpjUmV9913mXTMQBd2WiLMvW1QcztHYvQ74FBzQT",
+                    "3WxGbEh5NFdSCRaTm5MF9HnzEz2MiR1eWa8PmhdEXv12nTfPoha1",
+                    "3Wx19pH67VzTvAEDAUfQShk4meCQmUPnTmJ3pkgxLdE1do3yLvfS"
+                ]
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /backup:
+    get:
+      summary: downloads the backup of database (this route don't work with swagger for download backup file run this url in browser)
+      operationId: backup
+      tags:
+        - utils
+      responses:
+        '200':
+          description: download the backup of database
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+  /restore:
+    post:
+      summary: uploads a backup and restores it
+      operationId: restore
+      tags:
+        - utils
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                myFile:
+                  type: string
+                  format: binary
+      responses:
+        '503':
+          description: This api restores a backup and shut the mixer down since `Service Unavailable` error is okay for this api.
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /exit:
+    post:
+      summary: endpoint to exit the app
+      operationId: exit
+      tags:
+        - utils
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              description: endpoint to exit the app
+              type: object
+              example: { }
+      responses:
+        '503':
+          description: exit the app
+
+

@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "boxId": "976c21fbd859cca4113a0711706c33b3d1f1052958a0196d61480f4b950fdf91",
+      "transactionId": "093eb4a9a963d52a304cb0f8f8150775854a55bd59db8b797fc2ae4d525dba65",
+      "blockId": "54406fd13168c6be1f4306e5d7b896783c12223e043e7ef2cc189bc72e6ee39e",
+      "value": 4981000000,
+      "creationHeight": 130509,
+      "settlementHeight": 505913,
+      "ergoTree": "0008cd02472963123ce32c057907c7a7268bc09f45d9ca57819d3327b9e7497d7b1cc347",
+      "address": "9f4QF8AD1nQ3nJahQVkMj8hFSVVzVom77b52JU7EW71Zexg6N8v",
+      "assets": [],
+      "additionalRegisters": {},
+      "spentTransactionId": null,
+      "mainChain": true
+    }
+  ],
+  "total": 1
+}

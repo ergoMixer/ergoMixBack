@@ -1,6 +1,6 @@
 package testHandlers
 
-import app.Configs
+import config.MainConfigs
 import io.circe.parser.parse
 import io.circe.{Json, parser}
 import models.Box.{InBox, OutBox}
@@ -28,9 +28,9 @@ class DatasetSuite {
   def setConfigData(): Unit = {
     val idToParam = mutable.Map.empty[String, EntityInfo]
     rings.foreach(param => idToParam(param.id) = param)
-    Configs.params = idToParam
-    Configs.tokenPrices = Some(Map(180 -> 720000000, 90 -> 360000000, 60 -> 240000000, 30 -> 120000000))
-    Configs.entranceFee = Some(200)
+    MainConfigs.params = idToParam
+    MainConfigs.tokenPrices = Some(Map(180 -> 720000000, 90 -> 360000000, 60 -> 240000000, 30 -> 120000000))
+    MainConfigs.entranceFee = Some(200)
   }
 
   def jsonToObjectList[T](jsonString: String, f: String => T): Seq[T] = {

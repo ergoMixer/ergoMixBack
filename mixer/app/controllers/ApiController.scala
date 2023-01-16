@@ -1,13 +1,13 @@
 package controllers
 
-import app.Configs
+import config.MainConfigs
 import dao.DAOUtils
 import helpers.ErgoMixerUtils
-import helpers.TrayUtils.showNotification
+import helpers.TrayUtils
 import info.BuildInfo
 import io.circe.Json
 import io.circe.syntax._
-import network.NetworkUtils
+import network.{BlockExplorer, NetworkUtils}
 import org.apache.commons.lang3._
 import play.api.Logger
 import play.api.libs.Files
@@ -16,13 +16,12 @@ import play.api.mvc._
 import java.nio.file.Paths
 import javax.inject._
 import scala.concurrent.ExecutionContext
-import scala.io.Source
 
 /**
  * A controller inside of Mixer controller.
  */
 class ApiController @Inject()(assets: Assets, controllerComponents: ControllerComponents, ergoMixerUtils: ErgoMixerUtils,
-                              networkUtils: NetworkUtils, daoUtils: DAOUtils
+                              networkUtils: NetworkUtils, daoUtils: DAOUtils, explorer: BlockExplorer, trayUtils: TrayUtils
                              )(implicit ec: ExecutionContext) extends AbstractController(controllerComponents) {
 
   import networkUtils._
@@ -39,13 +38,13 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
   }
 
   /**
-   * A Get controller for return doc-api from openapi.yaml and return OpenApi for swagger
+   * A Get controller for return doc-api from openapi.scala.txt and return OpenApi for swagger
    *
    * @return openapi.yaml with string format
    */
   def swagger: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     Ok(
-      Source.fromResource("openapi.yaml").getLines.mkString("\n")
+      views.txt.openapi(MainConfigs.isAdmin).toString()
     ).as("application/json")
   }
 
@@ -110,7 +109,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
   def rings: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     Ok(
       s"""
-         |${Configs.ringStats.asJson}
+         |${MainConfigs.ringStats.asJson}
          |""".stripMargin
     ).as("application/json")
   }
@@ -119,8 +118,8 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    * A post get endpoint to exit the app
    */
   def exit: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
-    showNotification("Shutdown", "Please wait, may take a few seconds for ErgoMixer to peacefully shutdown...")
-    System.exit(0)
+    trayUtils.showNotification("Shutdown", "Please wait, may take a few seconds for ErgoMixer to peacefully shutdown...")
+    daoUtils.shutdown(true)
     Ok(
       s"""
          |{
@@ -135,7 +134,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    */
   def backup: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     try {
-      if (SystemUtils.IS_OS_WINDOWS) daoUtils.shutdown()
+      if (SystemUtils.IS_OS_WINDOWS) daoUtils.shutdown(true)
       val res = ergoMixerUtils.backup()
       Ok.sendFile(new java.io.File(res))
     } catch {
@@ -152,10 +151,9 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
     try {
       val (_, baseDbUrl) = daoUtils.getDbUrl
       request.body.file("myFile").map { backup =>
-        daoUtils.shutdown()
+        daoUtils.shutdown(true)
         backup.ref.copyTo(Paths.get(s"${baseDbUrl}ergoMixerRestore.zip"), replace = true)
         ergoMixerUtils.restore()
-        System.exit(0)
         Ok("Backup restored")
       }
         .getOrElse {
@@ -179,7 +177,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    *         }
    */
   def getInfo: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
-    val nodes = Configs.nodes.map(url =>
+    val nodes = MainConfigs.nodes.map(url =>
       s"""{
          |  "url": "$url",
          |  "canConnect": ${prunedClients.contains(url)}
@@ -189,8 +187,8 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
          |{
          |  "isWindows": ${SystemUtils.IS_OS_WINDOWS},
          |  "versionMixer": "${BuildInfo.version}",
-         |  "ergoExplorer": "${Configs.explorerUrl}",
-         |  "ergoExplorerFront": "${Configs.explorerFrontend}",
+         |  "ergoExplorer": "${MainConfigs.explorerUrl}",
+         |  "ergoExplorerFront": "${MainConfigs.explorerFrontend}",
          |  "ergoNode": [${nodes.mkString(",")}]
          |}
          |""".stripMargin
@@ -205,6 +203,26 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
 
   def assetOrDefault(resource: String): Action[AnyContent] = {
     if (resource.contains(".")) assets.at(resource) else dashboard
+  }
+
+  /**
+   * fetch blocks from blockchain
+   * @param offset
+   * @param limit
+   */
+  def getBlocks(offset: Long, limit: Long): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      val blocks = explorer.getBlocks(offset, limit)
+      Ok(
+        s"""{
+           |  "blocks": $blocks
+           |}""".stripMargin
+      ).as("application/json")
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
   }
 
 }

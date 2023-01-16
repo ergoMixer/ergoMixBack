@@ -1,21 +1,22 @@
 package mixer
 
+import config.MainConfigs
 import wallet.WalletHelper.now
 
 import javax.inject.Inject
 import models.Models.Deposit
-import network.{BlockExplorer, NetworkUtils}
+import network.BlockExplorer
 import play.api.Logger
-import dao.{AllDepositsDAO, DAOUtils, MixingRequestsDAO, SpentDepositsDAO, UnspentDepositsDAO}
+import dao.{AllDepositsDAO, DAOUtils, MixingCovertRequestDAO, MixingRequestsDAO, SpentDepositsDAO, UnspentDepositsDAO}
 
 class Deposits @Inject()(
-                            networkUtils: NetworkUtils,
-                            daoUtils: DAOUtils,
-                            explorer: BlockExplorer,
-                            mixingRequestsDAO: MixingRequestsDAO,
-                            allDepositsDAO: AllDepositsDAO,
-                            unspentDepositsDAO: UnspentDepositsDAO,
-                            spentDepositsDAO: SpentDepositsDAO) {
+                          daoUtils: DAOUtils,
+                          explorer: BlockExplorer,
+                          mixingRequestsDAO: MixingRequestsDAO,
+                          covertMixingDAO: MixingCovertRequestDAO,
+                          allDepositsDAO: AllDepositsDAO,
+                          unspentDepositsDAO: UnspentDepositsDAO,
+                          spentDepositsDAO: SpentDepositsDAO) {
   private val logger: Logger = Logger(this.getClass)
 
   /**
@@ -23,14 +24,21 @@ class Deposits @Inject()(
    * Does both for ergs and tokens
    */
   def processDeposits(): Unit = {
-    daoUtils.awaitResult(mixingRequestsDAO.nonCompletedDeposits).map { req =>
-      // logger.info(s"Trying to read deposits for depositAddress: $depositAddress")
-      networkUtils.usingClient { implicit ctx =>
-        val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
-
-        val knownIds = daoUtils.awaitResult(allDepositsDAO.knownIds(req.depositAddress))
-
-        allBoxes.filterNot(box => knownIds.contains(box.id)).map { box =>
+    daoUtils.awaitResult(mixingRequestsDAO.nonCompletedDeposits).foreach { req =>
+      logger.debug(s"Trying to read deposits for depositAddress: ${req.depositAddress}")
+      val allBoxes = explorer.getUnspentBoxes(req.depositAddress)
+      val knownIds = daoUtils.awaitResult(allDepositsDAO.knownIds(req.depositAddress))
+      val timeValidate = now - req.createdTime >= MainConfigs.pruneUnusedCovertDepositsAfterMilliseconds
+      if (allBoxes.isEmpty && knownIds.isEmpty && timeValidate) {
+        val covertExist = daoUtils.awaitResult(covertMixingDAO.existsById(req.groupId))
+        if (covertExist) {
+          mixingRequestsDAO.delete(req.id)
+          logger.info(s" [Deposit:${req.id}, Covert:${req.groupId}] was unused and removed")
+          
+        }
+      }
+      else {
+        allBoxes.filterNot(box => knownIds.contains(box.id)).foreach { box =>
           insertDeposit(req.depositAddress, box.amount, box.id, req.neededAmount, box.getToken(req.tokenId), req.neededTokenAmount)
           logger.info(s"Successfully processed deposit of ${box.amount} with boxId ${box.id} for depositAddress ${req.depositAddress}")
         }

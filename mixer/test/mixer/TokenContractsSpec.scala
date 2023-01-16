@@ -1,12 +1,10 @@
-package app
+package mixer
 
-import java.math.BigInteger
-import java.util
-
+import app.{FileMockedErgoClient, HttpClientTesting}
+import config.MainConfigs
 import mixinterface.TokenErgoMix
-import org.ergoplatform.ErgoAddressEncoder
 import org.ergoplatform.appkit._
-import org.ergoplatform.appkit.impl.ErgoTreeContract
+import org.ergoplatform.appkit.scalaapi.ErgoValueBuilder
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.propspec.AnyPropSpec
 import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
@@ -14,8 +12,9 @@ import sigmastate.eval._
 import sigmastate.interpreter.CryptoConstants
 import special.collection.Coll
 import special.sigma.GroupElement
-import wallet.WalletHelper
 
+import java.lang
+import java.math.BigInteger
 import scala.collection.JavaConverters._
 
 class TokenContractsSpec extends AnyPropSpec with Matchers
@@ -34,12 +33,12 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
   val trashAddress: Address = Address.create("3WyYs2kRTWnzgJRwegG9kRks2Stw41VLM8s87JTdhRmwuZr71fTg")
   val poolValue = 3000000
   val batchSize = 60
-  val batchPrice: Long = batchSize * Configs.defaultFullFee
-  val batchPrices: Array[(Int, Long)] = Seq(Tuple2(batchSize, batchPrice)).toArray
+  val batchPrice: Long = batchSize * MainConfigs.defaultFullFee
+  val batchPrices: Coll[(Int, Long)] = Colls.fromArray(Seq((batchSize, batchPrice)).toArray)
   val mixToken: String = ""
   val mixTokenVal: Long = 1000
 
-  val batchPricesValue: ErgoValue[Coll[(Int, Long)]] = ErgoValue.of(batchPrices, ErgoType.pairType(ErgoType.integerType(), ErgoType.longType()))
+  val batchPricesValue: ErgoValue[Coll[(Integer, lang.Long)]] = ErgoValueBuilder.buildFor(batchPrices)
 
   def convertBytesToHex(bytes: Seq[Byte]): String = {
     val sb = new StringBuilder
@@ -65,7 +64,7 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
 
       val spendableBox = ctx.newTxBuilder.outBoxBuilder
-        .value(poolValue + poolValue / 20 + batchPrice + Configs.defaultFullFee)
+        .value(poolValue + poolValue / 20 + batchPrice + MainConfigs.defaultFullFee)
         .contract(ctx.compileContract(
           ConstantsBuilder.empty(),
           "{sigmaProp(1 < 2)}"
@@ -90,24 +89,24 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .value(poolValue / 20 + batchPrice)
         .contract(mix.income)
         .build()
-      val tx = ctx.newTxBuilder().boxesToSpend(List(tokenBox, spendableBox).asJava)
-        .outputs(halfBox, pay, copy)
-        .fee(Configs.defaultFullFee)
-        .sendChangeTo(trashAddress.getErgoAddress)
+      val tx = ctx.newTxBuilder().addInputs(tokenBox, spendableBox)
+        .addOutputs(halfBox, pay, copy)
+        .fee(MainConfigs.defaultFullFee)
+        .sendChangeTo(trashAddress)
         .build()
       val signed: SignedTransaction = ctx.newProverBuilder().withDLogSecret(dummySecret).build().sign(tx)
 
       val feeBox = ctx.newTxBuilder.outBoxBuilder
         .value(100000000).contract(mix.feeEmissionContract)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
       val feeCopy = ctx.newTxBuilder().outBoxBuilder
-        .value(feeBox.getValue - Configs.defaultFullFee)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .value(feeBox.getValue - MainConfigs.defaultFullFee)
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .contract(mix.feeEmissionContract)
         .build()
-      val outAddr = new ErgoTreeContract(trashAddress.getErgoAddress.script)
+      val outAddr = ctx.newContract(trashAddress.getErgoAddress.script)
       val out = ctx.newTxBuilder().outBoxBuilder
         .value(poolValue)
         .contract(outAddr)
@@ -115,10 +114,10 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
       // we have to be able to spend half box with our secret x
       val halfSigned = ctx.newProverBuilder().withDLogSecret(x).build().sign(
         ctx.newTxBuilder()
-          .boxesToSpend(List(signed.getOutputsToSpend.get(0), feeBox).asJava)
-          .outputs(out, feeCopy)
-          .fee(Configs.defaultFullFee)
-          .sendChangeTo(trashAddress.getErgoAddress)
+          .addInputs(signed.getOutputsToSpend.get(0), feeBox)
+          .addOutputs(out, feeCopy)
+          .fee(MainConfigs.defaultFullFee)
+          .sendChangeTo(trashAddress)
           .tokensToBurn(new ErgoToken("1a6a8c16e4b1cc9d73d03183565cfb8e79dd84198cb66beeed7d3463e0da2b98", 60))
           .build()
       )
@@ -137,7 +136,7 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
       val spendableBox = ctx.newTxBuilder.outBoxBuilder
-        .value(poolValue + batchPrice + Configs.defaultFullFee + poolValue / 20)
+        .value(poolValue + batchPrice + MainConfigs.defaultFullFee + poolValue / 20)
         .contract(mix.tokenEmissionContract)
         .contract(ctx.compileContract(
           ConstantsBuilder.empty(),
@@ -181,10 +180,10 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .contract(mix.income)
         .build()
 
-      val tx = ctx.newTxBuilder().boxesToSpend(List(halfBox, spendableBox, tokenBox).asJava)
-        .outputs(fullBox1, fullBox2, pay, copy)
-        .fee(Configs.defaultFullFee)
-        .sendChangeTo(trashAddress.getErgoAddress)
+      val tx = ctx.newTxBuilder().addInputs(halfBox, spendableBox, tokenBox)
+        .addOutputs(fullBox1, fullBox2, pay, copy)
+        .fee(MainConfigs.defaultFullFee)
+        .sendChangeTo(trashAddress)
         .build()
 
       ctx.newProverBuilder()
@@ -200,7 +199,7 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
       val mix = new TokenErgoMix(ctx)
       val feeBox = ctx.newTxBuilder.outBoxBuilder
         .value(100000000).contract(mix.feeEmissionContract)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
       val (c1, c2) = (gY, gXY) // randomness of outputs does not matter here
@@ -219,14 +218,14 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .registers(ErgoValue.of(gY)) // assuming y is the next secret of alice!
         .build()
       val feeCopy = ctx.newTxBuilder().outBoxBuilder
-        .value(feeBox.getValue - Configs.defaultFullFee)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .value(feeBox.getValue - MainConfigs.defaultFullFee)
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .contract(mix.feeEmissionContract)
         .build()
-      val tx = ctx.newTxBuilder().boxesToSpend(List(fullBox, feeBox).asJava)
-        .outputs(halfBox, feeCopy)
-        .fee(Configs.defaultFullFee)
-        .sendChangeTo(trashAddress.getErgoAddress)
+      val tx = ctx.newTxBuilder().addInputs(fullBox, feeBox)
+        .addOutputs(halfBox, feeCopy)
+        .fee(MainConfigs.defaultFullFee)
+        .sendChangeTo(trashAddress)
         .tokensToBurn(new ErgoToken("1a6a8c16e4b1cc9d73d03183565cfb8e79dd84198cb66beeed7d3463e0da2b98", 1))
         .build()
       val signed: SignedTransaction = ctx.newProverBuilder()
@@ -243,7 +242,7 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
       val mix = new TokenErgoMix(ctx)
       val feeBox = ctx.newTxBuilder.outBoxBuilder
         .value(100000000).contract(mix.feeEmissionContract)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
       // we suppose dummySecret is secret of bob by which he can spend input full box
@@ -263,8 +262,8 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
       val feeCopy = ctx.newTxBuilder().outBoxBuilder
-        .value(feeBox.getValue - Configs.defaultFullFee)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .value(feeBox.getValue - MainConfigs.defaultFullFee)
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .contract(mix.feeEmissionContract)
         .build()
       val (c1, c2) = (gY, gXY) // randomness of outputs does not matter here
@@ -282,10 +281,10 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .tokens(new ErgoToken(tokenId, 10))
         .build()
 
-      val tx = ctx.newTxBuilder().boxesToSpend(List(halfBox, fullBox, feeBox).asJava)
-        .outputs(fullBox1, fullBox2, feeCopy)
-        .fee(Configs.defaultFullFee)
-        .sendChangeTo(trashAddress.getErgoAddress)
+      val tx = ctx.newTxBuilder().addInputs(halfBox, fullBox, feeBox)
+        .addOutputs(fullBox1, fullBox2, feeCopy)
+        .fee(MainConfigs.defaultFullFee)
+        .sendChangeTo(trashAddress)
         .tokensToBurn(new ErgoToken("1a6a8c16e4b1cc9d73d03183565cfb8e79dd84198cb66beeed7d3463e0da2b98", 1))
         .build()
       val signed: SignedTransaction = ctx.newProverBuilder()
@@ -313,7 +312,7 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
 
       val spendableBox = ctx.newTxBuilder.outBoxBuilder
-        .value(poolValue + poolValue / 20 + batchPrice + Configs.defaultFullFee)
+        .value(poolValue + poolValue / 20 + batchPrice + MainConfigs.defaultFullFee)
         .tokens(new ErgoToken(mixToken, mixTokenVal + mixTokenVal / 20))
         .contract(ctx.compileContract(
           ConstantsBuilder.empty(),
@@ -340,24 +339,24 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .tokens(new ErgoToken(mixToken, mixTokenVal / 20))
         .contract(mix.income)
         .build()
-      val tx = ctx.newTxBuilder().boxesToSpend(List(tokenBox, spendableBox).asJava)
-        .outputs(halfBox, pay, copy)
-        .fee(Configs.defaultFullFee)
-        .sendChangeTo(trashAddress.getErgoAddress)
+      val tx = ctx.newTxBuilder().addInputs(tokenBox, spendableBox)
+        .addOutputs(halfBox, pay, copy)
+        .fee(MainConfigs.defaultFullFee)
+        .sendChangeTo(trashAddress)
         .build()
       val signed: SignedTransaction = ctx.newProverBuilder().withDLogSecret(dummySecret).build().sign(tx)
 
       val feeBox = ctx.newTxBuilder.outBoxBuilder
         .value(100000000).contract(mix.feeEmissionContract)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
       val feeCopy = ctx.newTxBuilder().outBoxBuilder
-        .value(feeBox.getValue - Configs.defaultFullFee)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .value(feeBox.getValue - MainConfigs.defaultFullFee)
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .contract(mix.feeEmissionContract)
         .build()
-      val outAddr = new ErgoTreeContract(trashAddress.getErgoAddress.script)
+      val outAddr = ctx.newContract(trashAddress.getErgoAddress.script)
       val out = ctx.newTxBuilder().outBoxBuilder
         .value(poolValue)
         .tokens(new ErgoToken(mixToken, mixTokenVal))
@@ -366,10 +365,10 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
       // we have to be able to spend half box with our secret x
       val halfSigned = ctx.newProverBuilder().withDLogSecret(x).build().sign(
         ctx.newTxBuilder()
-          .boxesToSpend(List(signed.getOutputsToSpend.get(0), feeBox).asJava)
-          .outputs(out, feeCopy)
-          .fee(Configs.defaultFullFee)
-          .sendChangeTo(trashAddress.getErgoAddress)
+          .addInputs(signed.getOutputsToSpend.get(0), feeBox)
+          .addOutputs(out, feeCopy)
+          .fee(MainConfigs.defaultFullFee)
+          .sendChangeTo(trashAddress)
           .tokensToBurn(new ErgoToken("1a6a8c16e4b1cc9d73d03183565cfb8e79dd84198cb66beeed7d3463e0da2b98", 60))
           .build()
       )
@@ -388,7 +387,7 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
       val spendableBox = ctx.newTxBuilder.outBoxBuilder
-        .value(poolValue + batchPrice + Configs.defaultFullFee + poolValue / 20)
+        .value(poolValue + batchPrice + MainConfigs.defaultFullFee + poolValue / 20)
         .tokens(new ErgoToken(mixToken, mixTokenVal + mixTokenVal / 20))
         .contract(ctx.compileContract(
           ConstantsBuilder.empty(),
@@ -433,10 +432,10 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .contract(mix.income)
         .build()
 
-      val tx = ctx.newTxBuilder().boxesToSpend(List(halfBox, spendableBox, tokenBox).asJava)
-        .outputs(fullBox1, fullBox2, pay, copy)
-        .fee(Configs.defaultFullFee)
-        .sendChangeTo(trashAddress.getErgoAddress)
+      val tx = ctx.newTxBuilder().addInputs(halfBox, spendableBox, tokenBox)
+        .addOutputs(fullBox1, fullBox2, pay, copy)
+        .fee(MainConfigs.defaultFullFee)
+        .sendChangeTo(trashAddress)
         .build()
 
       ctx.newProverBuilder()
@@ -452,7 +451,7 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
       val mix = new TokenErgoMix(ctx)
       val feeBox = ctx.newTxBuilder.outBoxBuilder
         .value(100000000).contract(mix.feeEmissionContract)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
       val (c1, c2) = (gY, gXY) // randomness of outputs does not matter here
@@ -471,14 +470,14 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .registers(ErgoValue.of(gY)) // assuming y is the next secret of alice!
         .build()
       val feeCopy = ctx.newTxBuilder().outBoxBuilder
-        .value(feeBox.getValue - Configs.defaultFullFee)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .value(feeBox.getValue - MainConfigs.defaultFullFee)
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .contract(mix.feeEmissionContract)
         .build()
-      val tx = ctx.newTxBuilder().boxesToSpend(List(fullBox, feeBox).asJava)
-        .outputs(halfBox, feeCopy)
-        .fee(Configs.defaultFullFee)
-        .sendChangeTo(trashAddress.getErgoAddress)
+      val tx = ctx.newTxBuilder().addInputs(fullBox, feeBox)
+        .addOutputs(halfBox, feeCopy)
+        .fee(MainConfigs.defaultFullFee)
+        .sendChangeTo(trashAddress)
         .tokensToBurn(new ErgoToken("1a6a8c16e4b1cc9d73d03183565cfb8e79dd84198cb66beeed7d3463e0da2b98", 1))
         .build()
       val signed: SignedTransaction = ctx.newProverBuilder()
@@ -495,7 +494,7 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
       val mix = new TokenErgoMix(ctx)
       val feeBox = ctx.newTxBuilder.outBoxBuilder
         .value(100000000).contract(mix.feeEmissionContract)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
       // we suppose dummySecret is secret of bob by which he can spend input full box
@@ -515,8 +514,8 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .build()
         .convertToInputWith("f9e5ce5aa0d95f5d54a7bc89c46730d9662397067250aa18a0039631c0f5b809", 0)
       val feeCopy = ctx.newTxBuilder().outBoxBuilder
-        .value(feeBox.getValue - Configs.defaultFullFee)
-        .registers(ErgoValue.of(Configs.defaultFullFee))
+        .value(feeBox.getValue - MainConfigs.defaultFullFee)
+        .registers(ErgoValue.of(MainConfigs.defaultFullFee))
         .contract(mix.feeEmissionContract)
         .build()
       val (c1, c2) = (gY, gXY) // randomness of outputs does not matter here
@@ -534,10 +533,10 @@ class TokenContractsSpec extends AnyPropSpec with Matchers
         .tokens(new ErgoToken(tokenId, 10), new ErgoToken(mixToken, mixTokenVal))
         .build()
 
-      val tx = ctx.newTxBuilder().boxesToSpend(List(halfBox, fullBox, feeBox).asJava)
-        .outputs(fullBox1, fullBox2, feeCopy)
-        .fee(Configs.defaultFullFee)
-        .sendChangeTo(trashAddress.getErgoAddress)
+      val tx = ctx.newTxBuilder().addInputs(halfBox, fullBox, feeBox)
+        .addOutputs(fullBox1, fullBox2, feeCopy)
+        .fee(MainConfigs.defaultFullFee)
+        .sendChangeTo(trashAddress)
         .tokensToBurn(new ErgoToken("1a6a8c16e4b1cc9d73d03183565cfb8e79dd84198cb66beeed7d3463e0da2b98", 1))
         .build()
       val signed: SignedTransaction = ctx.newProverBuilder()

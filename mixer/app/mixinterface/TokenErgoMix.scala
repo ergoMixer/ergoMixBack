@@ -2,10 +2,9 @@ package mixinterface
 
 import org.ergoplatform.ErgoAddress
 import org.ergoplatform.appkit._
-import org.ergoplatform.appkit.impl.ErgoTreeContract
 import scorex.crypto.hash.Digest32
 import sigmastate.Values.ErgoTree
-import wallet.WalletHelper._
+import wallet.WalletHelper.{getAddress, getHash}
 
 object TokenErgoMix {
   val paramAddress: Address = Address.create("9hUjrNWLTXBU4qkGSA6ssCG8Fe7WpPKT5HW4E5zUr3YJ1HSo1rB")
@@ -134,7 +133,7 @@ class TokenErgoMix(ctx: BlockchainContext) {
       .build(),
     feeEmissionScript
   )
-  val feeEmissionAddress: ErgoAddress = addressEncoder.fromProposition(feeEmissionContract.getErgoTree).get
+  val feeEmissionAddress: ErgoAddress = getAddress(feeEmissionContract.getErgoTree)
   val feeEmissionErgoTree: ErgoTree = feeEmissionContract.getErgoTree
   val feeScriptHash: Digest32 = getHash(feeEmissionErgoTree.bytes)
 
@@ -146,7 +145,7 @@ class TokenErgoMix(ctx: BlockchainContext) {
     fullMixScript
   )
   val fullMixScriptErgoTree: ErgoTree = fullMixScriptContract.getErgoTree
-  val fullMixAddress: ErgoAddress = addressEncoder.fromProposition(fullMixScriptErgoTree).get
+  val fullMixAddress: ErgoAddress = getAddress(fullMixScriptErgoTree)
   val fullMixScriptHash: Digest32 = getHash(fullMixScriptErgoTree.bytes)
 
   val halfMixContract: ErgoContract = ctx.compileContract(
@@ -157,9 +156,9 @@ class TokenErgoMix(ctx: BlockchainContext) {
     halfMixScript
   )
   val halfMixScriptHash: Digest32 = getHash(halfMixContract.getErgoTree.bytes)
-  val halfMixAddress: ErgoAddress = addressEncoder.fromProposition(halfMixContract.getErgoTree).get
+  val halfMixAddress: ErgoAddress = getAddress(halfMixContract.getErgoTree)
 
-  val income = new ErgoTreeContract(TokenErgoMix.mixerIncome.getErgoAddress.script)
+  val income: ErgoContract = ctx.newContract(TokenErgoMix.mixerIncome.getErgoAddress.script)
   val tokenEmissionContract: ErgoContract = ctx.compileContract(
     ConstantsBuilder.create()
       .item("halfMixScriptHash", halfMixScriptHash)
@@ -168,5 +167,5 @@ class TokenErgoMix(ctx: BlockchainContext) {
       .build(),
     tokenEmissionScript
   )
-  val tokenEmissionAddress: ErgoAddress = addressEncoder.fromProposition(tokenEmissionContract.getErgoTree).get
+  val tokenEmissionAddress: ErgoAddress = getAddress(tokenEmissionContract.getErgoTree)
 }

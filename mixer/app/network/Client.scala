@@ -1,34 +1,54 @@
 package network
 
-import java.net.{InetSocketAddress, Proxy}
+import config.MainConfigs
+import dao.DAOUtils
 
-import app.Configs
+import java.net.{InetSocketAddress, Proxy}
 import helpers.{ErgoMixerUtils, TrayUtils}
+
 import javax.inject.Inject
 import mixinterface.TokenErgoMix
+import okhttp3.OkHttpClient
 import org.ergoplatform.appkit.{NetworkType, RestApiErgoClient}
 import play.api.Logger
 
-class Client @Inject()(ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtils) {
+import java.util.concurrent.TimeUnit.SECONDS
+
+class Client @Inject()(ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtils, daoUtils: DAOUtils, trayUtils: TrayUtils) {
   private val logger: Logger = Logger(this.getClass)
 
   /**
    * Sets client for the entire app when the app starts, will use proxy if set in config
    *
-   * @param isMainnet   is working in mainnet or testnet
+   * @param networkType  type of network -> mainnet or testnet
    * @param explorerUrl explorer url
    * @return current height of blockchain
    */
-  def setClient(isMainnet: Boolean, explorerUrl: String): Unit = {
+  def setClient(networkType: NetworkType, explorerUrl: String): Unit = {
 
-    handleProxy(Configs.proxyUrl, Configs.proxyPort, Configs.proxyProtocol)
+    handleProxy(MainConfigs.proxyUrl, MainConfigs.proxyPort, MainConfigs.proxyProtocol)
 
+    MainConfigs.nodes.foreach(node => {
+      val httpClientBuilder = new OkHttpClient.Builder()
+        .callTimeout(MainConfigs.connectionTimeout, SECONDS)
+        .connectTimeout(MainConfigs.connectionTimeout, SECONDS)
+        .writeTimeout(MainConfigs.connectionTimeout * 2, SECONDS)
+        .readTimeout(MainConfigs.connectionTimeout * 3, SECONDS)
 
-    val netWorkType = if (isMainnet) NetworkType.MAINNET else NetworkType.TESTNET
-
-     Configs.nodes.foreach(node => {
-      if (Configs.proxy != null) networkUtils.allClients(node) = RestApiErgoClient.createWithProxy(node, netWorkType, "", explorerUrl, Configs.proxy)
-      else networkUtils.allClients(node) = RestApiErgoClient.create(node, netWorkType, "", explorerUrl)
+      if (MainConfigs.proxy != null) networkUtils.allClients(node) = RestApiErgoClient.createWithHttpClientBuilder(
+        node,
+        networkType,
+        "",
+        explorerUrl,
+        httpClientBuilder.proxy(MainConfigs.proxy)
+      )
+      else networkUtils.allClients(node) = RestApiErgoClient.createWithHttpClientBuilder(
+        node,
+        networkType,
+        "",
+        explorerUrl,
+        httpClientBuilder
+      )
     })
     networkUtils.pruneClients()
 
@@ -39,9 +59,9 @@ class Client @Inject()(ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtil
       case e: Throwable =>
         logger.error("Problem connecting to the node! Please check the accessibility of your configured node and proxy (if you have set one) and try again.")
         logger.error(ergoMixerUtils.getStackTraceStr(e))
-        TrayUtils.showNotification("Problem connecting to the node, exiting!", "Please check the accessibility of your configured node and proxy (if you have set one) and try again. ErgoMixer will be closed in 15 seconds automatically.")
+        trayUtils.showNotification("Problem connecting to the node, exiting!", "Please check the accessibility of your configured node and proxy (if you have set one) and try again. ErgoMixer will be closed in 15 seconds automatically.")
         Thread.sleep(15e3.toLong)
-        sys.exit(0)
+        daoUtils.shutdown(true)
     }
   }
 
@@ -56,7 +76,7 @@ class Client @Inject()(ergoMixerUtils: ErgoMixerUtils, networkUtils: NetworkUtil
         logger.error("protocol type for proxy is not valid.")
         return
       }
-      Configs.proxy = new Proxy(prot, new InetSocketAddress(url, port))
+      MainConfigs.proxy = new Proxy(prot, new InetSocketAddress(url, port))
     }
   }
 

@@ -4,9 +4,11 @@ import okhttp3.HttpUrl;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import org.ergoplatform.appkit.BlockchainContext;
+import org.ergoplatform.appkit.BlockchainDataSource;
 import org.ergoplatform.appkit.ErgoClientException;
 import org.ergoplatform.appkit.NetworkType;
 import org.ergoplatform.appkit.impl.BlockchainContextBuilderImpl;
+import org.ergoplatform.appkit.impl.NodeAndExplorerDataSourceImpl;
 import org.ergoplatform.explorer.client.ExplorerApiClient;
 import org.ergoplatform.restapi.client.ApiClient;
 
@@ -21,10 +23,12 @@ public class FileMockedErgoClient implements MockedErgoClient {
 
     private final List<String> _nodeResponses;
     private final List<String> _explorerResponses;
+    private final boolean _nodeOnlyMode;
 
-    public FileMockedErgoClient(List<String> nodeResponses, List<String> explorerResponses) {
+    public FileMockedErgoClient(List<String> nodeResponses, List<String> explorerResponses, boolean nodeOnlyMode) {
         _nodeResponses = nodeResponses;
         _explorerResponses = explorerResponses;
+        _nodeOnlyMode = nodeOnlyMode;
     }
 
     @Override
@@ -65,8 +69,10 @@ public class FileMockedErgoClient implements MockedErgoClient {
         HttpUrl explorerBaseUrl = explorer.url("/");
         ExplorerApiClient explorerClient = new ExplorerApiClient(explorerBaseUrl.toString());
 
-        BlockchainContext ctx =
-                new BlockchainContextBuilderImpl(client, explorerClient, NetworkType.MAINNET).build();
+        NodeAndExplorerDataSourceImpl dataSource = new NodeAndExplorerDataSourceImpl(client, _nodeOnlyMode ? null : explorerClient);
+        BlockchainContext ctx = new BlockchainContextBuilderImpl(
+                dataSource,
+                NetworkType.MAINNET).build();
 
         T res = action.apply(ctx);
 
@@ -77,6 +83,11 @@ public class FileMockedErgoClient implements MockedErgoClient {
             throw new ErgoClientException("Cannot shutdown server " + node.toString(), e);
         }
         return res;
+    }
+
+    @Override
+    public BlockchainDataSource getDataSource() {
+        throw new UnsupportedOperationException("No data source implemented for mocked test client.");
     }
 }
 

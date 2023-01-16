@@ -1,6 +1,6 @@
 package mixer
 
-import app.Configs
+import config.MainConfigs
 import dao._
 import helpers.ErgoMixerUtils
 import mixinterface.AliceOrBob
@@ -81,9 +81,9 @@ class HalfMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
     val currentTime = now
 
     val halfMixBoxConfirmations = explorer.getConfirmationsForBoxId(halfMixBoxId)
-    if (halfMixBoxConfirmations >= Configs.numConfirmation) {
+    if (halfMixBoxConfirmations >= MainConfigs.numConfirmation) {
       logger.info(s" [HALF: $mixId ($currentRound)] Sufficient confirmations ($halfMixBoxConfirmations) [half:$halfMixBoxId]")
-      val spendingTx = networkUtils.getSpendingTxId(halfMixBoxId)
+      val spendingTx = explorer.getSpendingTxId(halfMixBoxId)
       if (spendingTx.isEmpty && (withdrawStatus.equals(WithdrawRequested.value) || withdrawStatus.equals(HopRequested.value))) {
         if (withdrawDAO.shouldWithdraw(mixId, halfMixBoxId)) {
           val optFeeEmissionBoxId = getRandomValidBoxId(
@@ -97,7 +97,7 @@ class HalfMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
             val tx = if (withdrawStatus.equals(HopRequested.value)) {
               val hopSecret = wallet.getSecret(0, toFirst = true)
               val hopAddress = WalletHelper.getAddressOfSecret(hopSecret)
-              val tx = aliceOrBob.spendBox(halfMixBoxId, optFeeEmissionBoxId, hopAddress, Array(secret), Configs.defaultHalfFee, broadCast = false)
+              val tx = aliceOrBob.spendBox(halfMixBoxId, optFeeEmissionBoxId, hopAddress, Array(secret), MainConfigs.defaultHalfFee, broadCast = false)
               val txBytes = tx.toJson(false).getBytes("utf-16")
 
               val new_withdraw = WithdrawTx(mixId, tx.getId, currentTime, halfMixBoxId + "," + optFeeEmissionBoxId.get, txBytes, "initiate hop mix")
@@ -106,7 +106,7 @@ class HalfMixer @Inject()(aliceOrBob: AliceOrBob, ergoMixerUtils: ErgoMixerUtils
               tx
             }
             else {
-              val tx = aliceOrBob.spendBox(halfMixBoxId, optFeeEmissionBoxId, withdrawAddress, Array(secret), Configs.defaultHalfFee, broadCast = false)
+              val tx = aliceOrBob.spendBox(halfMixBoxId, optFeeEmissionBoxId, withdrawAddress, Array(secret), MainConfigs.defaultHalfFee, broadCast = false)
               val txBytes = tx.toJson(false).getBytes("utf-16")
 
               val new_withdraw = WithdrawTx(mixId, tx.getId, currentTime, halfMixBoxId + "," + optFeeEmissionBoxId.get, txBytes)

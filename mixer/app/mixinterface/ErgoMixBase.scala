@@ -1,10 +1,10 @@
 package mixinterface
 
 import java.math.BigInteger
-import app.Configs
 import models.Box.{EndBox, FullMixBox, HalfMixBox}
 import models.Transaction.{FullMixTx, HalfMixTx}
 import network.NetworkUtils
+import config.MainConfigs
 import org.ergoplatform.ErgoLikeTransaction
 import org.ergoplatform.appkit._
 import org.ergoplatform.appkit.impl.SignedTransactionImpl
@@ -48,7 +48,7 @@ package object ErgoMixBase {
       val endBox = EndBox(ergoMix.halfMixContract.getErgoTree, Seq(ErgoValue.of(WalletHelper.g.exp(nextX))), f.inputBox.getValue, tokens)
       val feeCp = EndBox(ergoMix.feeEmissionContract.getErgoTree, otherInputBoxes(0).getRegisters.asScala, otherInputBoxes(0).getValue - feeAmount)
       val signedTransaction = spendFullMixBox(f, Seq(endBox, feeCp), feeAmount, otherInputBoxes, changeAddress, changeBoxRegs, Seq(fullBoxBurnToken), additionalDlogSecrets, additionalDHTuples)
-      val expectedFee = ErgoLikeTransaction.serializer.toBytes(signedTransaction.asInstanceOf[SignedTransactionImpl].getTx).length * Configs.dynamicFeeRate
+      val expectedFee = ErgoLikeTransaction.serializer.toBytes(signedTransaction.asInstanceOf[SignedTransactionImpl].getTx).length * MainConfigs.dynamicFeeRate
       if (expectedFee != feeAmount && dynamicFee) {
         return spendFullMixBoxNextAlice(f, nextX, expectedFee, otherInputBoxes, changeAddress, changeBoxRegs, additionalDlogSecrets, additionalDHTuples, dynamicFee = false)
       }
@@ -95,7 +95,7 @@ package object ErgoMixBase {
       val feeCp = EndBox(ergoMix.feeEmissionContract.getErgoTree, otherInputBoxes(0).getRegisters.asScala, otherInputBoxes(0).getValue - feeAmount)
       val endBoxes = Seq(outBox1, outBox2, feeCp)
       val tx: SignedTransaction = spendFullMixBox(f, endBoxes, feeAmount, inputBoxes, changeAddress, changeBoxRegs, Seq(distrBurnToken), additionalDlogSecrets, DHT(WalletHelper.g, gX, gY, gXY, nextY) +: additionalDHTuples)
-      val expectedFee = ErgoLikeTransaction.serializer.toBytes(tx.asInstanceOf[SignedTransactionImpl].getTx).length * Configs.dynamicFeeRate
+      val expectedFee = ErgoLikeTransaction.serializer.toBytes(tx.asInstanceOf[SignedTransactionImpl].getTx).length * MainConfigs.dynamicFeeRate
       if (expectedFee != feeAmount && dynamicFee) {
         return spendFullMixBoxNextBob(f, h, nextY, expectedFee, otherInputBoxes, changeAddress, changeBoxRegs, additionalDlogSecrets, additionalDHTuples, dynamicFee = false)
       }

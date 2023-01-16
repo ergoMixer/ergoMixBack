@@ -1,14 +1,19 @@
 package models
 
-import app.Configs
+import config.MainConfigs
+import mixinterface.TokenErgoMix
+import wallet.WalletHelper
+import org.ergoplatform.appkit.{Address, ErgoToken, ErgoValue, InputBox, Iso}
+import sigmastate.Values.{ErgoTree, EvaluatedValue}
+import special.sigma.GroupElement
 import io.circe.generic.semiauto.deriveDecoder
 import io.circe.{Decoder, parser}
-import mixinterface.TokenErgoMix
-import org.ergoplatform.appkit.{Address, ErgoToken, ErgoValue, InputBox}
+import org.ergoplatform.ErgoBox
+import org.ergoplatform.ErgoBox.NonMandatoryRegisterId
+import org.ergoplatform.settings.ErgoAlgos
 import play.api.libs.json.{JsArray, JsResult, JsSuccess, JsValue, Reads}
-import sigmastate.Values.ErgoTree
-import special.sigma.GroupElement
-import wallet.WalletHelper
+import sigmastate.SType
+import sigmastate.serialization.ValueSerializer
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -18,6 +23,16 @@ object Box {
   case class InBox(id: String, address: String, createdTxId: String, value: Long)
 
   case class OutBox(id: String, amount: Long, registers: Map[String, String], ergoTree: String, tokens: Seq[ErgoToken], creationHeight: Int, address: String, spendingTxId: Option[String]) {
+
+    def getRegs: Seq[ErgoValue[_]] = {
+      val menRegs = registers.map { r =>
+        val id = ErgoBox.registerByName(r._1).asInstanceOf[NonMandatoryRegisterId]
+        val v = ValueSerializer.deserialize(ErgoAlgos.decodeUnsafe(r._2))
+        (id, Iso.isoErgoValueToSValue.from(v.asInstanceOf[EvaluatedValue[_ <: SType]]))
+      }
+      menRegs.toSeq.sortBy(_._1.number).map(_._2)
+    }
+
     def ge(regId: String): GroupElement = WalletHelper.hexToGroupElement(registers(regId).drop(2))
 
     def getToken(tokenId: String): Long = {
@@ -72,7 +87,7 @@ object Box {
      * @return token needed to enter mixing, i.e. ring + tokenFee
      */
     def getTokenPrice(ring: Long): Long = {
-      val rate: Int = Configs.entranceFee.getOrElse(1000000)
+      val rate: Int = MainConfigs.entranceFee.getOrElse(1000000)
       ring + (if (rate > 0 && rate < 1000000) ring / rate else 0)
     }
 
@@ -85,11 +100,11 @@ object Box {
      * @return (erg needed, token needed)
      */
     def getPrice(ergRing: Long, tokenRing: Long, mixRounds: Int): (Long, Long) = {
-      val rate: Int = Configs.entranceFee.getOrElse(1000000)
-      val tokenPrice: Long = Configs.tokenPrices.get.getOrElse(mixRounds, -1)
+      val rate: Int = MainConfigs.entranceFee.getOrElse(1000000)
+      val tokenPrice: Long = MainConfigs.tokenPrices.get.getOrElse(mixRounds, -1)
       assert(tokenPrice != -1)
       val ergVal = if (rate > 0 && rate < 1000000) ergRing / rate else 0
-      (ergRing + Configs.startFee + tokenPrice + ergVal, getTokenPrice(tokenRing))
+      (ergRing + MainConfigs.startFee + tokenPrice + ergVal, getTokenPrice(tokenRing))
     }
 
     implicit val mixingBoxDecoder: Decoder[MixingBox] = deriveDecoder[MixingBox]

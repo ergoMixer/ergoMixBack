@@ -1,20 +1,34 @@
 package helpers
 
+import config.MainConfigs
+import dao.DAOUtils
+
+import play.api.Logger
 import java.awt.TrayIcon.MessageType
 import java.awt._
 import java.awt.event.ActionEvent
 import java.io.File
 import java.net.URI
+import javax.inject.{Inject, Singleton}
 
-import app.Configs.readKey
-import play.api.Logger
-
-object TrayUtils {
+@Singleton
+class TrayUtils @Inject()(daoUtils: DAOUtils) {
   private val logger: Logger = Logger(this.getClass)
 
-  var triedPrepare = false
-  var shownNotification = false
-  var trayIcon: TrayIcon = _
+  private var triedPrepare = false
+  private var shownNotification = false
+  private var trayIcon: TrayIcon = _
+
+  /**
+   * check notification state
+   * @return notification state
+   */
+  def notificationShownState(): Boolean = shownNotification
+
+  /**
+   * set notification state as shown
+   */
+  def activeNotificationState(): Unit = shownNotification = true
 
   def prepareTray(): Unit = {
     if (triedPrepare) return
@@ -32,15 +46,16 @@ object TrayUtils {
       val openLogs = new MenuItem("Open log folder")
       val openConfigFile = new MenuItem("Open configuration file")
       openBrowser.addActionListener((_: ActionEvent) => {
-        java.awt.Desktop.getDesktop.browse(new URI(s"http://localhost:${readKey("http.port")}"))
+        java.awt.Desktop.getDesktop.browse(new URI(s"http://localhost:${MainConfigs.readKey("http.port")}"))
       })
       exitItem.addActionListener((_: ActionEvent) => {
         showNotification("Shutdown", "Please wait, may take a few seconds for ErgoMixer to peacefully shutdown...")
-        System.exit(0)
+        daoUtils.shutdown(true)
       })
       openLogs.addActionListener((_: ActionEvent) => {
-        java.awt.Desktop.getDesktop.open(new File(System.getProperty("user.home") + "/ergoMixer/"))
+        java.awt.Desktop.getDesktop.open(new File(MainConfigs.logPath))
       })
+      // TODO: there's a Exception `URI is not hierarchical` in MacOS (#77)
       var configFile = new File(getClass.getResource("/application.conf").toURI)
       val custom = System.getProperty("config.file", null)
       if (custom != null) configFile = new File(custom)

@@ -1,25 +1,27 @@
-package app
-
-import java.net.Proxy
+package config
 
 import helpers.ConfigHelper
 import models.Models.EntityInfo
+import org.ergoplatform.appkit.NetworkType
 
+import java.net.Proxy
 import scala.collection.mutable
 
-object Configs extends ConfigHelper {
+object MainConfigs extends ConfigHelper {
+  lazy val isAdmin: Boolean = readKey("isAdmin", "false").toBoolean
   lazy val nodes: Seq[String] = readNodes()
   lazy val explorerUrl: String = readKey("explorerBackend")
   lazy val explorerFrontend: String = readKey("explorerFrontend")
-  lazy val networkType: String = readKey("networkType")
-  lazy val isMainnet: Boolean = networkType.toLowerCase().equals("mainnet")
+  lazy val networkType: NetworkType = if (readKey("networkType").toLowerCase().equals("mainnet")) NetworkType.MAINNET else NetworkType.TESTNET
   lazy val jobInterval: Int = readKey("jobInterval").toInt
   lazy val statisticJobsInterval: Int = readKey("statisticJobsInterval").toInt
   lazy val numConfirmation: Int = readKey("numConfirmation").toInt
   lazy val dbPrune: Boolean = readKey("database.prune", "false").toBoolean
   lazy val dbPruneAfter: Int = readKey("database.pruneAfter", "720").toInt
+  lazy val pruneUnusedCovertDepositsAfterMilliseconds: Long = readKey("pruneUnusedCovertDepositsAfter", "1296000").toLong * 1000 // in milliseconds
   lazy val maxOuts: Int = readKey("maxOutputs").toInt
   lazy val maxIns: Int = readKey("maxInputs").toInt
+  lazy val connectionTimeout: Int = readKey("connectionTimeout", "20").toInt
 
   lazy val distributeFee: Long = readKey("fees.distributeTx").toLong
   lazy val ageusdFee: Long = readKey("fees.ageusd", "5000000").toLong
@@ -39,7 +41,7 @@ object Configs extends ConfigHelper {
   // proxy config
   val proxyUrl: String = readKey("proxy.url", "")
   val proxyPort: Int = readKey("proxy.port", "-1").toInt
-  val proxyProtocol = readKey("proxy.protocol", "")
+  val proxyProtocol: String = readKey("proxy.protocol", "")
   var proxy: Proxy = _
 
   lazy val periodTimeRings: Long = 24L * 3600L * 1000L // Period time for calculate number of spent halfBox
@@ -56,4 +58,7 @@ object Configs extends ConfigHelper {
 
   lazy val hopRounds: Int = readKey("hopRounds", "0").toInt
 
+  lazy val logPath: String = readKey("logPath")
+
+  lazy val maxErg: Long = (1e9*1e8).toLong
 }

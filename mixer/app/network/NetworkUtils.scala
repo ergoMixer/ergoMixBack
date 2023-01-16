@@ -1,14 +1,17 @@
 package network
 
-import app._
+import config.MainConfigs
+
 import javax.inject.{Inject, Singleton}
 import mixinterface.TokenErgoMix
 import models.Box.OutBox
-import org.ergoplatform.appkit.{BlockchainContext, ErgoClient, InputBox}
+import org.ergoplatform.appkit.BoxOperations.ExplorerApiUnspentLoader
+import org.ergoplatform.appkit.{Address, BlockchainContext, BoxOperations, ErgoClient, InputBox}
 import play.api.Logger
 import wallet.WalletHelper
 
 import scala.collection.mutable
+import scala.collection.JavaConverters._
 
 @Singleton
 class NetworkUtils @Inject()(explorer: BlockExplorer) {
@@ -32,7 +35,10 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
           logger.error(s"will ignore this node. ${e.getMessage}")
       }
     })
+  }
 
+  def clientsAreOk: Boolean = {
+    prunedClients.nonEmpty
   }
 
   def usingClient[T](f: BlockchainContext => T): T = {
@@ -44,65 +50,71 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
   }
 
   /**
-   * @param address address to get unspent boxes of
-   * @return unspent boxes of the provided address
-   */
-  def getUnspentBoxes(address: String): Seq[OutBox] = {
-    usingClient { implicit ctx =>
-      explorer.getUnspentBoxes(address)
-    }
-  }
-
-  /**
-   * @param boxId box id of desired box
-   * @return number of confirmations of this box based on explorer
-   */
-  def getConfirmationsForBoxId(boxId: String): Int = {
-    usingClient { implicit ctx =>
-      explorer.getConfirmationsForBoxId(boxId)
-    }
-  }
-
-  /**
    * @param considerPool whether to eliminate boxes already in mempool
    * @return list of half-boxes
    */
   def getHalfMixBoxes(considerPool: Boolean = false): List[OutBox] = {
-    usingClient { implicit ctx =>
-      var txPool = ""
-      if (considerPool) txPool = explorer.getPoolTransactionsStr
-      val unspentBoxes = getUnspentBoxes(tokenErgoMix.get.halfMixAddress.toString)
-      unspentBoxes.filter(box => {
-        (!considerPool || !txPool.contains(s""""${box.id}","transactionId"""")) && // not already in mempool
-          box.registers.contains("R4") &&
-          !WalletHelper.poisonousHalfs.contains(box.ge("R4")) // not poisonous
-      }).toList
-    }
+    var txPool = ""
+    if (considerPool) txPool = explorer.getPoolTransactionsStr
+    val unspentBoxes = explorer.getUnspentBoxes(tokenErgoMix.get.halfMixAddress.toString)
+    unspentBoxes.filter(box => {
+      (!considerPool || !txPool.contains(s""""${box.id}","transactionId"""")) && // not already in mempool
+        box.registers.contains("R4") &&
+        !WalletHelper.poisonousHalfs.contains(box.ge("R4")) // not poisonous
+    }).toList
   }
 
   /**
    * @return all unspent half-boxes
    */
   def getAllHalfBoxes: List[OutBox] = {
-    usingClient { implicit ctx =>
-      getUnspentBoxes(tokenErgoMix.get.halfMixAddress.toString).toList
-    }
+    explorer.getUnspentBoxes(tokenErgoMix.get.halfMixAddress.toString).toList
   }
 
   /**
    * @param numToken     minimum number of token you wish the boxes to have
    * @param considerPool whether to eliminate boxes already in mempool
-   * @return list of unspent token emission boxes containg at least numToken mixing tokens
+   * @return list of unspent token emission boxes containing at least numToken mixing tokens
    */
-  def getTokenEmissionBoxes(numToken: Int, considerPool: Boolean = false): List[OutBox] = {
+  def getTokenEmissionBoxes(numToken: Int = 0, considerPool: Boolean = false): List[OutBox] = {
+    var txPool = ""
+    if (considerPool) txPool = explorer.getPoolTransactionsStr
+    explorer.getUnspentBoxes(tokenErgoMix.get.tokenEmissionAddress.toString).filter(box => {
+      box.getToken(TokenErgoMix.tokenId) >= numToken &&
+        (!considerPool || !txPool.contains(s""""${box.id}","txId""""))
+    }).toList
+  }
+
+  /**
+   * get all unspent boxes for address
+   * @param address Address
+   * @return list of unspent boxes
+   */
+  def getAllUnspentBoxesForAddress(address: Address): List[InputBox] = {
     usingClient { implicit ctx =>
-      var txPool = ""
-      if (considerPool) txPool = explorer.getPoolTransactionsStr
-      getUnspentBoxes(tokenErgoMix.get.tokenEmissionAddress.toString).filter(box => {
-        box.getToken(TokenErgoMix.tokenId) >= numToken &&
-          (!considerPool || !txPool.contains(s""""${box.id}","txId""""))
-      }).toList
+      val inputBoxesLoader = new ExplorerApiUnspentLoader()
+      inputBoxesLoader.prepare(ctx, List(address).asJava, MainConfigs.maxErg, Seq.empty.asJava)
+      val coverBoxes = BoxOperations.getCoveringBoxesFor(
+        MainConfigs.maxErg,
+        Seq.empty.asJava,
+        false,
+        (page: Integer) => inputBoxesLoader.loadBoxesPage(ctx, address, page)
+      )
+      coverBoxes.getBoxes.asScala.toList
     }
+  }
+
+  /**
+   * @param numToken     minimum number of token you wish the boxes to have
+   * @return list of unspent token emission boxes containing at least numToken mixing tokens
+   */
+  def getTokenEmissionBoxes(numToken: Int): List[InputBox] = {
+    val address = Address.create(tokenErgoMix.get.tokenEmissionAddress.toString)
+    val boxes = getAllUnspentBoxesForAddress(address)
+    boxes.filter(token => {
+      val cur = token.getTokens
+      cur.size() > 0 && cur.get(0).getId.toString == TokenErgoMix.tokenId && cur.get(0).getValue >= numToken
+    })
   }
 
   /**
@@ -111,55 +123,26 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
    * @return list of unspent full-boxes in a specific ring
    */
   def getFullMixBoxes(poolAmount: Long = -1): Seq[OutBox] = {
-    usingClient { implicit ctx =>
-      val unspent = getUnspentBoxes(tokenErgoMix.get.fullMixAddress.toString)
-      if (poolAmount != -1)
-        unspent.filter(_.amount == poolAmount)
-      else
-        unspent
-    }
+    val unspent = explorer.getUnspentBoxes(tokenErgoMix.get.fullMixAddress.toString)
+    if (poolAmount != -1)
+      unspent.filter(_.amount == poolAmount)
+    else
+      unspent
   }
 
   /**
    * @param boxId box id of the box we wish to get
+   * @param findInPool whether to find boxes that are currently in mempool
+   * @param findInSpent whether to find boxes that are spent
    * @return box as InputBox
    */
-  def getUnspentBoxById(boxId: String): InputBox = {
-    usingClient { implicit ctx =>
-      ctx.getBoxesById(boxId).headOption.getOrElse(throw new Exception("No box found"))
-    }
-  }
-
-  /**
-   * @param boxId box id of the box we wish to get
-   * @return box as OutBox
-   */
-  def getOutBoxById(boxId: String): OutBox = {
-    usingClient { implicit ctx =>
-      explorer.getBoxById(boxId)
-    }
-  }
-
-  /**
-   * @param boxId box id
-   * @return tx spending the box with id boxId
-   */
-  def getSpendingTxId(boxId: String): Option[String] = {
-    usingClient { implicit ctx =>
-      explorer.getSpendingTxId(boxId)
-    }
-  }
-
-  /**
-   * @param txId transaction id
-   * @return whether the txId is in mempool waiting to be mined
-   */
-  def isTxInPool(txId: String): Boolean = {
+  def getUnspentBoxById(boxId: String, findInPool: Boolean = false, findInSpent: Boolean = false): InputBox = {
     usingClient { implicit ctx =>
       try {
-        explorer.doesTxExistInPool(txId)
-      } catch {
-        case _: Throwable => false
+        ctx.getDataSource.getBoxById(boxId, findInPool, findInSpent)
+      }
+      catch {
+        case _: Exception => throw new Exception("No box found")
       }
     }
   }
@@ -169,12 +152,47 @@ class NetworkUtils @Inject()(explorer: BlockExplorer) {
    * @return list of fee-boxes
    */
   def getFeeEmissionBoxes(considerPool: Boolean = false): Seq[OutBox] = {
-    usingClient { implicit ctx =>
       var txPool = ""
       if (considerPool) txPool = explorer.getPoolTransactionsStr
-      getUnspentBoxes(tokenErgoMix.get.feeEmissionAddress.toString).filter(box => box.spendingTxId.isEmpty
-        && box.amount >= Configs.defaultFullTokenFee && (!considerPool || !txPool.contains(s""""${box.id}","txId""""))) // not an input
-    }
+      explorer.getUnspentBoxes(tokenErgoMix.get.feeEmissionAddress.toString).filter(box => box.spendingTxId.isEmpty
+        && box.amount >= MainConfigs.defaultFullTokenFee && (!considerPool || !txPool.contains(s""""${box.id}","txId""""))) // not an input
+  }
+
+  /**
+   * @return list of fee-boxes
+   */
+  def getFeeEmissionBoxes: List[InputBox] = {
+    val address = Address.create(tokenErgoMix.get.feeEmissionAddress.toString)
+    val boxes = getAllUnspentBoxesForAddress(address)
+    boxes
+  }
+
+  /**
+   * @return list of param-boxes
+   */
+  def getParamBoxes: List[InputBox] = {
+    val boxes = getAllUnspentBoxesForAddress(TokenErgoMix.paramAddress)
+    boxes.filter(box =>
+      box.getTokens.size() > 0 && box.getTokens.get(0).getId.toString.equals(TokenErgoMix.tokenId)
+    )
+  }
+
+  /**
+   * @return option of owner's box
+   */
+  def getOwnerBox: Option[InputBox] = {
+    val boxes = getAllUnspentBoxesForAddress(TokenErgoMix.mixerOwner)
+    boxes.find(in => {
+        in.getTokens.size() == 1 && in.getTokens.get(0).getId.toString == TokenErgoMix.tokenId
+      })
+  }
+
+  /**
+   * @return list of income-boxes
+   */
+  def getIncomeBoxes: List[InputBox] = {
+    val boxes = getAllUnspentBoxesForAddress(TokenErgoMix.mixerIncome)
+    boxes
   }
 
   /**

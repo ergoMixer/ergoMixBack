@@ -5,7 +5,7 @@
 # The command:
 # curl -s "domain.tld/install.sh" | bash
 # Should build the ErgoMixer on all Unix systems
-# Windows will require WSL, Cygwin or some other bash solution 
+# Windows will require WSL, Cygwin or some other bash solution
 
 PS3='Please enter your choice: '
 options=("Pull and launch .jar" "Build from Source" "Docker Quick Build" "Quit")
@@ -28,8 +28,11 @@ do
             yes | sdk install java $(sdk list java | grep -o "11\.[0-9]*\.[0-9]*\-tem" | head -1)
             echo "Installing NVM"
             curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.2/install.sh | bash
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+            [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
             source "$NVM_DIR/nvm.sh"
-            nvm install 14
+            nvm install 16
             yes | sdk install sbt 1.2.7
 
             git clone https://github.com/ergoMixer/ergoMixBack.git
@@ -57,7 +60,7 @@ do
             docker run -p 127.0.0.1:9000:9000 \
                 --restart=always \
                 -v /$PWD/ergo/mixer_data:/$PWD/ergo/ergoMixer \
-                -d ergomixer/mixer:latest 
+                -d ergomixer/mixer:latest
             ;;
         "Quit")
             break
@@ -65,3 +68,4 @@ do
         *) echo "invalid option $REPLY";;
     esac
 done
+

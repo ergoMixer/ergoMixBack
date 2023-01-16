@@ -1,10 +1,7 @@
 package app
 
-import java.lang.{String => JString}
-import java.util.{List => JList}
-
-import org.ergoplatform.appkit.JavaHelpers._
 import scalan.util.FileUtil
+import scala.collection.JavaConverters._
 
 trait HttpClientTesting {
   val responsesDir = "test/resources/mockwebserver"
@@ -22,6 +19,7 @@ trait HttpClientTesting {
     def appendNodeResponses(moreResponses: Seq[String]): MockData = {
       this.copy(nodeResponses = this.nodeResponses ++ moreResponses)
     }
+
     def appendExplorerResponses(moreResponses: Seq[String]): MockData = {
       this.copy(explorerResponses = this.explorerResponses ++ moreResponses)
     }
@@ -31,13 +29,14 @@ trait HttpClientTesting {
     def empty = MockData()
   }
 
-  def createMockedErgoClient(data: MockData): FileMockedErgoClient = {
+  def createMockedErgoClient(data: MockData, nodeOnlyMode: Boolean = false): FileMockedErgoClient = {
     val nodeResponses = IndexedSeq(
       loadNodeResponse("response_NodeInfo.json"),
       loadNodeResponse("response_LastHeaders.json")) ++ data.nodeResponses
     val explorerResponses: IndexedSeq[String] = data.explorerResponses.toIndexedSeq
     new FileMockedErgoClient(
-      nodeResponses.convertTo[JList[JString]],
-      explorerResponses.convertTo[JList[JString]])
+      nodeResponses.asJava,
+      explorerResponses.asJava,
+      nodeOnlyMode)
   }
 }

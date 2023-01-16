@@ -17,7 +17,7 @@ GET         /assets/*file                      controllers.Assets.versioned(path
 # Get addresses from node
 +nocsrf
 POST        /address/generate/from_node        controllers.ApiController.generateAddress
-
+GET         /blocks                            controllers.ApiController.getBlocks(offset: Long ?= 0, limit: Long ?= 100)
 GET         /rings                             controllers.ApiController.rings
 
 # Add withdraw to database
@@ -30,6 +30,7 @@ GET         /mix/request/list                  controllers.MixController.mixGrou
 GET         /mix/request/activeList            controllers.MixController.mixGroupRequestActiveList
 GET         /mix/request/completeList          controllers.MixController.mixGroupRequestCompleteList
 GET         /mix/request/:id/list              controllers.MixController.mixRequestList(id: String, status ?= "all")
+GET         /mix/:mixId/box                    controllers.MixController.getMixBox(mixId: String)
 GET         /mix/fee                           controllers.MixController.mixingFee
 GET         /mix/supported                     controllers.MixController.supported
 
@@ -53,6 +54,17 @@ GET         /ageusd/bank/:tokenId              controllers.AgeUSDController.bank
 
 GET         /dashboard                         controllers.ApiController.dashboard
 GET         /dashboard/*file                   controllers.ApiController.assetOrDefault(file)
+
+# admin endpoints
+# TODO: split routes (#86) (maybe this url could be help https://www.playframework.com/documentation/2.8.x/ScalaCompileTimeDependencyInjection)
+GET         /admin/income                      controllers.AdminController.income(start: Long ?= 0, end: Long ?= 0)
+GET         /admin/incomeParams                controllers.AdminController.getIncomeParams
+POST        /admin/incomeParams                controllers.AdminController.setIncomeParams
+GET         /admin/feeParams                   controllers.AdminController.getFeeParams
+POST        /admin/feeParams                   controllers.AdminController.setFeeParams
+GET         /admin/getSupport                  controllers.AdminController.getSupport
+POST        /admin/removeSupport               controllers.AdminController.removeSupport
+POST        /admin/addSupport                  controllers.AdminController.addSupport
 
 # Return Info of Mixer
 GET         /info                              controllers.ApiController.getInfo

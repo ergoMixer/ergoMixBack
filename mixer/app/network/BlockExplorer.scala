@@ -1,8 +1,9 @@
 package network
 
+import config.MainConfigs
+
 import java.io.{BufferedWriter, InputStream, OutputStreamWriter}
 import java.net.{HttpURLConnection, URLConnection}
-import app.Configs
 import io.circe.Json
 
 import javax.inject.Singleton
@@ -16,15 +17,17 @@ import scala.util.{Failure, Success, Try}
 @Singleton
 class BlockExplorer() {
 
-  private val baseUrl = Configs.explorerUrl
+  private val baseUrl = MainConfigs.explorerUrl
 
   private val unspentUrl = s"$baseUrl/transactions/boxes/byAddress/unspent/"
-  private val blockUrl = s"$baseUrl/blocks?limit=1"
   private val boxUrl = s"$baseUrl/transactions/boxes/"
   private val txUrl = s"$baseUrl/transactions/"
   private val urlAddress = s"$baseUrl/addresses/"
+  private val infoUrl = s"$baseUrl/api/v1/info"
   private val unspentSearchUrl = s"$baseUrl/api/v1/boxes/unspent/search/"
+  private val unspentTokenUrl = s"$baseUrl/api/v1/boxes/unspent/byTokenId/"
   private val boxesByAddressUtl = s"$baseUrl/api/v1/boxes/byAddress/"
+  private val blocksUrl = s"$baseUrl/api/v1/blocks/headers"
 
   /**
    * @param j json representation of box
@@ -45,9 +48,9 @@ class BlockExplorer() {
         case (key, value) => (key, value.asString.get)
       }
     }.toMap
-    val ergoTree = (j \\ "ergoTree").map(v => v.asString.get).apply(0)
-    val address = (j \\ "address").map(v => v.asString.get).apply(0)
-    val spendingTxId = (j \\ "spentTransactionId").map(v => v.asString).apply(0)
+    val ergoTree = (j \\ "ergoTree").map(v => v.asString.get).head
+    val address = (j \\ "address").map(v => v.asString.get).head
+    val spendingTxId = (j \\ "spentTransactionId").map(v => v.asString).head
     OutBox(id, value.toLong.get, registers, ergoTree, tokens, creationHeight.toInt.get, address, spendingTxId)
   }
 
@@ -55,7 +58,7 @@ class BlockExplorer() {
    * @param j json representation of box
    * @return id of box
    */
-  private def getId(j: Json): String = (j \\ "id").map(v => v.asString.get).apply(0)
+  private def getId(j: Json): String = (j \\ "id").map(v => v.asString.get).head
 
   /**
    * @param j json representation of box
@@ -63,9 +66,9 @@ class BlockExplorer() {
    */
   private def getInBoxFromJson(j: Json) = {
     val id = getId(j)
-    val address = (j \\ "address").map(v => v.asString.get).apply(0)
-    val value = (j \\ "value").map(v => v.asNumber.get).apply(0)
-    val createdTxId = (j \\ "outputTransactionId").map(v => v.asString.get).apply(0)
+    val address = (j \\ "address").map(v => v.asString.get).head
+    val value = (j \\ "value").map(v => v.asNumber.get).head
+    val createdTxId = (j \\ "outputTransactionId").map(v => v.asString.get).head
     InBox(id, address, createdTxId, value.toLong.get)
   }
 
@@ -86,11 +89,30 @@ class BlockExplorer() {
   }
 
   /**
+   * @param address ergo address
+   * @return number of transactions relating the address
+   */
+  def getTransactionNum(address: String): Int = try {
+    val json = GetURL.get(urlAddress + address + s"/transactions?limit=1")
+    (json \\ "total").head.asNumber.get.toInt.get
+  } catch {
+    case _: Throwable => 0
+  }
+
+  /**
    * @return current height of blockchain
    */
   def getHeight: Int = {
-    val json = GetURL.get(blockUrl)
-    ((json \\ "items").head.asArray.get(0) \\ "height").head.toString().toInt
+    val json = GetURL.get(infoUrl)
+    (json \\ "height").head.toString().toInt
+  }
+
+  /**
+   * @return blocks of blockchain
+   */
+  def getBlocks(offset: Long = 0, limit: Long = 100): String = {
+    val json = GetURL.get(blocksUrl + s"?limit=$limit&offset=$offset")
+    (json \\ "items").head.toString()
   }
 
   /**
@@ -123,7 +145,7 @@ class BlockExplorer() {
    * @return box as OutBox
    */
   def getBoxByTokenId(tokenId: String): Json = {
-    GetURL.get(s"https://api.ergoplatform.com/api/v1/boxes/unspent/byTokenId/$tokenId")
+    GetURL.get(unspentTokenUrl + tokenId)
   }
 
   /**
@@ -148,7 +170,9 @@ class BlockExplorer() {
     items.map(item => SpendTx(
       getInBoxesFromJson((item \\ "inputs").headOption.get),
       getOutBoxesFromJson((item \\ "outputs").headOption.get),
-      "", address, (item \\ "timestamp").headOption.get.hcursor.as[Long].getOrElse(0)
+      (item \\ "id").headOption.get.hcursor.as[String].getOrElse(""),
+      address,
+      (item \\ "timestamp").headOption.get.hcursor.as[Long].getOrElse(0)
     ))
   } catch {
     case a: Throwable => List()
@@ -283,11 +307,12 @@ object GetURL {
    */
   def getConnection(url: String, headers: Map[String, String], useProxyIfSet: Boolean = true): URLConnection = {
     val connection = {
-      if (!useProxyIfSet || Configs.proxy == null) new URL(url).openConnection
-      else new URL(url).openConnection(Configs.proxy)
+      if (!useProxyIfSet || MainConfigs.proxy == null) new URL(url).openConnection
+      else new URL(url).openConnection(MainConfigs.proxy)
     }
     headers.foreach { case (name, value) => connection.setRequestProperty(name, value) }
-    connection.setConnectTimeout(20000)
+    connection.setConnectTimeout(MainConfigs.connectionTimeout * 1000)
+    connection.setReadTimeout(MainConfigs.connectionTimeout * 1000)
     connection
   }
 
@@ -347,8 +372,8 @@ object GetURL {
 
   def postConnection(url: String, headers: Map[String, String], useProxyIfSet: Boolean = true): HttpURLConnection = {
     val connection = {
-      if (!useProxyIfSet || Configs.proxy == null) new URL(url).openConnection
-      else new URL(url).openConnection(Configs.proxy)
+      if (!useProxyIfSet || MainConfigs.proxy == null) new URL(url).openConnection
+      else new URL(url).openConnection(MainConfigs.proxy)
     }.asInstanceOf[HttpURLConnection]
     connection.setRequestMethod("POST")
     connection.setDoOutput(true)

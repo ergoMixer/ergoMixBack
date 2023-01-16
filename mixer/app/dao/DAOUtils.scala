@@ -13,12 +13,12 @@ class DAOUtils @Inject()(protected val dbConfigProvider: DatabaseConfigProvider)
 
     def awaitResult[T: ClassTag](variable: Future[T]): T = Await.result(variable, Duration.Inf)
 
-    def shutdown(): Unit = {
+    def shutdown(shutdownSystem: Boolean = false): Future[Unit] = {
         db.close()
         implicit val context: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
         Future {
             Thread.sleep(10000)
-            System.exit(0)
+            if (shutdownSystem) Runtime.getRuntime.halt(0)
         }
     }
 

@@ -1,10 +1,11 @@
 package controllers
 
-import app.Configs
+import config.MainConfigs
 import helpers.ErgoMixerUtils
 import io.circe.Json
 import mixer.ErgoMixer
 import models.Box.MixBoxList
+import network.NetworkUtils
 import play.api.Logger
 import play.api.libs.json._
 import play.api.mvc._
@@ -15,7 +16,8 @@ import scala.concurrent.ExecutionContext
 /**
  * A controller inside of Mixer controller with mix and group mix APIs.
  */
-class MixController @Inject()(controllerComponents: ControllerComponents, ergoMixerUtils: ErgoMixerUtils, ergoMixer: ErgoMixer,
+class MixController @Inject()(controllerComponents: ControllerComponents, ergoMixerUtils: ErgoMixerUtils,
+                              ergoMixer: ErgoMixer, networkUtils: NetworkUtils
                              )(implicit ec: ExecutionContext) extends AbstractController(controllerComponents) {
 
   private val logger: Logger = Logger(this.getClass)
@@ -178,6 +180,44 @@ class MixController @Inject()(controllerComponents: ControllerComponents, ergoMi
   }
 
   /**
+   * a get endpoint for get InputBox of a mixId
+   * @return InputBox of a mixId
+   */
+  def getMixBox(mixId: String): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    try {
+      val boxId = ergoMixer.getFullBoxId(mixId)
+
+      networkUtils.usingClient(ctx => {
+        val ourInBoxes = ctx.getBoxesById(boxId)
+        if (ourInBoxes.nonEmpty) {
+          val ourInBox = ourInBoxes.head
+          val burnTokens = ergoMixer.calcNeededBurnTokensForAgeUsdMint(ourInBox)
+          val burnTokenObj = burnTokens.map(token => {
+            s"""
+               |{
+               |  "tokenId": "${token._1}",
+               |  "amount": ${token._2}
+               |}
+               |""".stripMargin
+          })
+          Ok(
+            s"""
+               | {
+               |  "box": ${ourInBox.toJson(false)},
+               |  "burnTokens": [${burnTokenObj.mkString(",")}]
+               | }
+               |""".stripMargin).as("application/json")
+        } else throw new Exception(s"box with id $boxId for mixId $mixId not found")
+      })
+
+    } catch {
+      case e: Throwable =>
+        logger.error(s"error in controller ${ergoMixerUtils.getStackTraceStr(e)}")
+        BadRequest(s"""{"success": false, "message": "${e.getMessage}"}""").as("application/json")
+    }
+  }
+
+  /**
    * A get endpoint which returns info about current fee parameters
    */
   def mixingFee(): Action[AnyContent] = Action {
@@ -185,10 +225,10 @@ class MixController @Inject()(controllerComponents: ControllerComponents, ergoMi
       var res =
         s"""
            |{
-           |  "boxInTransaction": ${Configs.maxOuts},
-           |  "distributeFee": ${Configs.distributeFee},
-           |  "startFee": ${Configs.startFee},""".stripMargin
-      val tokenPrices = Configs.tokenPrices.orNull
+           |  "boxInTransaction": ${MainConfigs.maxOuts},
+           |  "distributeFee": ${MainConfigs.distributeFee},
+           |  "startFee": ${MainConfigs.startFee},""".stripMargin
+      val tokenPrices = MainConfigs.tokenPrices.orNull
       if (tokenPrices == null) {
         BadRequest(
           s"""
@@ -199,7 +239,7 @@ class MixController @Inject()(controllerComponents: ControllerComponents, ergoMi
              |""".stripMargin
         ).as("application/json")
       } else {
-        val rate = Configs.entranceFee.getOrElse(1000000)
+        val rate = MainConfigs.entranceFee.getOrElse(1000000)
         tokenPrices.foreach {
           element => res += s"""  "${element._1}": ${element._2},""".stripMargin
         }
@@ -218,7 +258,7 @@ class MixController @Inject()(controllerComponents: ControllerComponents, ergoMi
 
   def supported(): Action[AnyContent] = Action {
     try {
-      val params = Configs.params
+      val params = MainConfigs.params
       if (params.isEmpty) {
         BadRequest(
           s"""
@@ -232,7 +272,7 @@ class MixController @Inject()(controllerComponents: ControllerComponents, ergoMi
         val supported = params.values.toList.sortBy(f => f.id)
         Ok(
           s"""
-             |[${supported.map(_.toJson).mkString(",")}]
+             |[${supported.map(_.toJson()).mkString(",")}]
              |""".stripMargin).as("application/json")
       }
     } catch {

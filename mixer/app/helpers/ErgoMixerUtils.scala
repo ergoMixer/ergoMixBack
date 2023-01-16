@@ -1,19 +1,20 @@
 package helpers
 
+import config.MainConfigs
+import dao.DAOUtils
+import network.NetworkUtils
+
+import play.api.Logger
+import javax.inject.{Inject, Singleton}
+import java.sql.Timestamp
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.io._
 import java.security.SecureRandom
 import java.util.zip.{ZipEntry, ZipInputStream, ZipOutputStream}
-import app.Configs
-import dao.DAOUtils
 
-import javax.inject.Inject
-import org.ergoplatform.appkit.BlockchainContext
-import play.api.Logger
-
-import java.text.SimpleDateFormat
-import java.util.Date
-
-class ErgoMixerUtils @Inject()(daoUtils: DAOUtils) {
+@Singleton
+class ErgoMixerUtils @Inject()(daoUtils: DAOUtils, networkUtils: NetworkUtils) {
   private val logger: Logger = Logger(this.getClass)
 
   def currentDateTimeString(pattern: String = "yyyy-MM-dd'T'HH-mm-ss"): String = {
@@ -22,14 +23,19 @@ class ErgoMixerUtils @Inject()(daoUtils: DAOUtils) {
     formatter.format(date)
   }
 
+  def getBegOfDayTimestamp(timestamp: Long): Long = {
+    val startOfDay = new Timestamp(timestamp).toLocalDateTime.toLocalDate.atStartOfDay()
+    Timestamp.valueOf(startOfDay).getTime
+  }
+
   def getFee(tokenId: String, isFull: Boolean): Long = {
     if (tokenId.nonEmpty) {
-      if (isFull) Configs.defaultFullTokenFee
-      else Configs.defaultHalfTokenFee
+      if (isFull) MainConfigs.defaultFullTokenFee
+      else MainConfigs.defaultHalfTokenFee
 
     } else {
-      if (isFull) Configs.defaultFullFee
-      else Configs.defaultHalfFee
+      if (isFull) MainConfigs.defaultFullFee
+      else MainConfigs.defaultHalfFee
     }
   }
 
@@ -40,12 +46,12 @@ class ErgoMixerUtils @Inject()(daoUtils: DAOUtils) {
     sw.toString
   }
 
-  def getRandomValidBoxId(origBoxIds: Seq[String])(implicit ctx: BlockchainContext): Option[String] = {
+  def getRandomValidBoxId(origBoxIds: Seq[String]): Option[String] = {
     val random = new SecureRandom()
     val boxIds = new scala.util.Random(random).shuffle(origBoxIds)
     boxIds.find { boxId =>
       try {
-        ctx.getBoxesById(boxId)
+        networkUtils.getUnspentBoxById(boxId)
         true
       } catch {
         case a: Throwable =>

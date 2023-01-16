@@ -1,9 +1,12 @@
 package wallet
 
+import config.MainConfigs
+
 import java.math.BigInteger
-import app.Configs
 import org.ergoplatform.{ErgoAddress, ErgoAddressEncoder}
-import org.ergoplatform.appkit.{Address, JavaHelpers, NetworkType}
+import org.ergoplatform.appkit.{Address, JavaHelpers}
+import scorex.crypto.hash.Digest32
+import sigmastate.Values.ErgoTree
 import sigmastate.basics.DLogProtocol.DLogProverInput
 import sigmastate.eval._
 import sigmastate.interpreter.CryptoConstants
@@ -14,17 +17,17 @@ object WalletHelper {
 
   def randBigInt: BigInt = new BigInteger(256, secureRandom)
 
-  def randBit = secureRandom.nextBoolean()
+  def randBit: Boolean = secureRandom.nextBoolean()
 
-  def randInt(mod: Int) = secureRandom.nextInt(mod)
+  def randInt(mod: Int): Int = secureRandom.nextInt(mod)
 
-  def now = System.currentTimeMillis()
+  def now: Long = System.currentTimeMillis()
 
-  def hash(bytes: Array[Byte]) = {
+  def hash(bytes: Array[Byte]): Array[Byte] = {
     java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
   }
 
-  def getHash(bytes: Array[Byte]) = scorex.crypto.hash.Blake2b256(bytes)
+  def getHash(bytes: Array[Byte]): Digest32 = scorex.crypto.hash.Blake2b256(bytes)
 
   val g: GroupElement = CryptoConstants.dlogGroup.generator
 
@@ -47,10 +50,11 @@ object WalletHelper {
     getAddressOfSecret(secret)
   }
 
-  val networkType: NetworkType = if (Configs.isMainnet) NetworkType.MAINNET else NetworkType.TESTNET
-  val addressEncoder = new ErgoAddressEncoder(networkType.networkPrefix)
+  val addressEncoder = new ErgoAddressEncoder(MainConfigs.networkType.networkPrefix)
 
   def getAddress(address: String): ErgoAddress = addressEncoder.fromString(address).get
+
+  def getAddress(address: ErgoTree): ErgoAddress = addressEncoder.fromProposition(address).get
 
   def okAddresses(addresses: Seq[String]): Unit = {
     addresses.foreach(address => {

@@ -1,12 +1,10 @@
 package mixinterface
 
 import java.math.BigInteger
-
 import mixinterface.ErgoMixBase._
 import models.Box.{EndBox, FullMixBox, HalfMixBox}
 import models.Transaction.FullMixTx
 import org.ergoplatform.appkit._
-import org.ergoplatform.appkit.impl.ErgoTreeContract
 import sigmastate.eval._
 import special.collection.Coll
 import special.sigma.GroupElement
@@ -34,7 +32,7 @@ class BobImpl(y: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit c
   def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], burnTokens: Seq[ErgoToken], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT]): SignedTransaction = {
     val txB = ctx.newTxBuilder
     val outBoxes: Seq[OutBox] = endBoxes.map { endBox =>
-      var outBoxBuilder = txB.outBoxBuilder().value(endBox.value).contract(new ErgoTreeContract(endBox.receiverBoxScript))
+      var outBoxBuilder = txB.outBoxBuilder().value(endBox.value).contract(ctx.newContract(endBox.receiverBoxScript))
       if (endBox.tokens.nonEmpty)
         outBoxBuilder = outBoxBuilder.tokens(endBox.tokens: _*)
       (if (endBox.receiverBoxRegs.isEmpty) outBoxBuilder else outBoxBuilder.registers(endBox.receiverBoxRegs: _*)).build()
@@ -49,10 +47,10 @@ class BobImpl(y: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit c
       inputs.add(0, f.inputBox)
     }
 
-    val preTxB = txB.boxesToSpend(inputs)
-      .outputs(outBoxes: _*)
+    val preTxB = txB.addInputs(inputs.asScala: _*)
+      .addOutputs(outBoxes: _*)
       .fee(feeAmount)
-      .sendChangeTo(getAddress(changeAddress))
+      .sendChangeTo(Address.create(changeAddress))
     val txToSign = if (burnTokens.nonEmpty) preTxB.tokensToBurn(burnTokens: _*).build() else preTxB.build()
 
     val bob: ErgoProver = additionalDHTuples.foldLeft(
@@ -133,7 +131,7 @@ class BobImpl(y: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit c
       }
     }
 
-    val excessErg = inputBoxes.map(_.getValue.toLong).sum - fee - halfMixBox.inputBox.getValue - tokenBox.getValue
+    val excessErg = inputBoxes.map(_.getValue).sum - fee - halfMixBox.inputBox.getValue - tokenBox.getValue
     assert(excessErg >= ergCommission + batchPrice)
     val tokenCp = ctx.newTxBuilder().outBoxBuilder
       .value(tokenBox.getValue)
@@ -154,10 +152,10 @@ class BobImpl(y: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit c
     inputs.add(halfMixBox.inputBox)
     inputs.addAll(inputBoxes.toList.asJava)
 
-    val preTxB = txB.boxesToSpend(inputs)
-      .outputs(firstOutBox, secondOutBox, payBox, tokenCp)
+    val preTxB = txB.addInputs(inputs.asScala: _*)
+      .addOutputs(firstOutBox, secondOutBox, payBox, tokenCp)
       .fee(fee)
-      .sendChangeTo(getAddress(changeAddress))
+      .sendChangeTo(Address.create(changeAddress))
     val txToSign = if (distrBurnToken > 0) preTxB.tokensToBurn(new ErgoToken(TokenErgoMix.tokenId, distrBurnToken)).build() else preTxB.build()
 
     val bob: ErgoProver = additionalDHTuples.foldLeft(

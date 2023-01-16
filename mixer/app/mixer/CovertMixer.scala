@@ -1,13 +1,12 @@
 package mixer
 
-import app.Configs
+import config.MainConfigs
 import mixinterface.AliceOrBob
 import helpers.ErgoMixerUtils
 
 import javax.inject.{Inject, Singleton}
 import models.Models.CovertAsset
 import network.{BlockExplorer, NetworkUtils}
-import org.ergoplatform.ErgoAddressEncoder
 import org.ergoplatform.appkit.{Address, ErgoToken, ErgoTreeTemplate}
 import play.api.Logger
 import wallet.{Wallet, WalletHelper}
@@ -22,7 +21,6 @@ import models.Transaction.{CovertAssetWithdrawTx, DistributeTx}
 import scorex.crypto.hash.Sha256
 import scorex.util.encode.Base16
 import sigmastate.Values.ErgoTree
-import wallet.WalletHelper.okAddresses
 
 import java.nio.charset.StandardCharsets
 
@@ -56,9 +54,9 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
           supported.foreach(sup => deposits(sup.tokenId) = 0L)
           (supported ++ unsupported).foreach(sup => realDeposits(sup.tokenId) = 0L)
           val confirmedBoxes = allBoxes.map(box => { // all confirmed boxes
-            val conf = networkUtils.getConfirmationsForBoxId(box.id)
+            val conf = explorer.getConfirmationsForBoxId(box.id)
             // we only consider enough confirmed boxes as deposit
-            if (conf >= Configs.numConfirmation) {
+            if (conf >= MainConfigs.numConfirmation) {
               if (!spent.contains(box.id)) {
                 // we can spend this box
                 deposits("") = deposits.getOrElse("", 0L) + box.amount
@@ -88,7 +86,7 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
           })
 
           processTx(req)
-          if (confirmedBoxes.size >= Configs.maxIns) {
+          if (confirmedBoxes.size >= MainConfigs.maxIns) {
             logger.info(s"  many unspent boxes (${confirmedBoxes.size}), merging them....")
             mergeInputs(req, confirmedBoxes)
 
@@ -123,12 +121,12 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
     supported.filter(_.tokenId.nonEmpty).foreach(toMix => { // try to mix anything but erg!
       var possible = true
       while (possible) {
-        val mixingNeed = req.getMixingNeed(Configs.ergRing, toMix.ring)
-        val ergNeeded = ((endBoxes.length + Configs.maxOuts) / Configs.maxOuts) * Configs.distributeFee + mixingNeed._1
+        val mixingNeed = req.getMixingNeed(MainConfigs.ergRing, toMix.ring)
+        val ergNeeded = ((endBoxes.length + MainConfigs.maxOuts) / MainConfigs.maxOuts) * MainConfigs.distributeFee + mixingNeed._1
         if (deposit("") >= ergNeeded && deposit(toMix.tokenId) >= mixingNeed._2) {
           val withdrawAddress = ergoMixerUtils.getRandom(addresses).getOrElse("")
           logger.info(s"  creating a box to mix ${toMix.tokenId} in ring: ${toMix.ring}, withdraw address: $withdrawAddress")
-          val depAddr = ergoMixer.newMixRequest(withdrawAddress, req.numRounds, Configs.ergRing, mixingNeed._1, toMix.ring, mixingNeed._2, toMix.tokenId, req.id)
+          val depAddr = ergoMixer.newMixRequest(withdrawAddress, req.numRounds, MainConfigs.ergRing, mixingNeed._1, toMix.ring, mixingNeed._2, toMix.tokenId, req.id)
           endBoxes = endBoxes :+ EndBox(Address.create(depAddr).getErgoAddress.script, Seq(), mixingNeed._1, Seq(new ErgoToken(toMix.tokenId, mixingNeed._2)))
           // subtract what was needed from deposits!
           deposit("") -= mixingNeed._1
@@ -143,7 +141,7 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
       var possible = true
       while (possible) {
         val mixingNeed = req.getMixingNeed(toMix.ring, 0L)
-        val ergNeeded = ((endBoxes.length + Configs.maxOuts) / Configs.maxOuts) * Configs.distributeFee + mixingNeed._1
+        val ergNeeded = ((endBoxes.length + MainConfigs.maxOuts) / MainConfigs.maxOuts) * MainConfigs.distributeFee + mixingNeed._1
         if (deposit("") >= ergNeeded) {
           val withdrawAddress = ergoMixerUtils.getRandom(addresses).getOrElse("")
           logger.info(s"  creating a box to mix erg in ring: ${toMix.ring}, withdraw address: $withdrawAddress")
@@ -157,20 +155,20 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
     }
     if (endBoxes.isEmpty) return
     // here we subtract distributing fee
-    deposit("") -= ((endBoxes.length + Configs.maxOuts) / Configs.maxOuts) * Configs.distributeFee
+    deposit("") -= ((endBoxes.length + MainConfigs.maxOuts) / MainConfigs.maxOuts) * MainConfigs.distributeFee
 
     // here we check a rare but an important case! it is possible that the leftover ergs is 0
     // or less than the minimum amount a box can have (here we consider it 1e6 nano-ergs),
     // in this case if there are some leftover tokens, we will lose them!
-    if ((deposit.count(dep => dep._1.nonEmpty && dep._2 >= 0) > 0 && deposit("") < Configs.minPossibleErgInBox) ||
-      (deposit("") > 0 && deposit("") < Configs.minPossibleErgInBox)) {
+    if ((deposit.count(dep => dep._1.nonEmpty && dep._2 > 0) > 0 && deposit("") < MainConfigs.minPossibleErgInBox) ||
+      (deposit("") > 0 && deposit("") < MainConfigs.minPossibleErgInBox)) {
       // If the above scenario is the case, we simply ignore mixing the last box in the list!
       logger.info(s"  we ignore mixing 1 box, reason is lack of leftover ergs; we may lose our leftover tokens!")
       deposit("") += endBoxes.last.value
       if (endBoxes.last.tokens.nonEmpty) {
         deposit(endBoxes.last.tokens.last.getId.toString) += endBoxes.last.tokens.last.getValue
       }
-      val addr = new ErgoAddressEncoder(ctx.getNetworkType.networkPrefix).fromProposition(endBoxes.last.receiverBoxScript).toString
+      val addr = WalletHelper.getAddress(endBoxes.last.receiverBoxScript).toString
       mixingRequestsDAO.deleteByWithdrawAddress(addr)
       endBoxes = endBoxes.dropRight(1)
       if (endBoxes.isEmpty) {
@@ -184,7 +182,7 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
 
     logger.info(s"  we will create ${endBoxes.length} boxes to enter mixing...")
 
-    val transactions = aliceOrBob.distribute(inputs.map(_.id).toArray, endBoxes.toArray, Array(secret), Configs.distributeFee, req.depositAddress, Configs.maxOuts)
+    val transactions = aliceOrBob.distribute(inputs.map(_.id).toArray, endBoxes.toArray, Array(secret), MainConfigs.distributeFee, req.depositAddress, MainConfigs.maxOuts)
     for (i <- transactions.indices) {
       val tx = transactions(i)
       val inputs = tx.getSignedInputs.asScala.map(_.getId).mkString(",")
@@ -246,7 +244,7 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
                 logger.info(s"  tx has a box spent or has a wrong box")
               }
           }
-        } else if (confNum >= Configs.numConfirmation) { // confirmed enough
+        } else if (confNum >= MainConfigs.numConfirmation) { // confirmed enough
           logger.info(s"  tx ${tx.txId} is confirmed.")
           distributeTransactionsDAO.setOrderToZeroByTxId(tx.txId)
         } else {
@@ -265,16 +263,16 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
     val wallet = new Wallet(req.masterKey)
     val secret = wallet.getSecret(-1, req.isManualCovert).bigInteger
 
-    (0 until inputs.size / Configs.maxIns).foreach(i => {
-      val start = i * Configs.maxIns
-      val curInputs = inputs.slice(start, start + Configs.maxIns)
+    (0 until inputs.size / MainConfigs.maxIns).foreach(i => {
+      val start = i * MainConfigs.maxIns
+      val curInputs = inputs.slice(start, start + MainConfigs.maxIns)
       val ergSum = curInputs.map(_.amount).sum
       val curTokens = mutable.Map.empty[String, Long]
       curInputs.flatMap(_.tokens).foreach(token => {
         curTokens(token.getId.toString) = curTokens.getOrElse(token.getId.toString, 0L) + token.getValue
       })
-      val out = EndBox(Address.create(req.depositAddress).getErgoAddress.script, Seq(), ergSum - Configs.distributeFee, curTokens.map(tok => new ErgoToken(tok._1, tok._2)).toSeq)
-      val tx = aliceOrBob.mergeBoxes(curInputs.map(_.id).toArray, out, secret, Configs.distributeFee, req.depositAddress)
+      val out = EndBox(Address.create(req.depositAddress).getErgoAddress.script, Seq(), ergSum - MainConfigs.distributeFee, curTokens.map(tok => new ErgoToken(tok._1, tok._2)).toSeq)
+      val tx = aliceOrBob.mergeBoxes(curInputs.map(_.id).toArray, out, secret, MainConfigs.distributeFee, req.depositAddress)
       val inputIds = tx.getSignedInputs.asScala.map(_.getId).mkString(",")
       val new_tx = DistributeTx(req.id, tx.getId, 1, WalletHelper.now, tx.toJson(false).getBytes("utf-16"), inputIds)
       distributeTransactionsDAO.insert(new_tx)
@@ -307,7 +305,7 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
           }
         }
       }
-      else if (confNum >= Configs.numConfirmation) { // confirmed enough
+      else if (confNum >= MainConfigs.numConfirmation) { // confirmed enough
         logger.info(s"  tx $txId is confirmed.")
         withdrawCovertTokenDAO.setRequestComplete(covertId, tokenId)
         covertDefaultsDAO.deleteIfRingIsEmpty(covertId, tokenId)
@@ -377,7 +375,7 @@ class CovertMixer @Inject()(ergoMixer: ErgoMixer, aliceOrBob: AliceOrBob,
    *
    */
   def queueWithdrawAsset(covertId: String, tokenIds: Seq[String], withdrawAddress: String): Unit = {
-    okAddresses(Seq(withdrawAddress))
+    WalletHelper.okAddresses(Seq(withdrawAddress))
     tokenIds.foreach(tokenId => {
       if (daoUtils.awaitResult(withdrawCovertTokenDAO.isActiveRequest(covertId, tokenId))) throw new Exception(s"request for withdraw of $tokenId in $covertId is already in process")
       val asset = daoUtils.awaitResult(covertDefaultsDAO.selectByGroupAndTokenId(covertId, tokenId)).getOrElse(throw new Exception(s"asset $tokenId not exists in covert $covertId"))

@@ -8,7 +8,7 @@ libraryDependencies += filters
 
 lazy val commonSettings = Seq(
   organization := "ergoMixer",
-  version := "4.2.0",
+  version := "4.3.0",
   scalaVersion := "2.12.10",
   resolvers ++= Seq(
     Resolver.sonatypeRepo("public"),
@@ -62,7 +62,7 @@ libraryDependencies ++= Seq(
   mockWebServer,
   "org.scalatestplus.play" %% "scalatestplus-play" % "4.0.3" % Test,
   "com.h2database" % "h2" % "1.4.199",
-  "org.ergoplatform" %% "ergo-appkit" % "4.0.6",
+  "org.ergoplatform" %% "ergo-appkit" % "5.0.0",
   "org.mockito" % "mockito-core" % "3.3.0",
   "org.apache.commons" % "commons-lang3" % "3.11",
   "org.webjars" % "swagger-ui" % "3.38.0",
