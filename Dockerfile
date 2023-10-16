@@ -7,8 +7,13 @@ RUN npm run build
 
 FROM openjdk:8u181-jdk-slim as builder
 ENV DEBIAN_FRONTEND noninteractive
+
+RUN rm /etc/apt/sources.list
+RUN echo "deb http://archive.debian.org/debian-security jessie/updates main" >> /etc/apt/sources.list.d/jessie.list
+RUN echo "deb http://archive.debian.org/debian jessie main" >> /etc/apt/sources.list.d/jessie.list
+
 RUN apt-get update && \
-    apt-get -y --no-install-recommends install curl zip unzip sed
+    apt-get -y --no-install-recommends --allow-unauthenticated install curl zip unzip sed
 RUN curl -s "https://get.sdkman.io" | bash
 RUN /bin/bash -c "source /root/.sdkman/bin/sdkman-init.sh; sdk install sbt 1.2.7"
 ENV PATH=/root/.sdkman/candidates/sbt/current/bin:$PATH

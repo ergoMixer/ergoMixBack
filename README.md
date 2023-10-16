@@ -39,7 +39,13 @@
       </ul>
     </li>
     <li><a href="#usage">Usage</a></li>
-    <li><a href="#notes">Notes</a></li>
+    <li>
+      <a href="#notes">Notes</a>
+      <ul>
+        <li><a href="#stealth-address">Stealth Address</a></li>
+        <li><a href="#breaking-change">Breaking Change</a></li>
+      </ul>
+    </li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
@@ -163,6 +169,11 @@ The database will be saved in your home directory. This database contains all th
 
 <!-- NOTES -->
 ## Notes
+ ### Stealth Address
+  * Stealth Address documentation (to be updated soon) [here](https://github.com/ergoMixer/ergoMixBack/wiki/Stealth-Address).
+  * Use [this tool](https://ergomixer.github.io/stealth/) to generate a `new payment address` from any Stealth Addresses.
+
+ ### Breaking Change
   * From version `3.0.0 ` database scheme is changed; So, please consider binding to a different location if you have previously used an older version.
 
   * In order to buy SigmaUSD/SigmaRSV directly from the mixer, DO NOT SET withdrawal address when creating the mix/covert address and use "Set Later" option. 
