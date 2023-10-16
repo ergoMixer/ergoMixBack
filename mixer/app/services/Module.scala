@@ -1,9 +1,9 @@
 package services
-import config.MainConfigs
 import com.google.inject.AbstractModule
+import config.MainConfigs
 import services.admin.{AdminHooks, AdminHooksImpl}
-import services.mixer.{ErgoMixHooks, ErgoMixHooksImpl}
 import services.main.{MainHooks, MainHooksImpl}
+import services.mixer.{ErgoMixHooks, ErgoMixHooksImpl}
 
 /**
  * This class is a Guice module that tells Guice how to bind several

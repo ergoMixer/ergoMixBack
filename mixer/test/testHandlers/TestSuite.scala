@@ -1,53 +1,61 @@
 package testHandlers
 
-import dao._
+import java.io.File
+import javax.inject.{Inject, Singleton}
+
+import dao.mixing._
+import dao.stealth._
 import org.scalatest.{BeforeAndAfterAll, PrivateMethodTester}
 import org.scalatest.matchers.should
 import org.scalatest.propspec.AnyPropSpec
 import org.scalatestplus.play.guice.GuiceOneAppPerSuite
-import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.{Application, Mode}
+import play.api.inject.guice.GuiceApplicationBuilder
 import services.Module
 
-import java.io.File
-import javax.inject.{Inject, Singleton}
-
 @Singleton
-class DaoContext @Inject()(val allDepositsDAO: AllDepositsDAO,
-                           val emissionDAO: EmissionDAO,
-                           val mixStateDAO: MixStateDAO,
-                           val tokenEmissionDAO: TokenEmissionDAO,
-                           val allMixDAO: AllMixDAO,
-                           val fullMixDAO: FullMixDAO,
-                           val mixStateHistoryDAO: MixStateHistoryDAO,
-                           val unspentDepositsDAO: UnspentDepositsDAO,
-                           val covertAddressesDAO: CovertAddressesDAO,
-                           val halfMixDAO: HalfMixDAO,
-                           val mixTransactionsDAO: MixTransactionsDAO,
-                           val withdrawDAO: WithdrawDAO,
-                           val covertDefaultsDAO: CovertDefaultsDAO,
-                           val mixingCovertRequestDAO: MixingCovertRequestDAO,
-                           val mixingGroupRequestDAO: MixingGroupRequestDAO,
-                           val rescanDAO: RescanDAO,
-                           val distributeTransactionsDAO: DistributeTransactionsDAO,
-                           val mixingRequestsDAO: MixingRequestsDAO,
-                           val spentDepositsDAO: SpentDepositsDAO,
-                           val withdrawCovertTokenDAO: WithdrawCovertTokenDAO,
-                           val hopMixDAO: HopMixDAO,
-                           val covertsDAO: CovertsDAO
-                          )
+class DaoContext @Inject() (
+  val allDepositsDAO: AllDepositsDAO,
+  val emissionDAO: EmissionDAO,
+  val mixStateDAO: MixStateDAO,
+  val tokenEmissionDAO: TokenEmissionDAO,
+  val allMixDAO: AllMixDAO,
+  val fullMixDAO: FullMixDAO,
+  val mixStateHistoryDAO: MixStateHistoryDAO,
+  val unspentDepositsDAO: UnspentDepositsDAO,
+  val covertAddressesDAO: CovertAddressesDAO,
+  val halfMixDAO: HalfMixDAO,
+  val mixTransactionsDAO: MixTransactionsDAO,
+  val withdrawDAO: WithdrawDAO,
+  val covertDefaultsDAO: CovertDefaultsDAO,
+  val mixingCovertRequestDAO: MixingCovertRequestDAO,
+  val mixingGroupRequestDAO: MixingGroupRequestDAO,
+  val rescanDAO: RescanDAO,
+  val distributeTransactionsDAO: DistributeTransactionsDAO,
+  val mixingRequestsDAO: MixingRequestsDAO,
+  val spentDepositsDAO: SpentDepositsDAO,
+  val withdrawCovertTokenDAO: WithdrawCovertTokenDAO,
+  val hopMixDAO: HopMixDAO,
+  val covertsDAO: CovertsDAO,
+  val stealthDAO: StealthDAO,
+  val outputDAO: OutputDAO,
+  val tokenInformationDAO: TokenInformationDAO,
+  val extractedBlockDAO: ExtractedBlockDAO,
+)
 
-
-
-class TestSuite extends AnyPropSpec with should.Matchers with GuiceOneAppPerSuite with BeforeAndAfterAll with PrivateMethodTester {
+class TestSuite
+  extends AnyPropSpec
+  with should.Matchers
+  with GuiceOneAppPerSuite
+  with BeforeAndAfterAll
+  with PrivateMethodTester {
   implicit override lazy val app: Application = new GuiceApplicationBuilder()
     .in(Mode.Test)
     .disable[Module]
     .build
 
-  protected def daoContext(implicit app: Application): DaoContext = {
+  protected def daoContext(implicit app: Application): DaoContext =
     Application.instanceCache[DaoContext].apply(app)
-  }
 
   override protected def afterAll(): Unit = {
     // delete db after test done.

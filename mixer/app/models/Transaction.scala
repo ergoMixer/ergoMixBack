@@ -1,20 +1,27 @@
 package models
 
-import io.circe.generic.semiauto.deriveDecoder
-import io.circe.{Decoder, HCursor, Json, parser}
+import java.nio.charset.StandardCharsets
+
+import io.circe.{parser, Decoder, HCursor, Json}
 import io.circe.generic.auto._
+import io.circe.generic.semiauto.deriveDecoder
 import io.circe.syntax._
 import mixinterface.TokenErgoMix
 import models.Box.{FullMixBox, HalfMixBox, InBox, OutBox}
 import org.ergoplatform.appkit.SignedTransaction
 
-import java.nio.charset.StandardCharsets
-
 object Transaction {
 
   case class SpendTx(inboxes: Seq[InBox], outboxes: Seq[OutBox], id: String, address: String, timestamp: Long)
 
-  case class WithdrawTx(mixId: String, txId: String, time: Long, boxId: String, txBytes: Array[Byte], additionalInfo: String = "") {
+  case class WithdrawTx(
+    mixId: String,
+    txId: String,
+    time: Long,
+    boxId: String,
+    txBytes: Array[Byte],
+    additionalInfo: String = ""
+  ) {
     override def toString: String = new String(txBytes, StandardCharsets.UTF_16)
 
     def getFeeBox: Option[String] = { // returns fee box used in this tx if available
@@ -25,27 +32,32 @@ object Transaction {
 
     def getJson: Json = io.circe.parser.parse(toString).getOrElse(Json.Null)
 
-    def getDataInputs: Seq[String] = {
-      getJson.hcursor.downField("dataInputs").as[Seq[Json]].getOrElse(Seq())
+    def getDataInputs: Seq[String] =
+      getJson.hcursor
+        .downField("dataInputs")
+        .as[Seq[Json]]
+        .getOrElse(Seq())
         .map(js => js.hcursor.downField("boxId").as[String].getOrElse(null))
-    }
 
-    def getOutputs: Seq[String] = {
-      getJson.hcursor.downField("outputs").as[Seq[Json]].getOrElse(Seq())
+    def getOutputs: Seq[String] =
+      getJson.hcursor
+        .downField("outputs")
+        .as[Seq[Json]]
+        .getOrElse(Seq())
         .map(js => js.hcursor.downField("boxId").as[String].getOrElse(null))
-    }
 
-    def getInputs: Seq[String] = {
-      getJson.hcursor.downField("inputs").as[Seq[Json]].getOrElse(Seq())
+    def getInputs: Seq[String] =
+      getJson.hcursor
+        .downField("inputs")
+        .as[Seq[Json]]
+        .getOrElse(Seq())
         .map(js => js.hcursor.downField("boxId").as[String].getOrElse(null))
-    }
   }
 
-  implicit val decodeArrayByte: Decoder[Array[Byte]] = (c: HCursor) => for {
-    s <- c.as[String]
-  } yield {
-    s.getBytes("utf-16")
-  }
+  implicit val decodeArrayByte: Decoder[Array[Byte]] = (c: HCursor) =>
+    for {
+      s <- c.as[String]
+    } yield s.getBytes("utf-16")
 
   object CreateWithdrawTx {
     def apply(a: Array[Any]): WithdrawTx = {
@@ -62,12 +74,11 @@ object Transaction {
 
     implicit val withdrawTxDecoder: Decoder[WithdrawTx] = deriveDecoder[WithdrawTx]
 
-    def apply(jsonString: String): WithdrawTx = {
+    def apply(jsonString: String): WithdrawTx =
       parser.decode[WithdrawTx](jsonString) match {
-        case Left(e) => throw new Exception(s"Error while parsing WithdrawTx from Json: $e")
+        case Left(e)      => throw new Exception(s"Error while parsing WithdrawTx from Json: $e")
         case Right(asset) => asset
       }
-    }
   }
 
   case class MixTransaction(boxId: String, txId: String, txBytes: Array[Byte]) {
@@ -85,7 +96,14 @@ object Transaction {
     }
   }
 
-  case class DistributeTx(mixGroupId: String, txId: String, order: Int, time: Long, txBytes: Array[Byte], inputs: String) {
+  case class DistributeTx(
+    mixGroupId: String,
+    txId: String,
+    order: Int,
+    time: Long,
+    txBytes: Array[Byte],
+    inputs: String
+  ) {
     override def toString: String = new String(txBytes, StandardCharsets.UTF_16)
   }
 
@@ -119,12 +137,11 @@ object Transaction {
       )
     }
 
-    private def parseTx(txBytes: Array[Byte]) = {
+    private def parseTx(txBytes: Array[Byte]) =
       parser.parse(new String(txBytes, "utf-16")) match {
         case Right(txJson) => txJson
-        case Left(_) => Json.Null
+        case Left(_)       => Json.Null
       }
-    }
   }
 
   case class HalfMixTx(tx: SignedTransaction)(implicit ergoMix: TokenErgoMix) {
@@ -133,12 +150,21 @@ object Transaction {
   }
 
   case class FullMixTx(tx: SignedTransaction)(implicit ergoMix: TokenErgoMix) {
-    val getFullMixBoxes: (FullMixBox, FullMixBox) = (FullMixBox(tx.getOutputsToSpend.get(0)), FullMixBox(tx.getOutputsToSpend.get(1)))
+    val getFullMixBoxes: (FullMixBox, FullMixBox) =
+      (FullMixBox(tx.getOutputsToSpend.get(0)), FullMixBox(tx.getOutputsToSpend.get(1)))
     require(getFullMixBoxes._1.inputBox.getErgoTree == ergoMix.fullMixScriptErgoTree)
     require(getFullMixBoxes._2.inputBox.getErgoTree == ergoMix.fullMixScriptErgoTree)
   }
 
-  case class CovertAssetWithdrawTx(covertId: String, tokenId: String, withdrawAddress: String, createdTime: Long, withdrawStatus: String, txId: String, tx: Array[Byte]) {
+  case class CovertAssetWithdrawTx(
+    covertId: String,
+    tokenId: String,
+    withdrawAddress: String,
+    createdTime: Long,
+    withdrawStatus: String,
+    txId: String,
+    tx: Array[Byte]
+  ) {
     override def toString: String = new String(tx, StandardCharsets.UTF_16)
 
     def getJson: Json = io.circe.parser.parse(toString).getOrElse(Json.Null)

@@ -1,80 +1,90 @@
 package dao
 
+import javax.inject.Inject
+
 import config.MainConfigs
+import dao.mixing._
+import dao.stealth.OutputDAO
 import helpers.ErgoMixerUtils
-import network.BlockExplorer
-import models.Status.MixWithdrawStatus.Withdrawn
 import models.Request.MixRequest
+import models.Status.MixWithdrawStatus.Withdrawn
+import network.BlockExplorer
 import play.api.Logger
 import wallet.WalletHelper
 
-import javax.inject.Inject
-
-class Prune @Inject()(ergoMixerUtils: ErgoMixerUtils, explorer: BlockExplorer,
-                      daoUtils: DAOUtils,
-                      mixingGroupRequestDAO: MixingGroupRequestDAO,
-                      mixingCovertRequestDAO: MixingCovertRequestDAO,
-                      mixingRequestsDAO: MixingRequestsDAO,
-                      withdrawDAO: WithdrawDAO,
-                      distributeTransactionsDAO: DistributeTransactionsDAO,
-                      unspentDepositsDAO: UnspentDepositsDAO,
-                      spentDepositsDAO: SpentDepositsDAO,
-                      mixStateDAO: MixStateDAO,
-                      mixStateHistoryDAO: MixStateHistoryDAO,
-                      halfMixDAO: HalfMixDAO,
-                      fullMixDAO: FullMixDAO,
-                      emissionDAO: EmissionDAO,
-                      tokenEmissionDAO: TokenEmissionDAO,
-                      mixTransactionsDAO: MixTransactionsDAO,
-                      rescanDAO: RescanDAO,
-                      hopMixDAO: HopMixDAO) {
+class Prune @Inject() (
+  ergoMixerUtils: ErgoMixerUtils,
+  explorer: BlockExplorer,
+  daoUtils: DAOUtils,
+  mixingGroupRequestDAO: MixingGroupRequestDAO,
+  mixingCovertRequestDAO: MixingCovertRequestDAO,
+  mixingRequestsDAO: MixingRequestsDAO,
+  withdrawDAO: WithdrawDAO,
+  distributeTransactionsDAO: DistributeTransactionsDAO,
+  unspentDepositsDAO: UnspentDepositsDAO,
+  spentDepositsDAO: SpentDepositsDAO,
+  mixStateDAO: MixStateDAO,
+  mixStateHistoryDAO: MixStateHistoryDAO,
+  halfMixDAO: HalfMixDAO,
+  fullMixDAO: FullMixDAO,
+  emissionDAO: EmissionDAO,
+  tokenEmissionDAO: TokenEmissionDAO,
+  mixTransactionsDAO: MixTransactionsDAO,
+  rescanDAO: RescanDAO,
+  hopMixDAO: HopMixDAO,
+  outputDAO: OutputDAO
+) {
   private val logger: Logger = Logger(this.getClass)
-  private val pruneAfterMilliseconds = MainConfigs.dbPruneAfter * 120L * 1000L // 120 for almost 2 minutes per block mining, 1000 for converting to milliseconds
+  private val pruneAfterMilliseconds =
+    MainConfigs.dbPruneAfter * 120L * 1000L // 120 for almost 2 minutes per block mining, 1000 for converting to milliseconds
 
   /**
    * prunes group mixes and covert mixes
    */
-  def processPrune(): Unit = {
-    try {
+  def processPrune(): Unit =
+    try
       if (MainConfigs.dbPrune) {
         pruneGroupMixes()
         pruneCovertMixes()
+        pruneStealthBoxes()
       }
-    } catch {
+    catch {
       case a: Throwable =>
         logger.error(s"  prune DB: An error occurred. Stacktrace below")
         logger.error(ergoMixerUtils.getStackTraceStr(a))
     }
-  }
 
   /**
    * Will prune group mixes if possible one by one
    */
   def pruneGroupMixes(): Unit = {
     val currentTime = WalletHelper.now
-    val requests = daoUtils.awaitResult(mixingGroupRequestDAO.completed)
-    requests.foreach(req => {
-      val mixes = daoUtils.awaitResult(mixingRequestsDAO.selectByMixGroupId(req.id))
+    val requests    = daoUtils.awaitResult(mixingGroupRequestDAO.completed)
+    requests.foreach { req =>
+      val mixes       = daoUtils.awaitResult(mixingRequestsDAO.selectByMixGroupId(req.id))
       var shouldPrune = mixes.forall(mix => mix.withdrawStatus == Withdrawn.value)
-      mixes.foreach(mix => {
-        val withdrawTime: Long = daoUtils.awaitResult(withdrawDAO.selectCreatedTimeByMixId(mix.id)).getOrElse({
+      mixes.foreach { mix =>
+        val withdrawTime: Long = daoUtils.awaitResult(withdrawDAO.selectCreatedTimeByMixId(mix.id)).getOrElse {
           logger.warn(s"mixId ${mix.id} not found in Withdraw")
           currentTime
-        })
-          shouldPrune &= (currentTime - withdrawTime) >= pruneAfterMilliseconds
-      })
+        }
+        shouldPrune &= (currentTime - withdrawTime) >= pruneAfterMilliseconds
+      }
       if (shouldPrune) {
-        mixes.foreach(mix => {
-          val txId: String = daoUtils.awaitResult(withdrawDAO.selectByMixId(mix.id)).getOrElse(throw new Exception(s"mixId ${mix.id} not found in Withdraw")).txId
+        mixes.foreach { mix =>
+          val txId: String = daoUtils
+            .awaitResult(withdrawDAO.selectByMixId(mix.id))
+            .getOrElse(throw new Exception(s"mixId ${mix.id} not found in Withdraw"))
+            .txId
           val numConf = explorer.getTxNumConfirmations(txId)
           shouldPrune &= numConf >= MainConfigs.dbPruneAfter
-        })
+        }
       }
       if (shouldPrune) {
         logger.info(s"  will prune group mix ${req.id}")
         deleteGroupMix(req.id)
       }
-    })
+    }
   }
 
   /**
@@ -82,33 +92,48 @@ class Prune @Inject()(ergoMixerUtils: ErgoMixerUtils, explorer: BlockExplorer,
    */
   def pruneCovertMixes(): Unit = {
     val currentTime = WalletHelper.now
-    val requests = daoUtils.awaitResult(mixingCovertRequestDAO.all)
-    requests.foreach(req => {
+    val requests    = daoUtils.awaitResult(mixingCovertRequestDAO.all)
+    requests.foreach { req =>
       val mixes = daoUtils.awaitResult(mixingRequestsDAO.selectAllByWithdrawStatus(req.id, Withdrawn.value))
-      mixes.foreach(mix => {
-        val withdrawTime: Long = daoUtils.awaitResult(withdrawDAO.selectCreatedTimeByMixId(mix.id)).getOrElse({
+      mixes.foreach { mix =>
+        val withdrawTime: Long = daoUtils.awaitResult(withdrawDAO.selectCreatedTimeByMixId(mix.id)).getOrElse {
           logger.warn(s"mixId ${mix.id} not found in Withdraw")
           currentTime
-        })
+        }
         if ((currentTime - withdrawTime) >= pruneAfterMilliseconds) {
-          val txId: String = daoUtils.awaitResult(withdrawDAO.selectByMixId(mix.id)).getOrElse(throw new Exception(s"mixId ${mix.id} not found in Withdraw")).txId
+          val txId: String = daoUtils
+            .awaitResult(withdrawDAO.selectByMixId(mix.id))
+            .getOrElse(throw new Exception(s"mixId ${mix.id} not found in Withdraw"))
+            .txId
           val numConf = explorer.getTxNumConfirmations(txId)
           if (numConf >= MainConfigs.dbPruneAfter) {
             logger.info(s"  will prune covert mix box ${mix.id}")
             deleteMixBox(mix)
           }
         }
-      })
+      }
       // pruning distributed transactions that are mined and have been confirmed at least dbPruneAfter
-      val distributedTxs = daoUtils.awaitResult(distributeTransactionsDAO.zeroChainByMixGroupIdAndTime(req.id, currentTime - pruneAfterMilliseconds))
-      distributedTxs.foreach(tx => {
+      val distributedTxs = daoUtils.awaitResult(
+        distributeTransactionsDAO.zeroChainByMixGroupIdAndTime(req.id, currentTime - pruneAfterMilliseconds)
+      )
+      distributedTxs.foreach { tx =>
         val numConf = explorer.getTxNumConfirmations(tx.txId)
         if (numConf >= MainConfigs.dbPruneAfter) {
           logger.info(s"  will prune distributed tx of covert ${req.id}, txId: ${tx.txId}, confNum: $numConf")
           distributeTransactionsDAO.delete(tx.txId)
         }
-      })
-    })
+      }
+    }
+  }
+
+  /**
+   * will prune stealth boxes one by one if possible
+   */
+  def pruneStealthBoxes(): Unit = {
+    val currentHeight = explorer.getHeight
+    val affectedNumber =
+      daoUtils.awaitResult(outputDAO.pruneSpendOutputsAfterCreationHeight(currentHeight - MainConfigs.dbPruneAfter))
+    if (affectedNumber > 0) logger.info(s"  pruned $affectedNumber spent outputs of stealth")
   }
 
   def deleteMixBox(mix: MixRequest): Unit = {
@@ -122,14 +147,14 @@ class Prune @Inject()(ergoMixerUtils: ErgoMixerUtils, explorer: BlockExplorer,
 
     val halfMixBoxId = halfMixDAO.boxIdByMixId(mix.id)
     val fullMixBoxId = fullMixDAO.boxIdByMixId(mix.id)
-    mixTransactionsDAO.delete(daoUtils.awaitResult(halfMixBoxId).getOrElse({
+    mixTransactionsDAO.delete(daoUtils.awaitResult(halfMixBoxId).getOrElse {
       logger.warn(s"halfMixBoxId $halfMixBoxId not found in mixTransaction")
       ""
-    }))
-    mixTransactionsDAO.delete(daoUtils.awaitResult(fullMixBoxId).getOrElse({
+    })
+    mixTransactionsDAO.delete(daoUtils.awaitResult(fullMixBoxId).getOrElse {
       logger.warn(s"fullMixBoxId $fullMixBoxId not found in mixTransaction")
       ""
-    }))
+    })
 
     halfMixDAO.deleteWithArchive(mix.id)
     fullMixDAO.deleteWithArchive(mix.id)
@@ -151,8 +176,6 @@ class Prune @Inject()(ergoMixerUtils: ErgoMixerUtils, explorer: BlockExplorer,
     mixingGroupRequestDAO.delete(groupId)
     mixingRequestsDAO.deleteByGroupId(groupId)
     distributeTransactionsDAO.deleteByGroupId(groupId)
-    mixes.foreach(mix => {
-      deleteMixBox(mix)
-    })
+    mixes.foreach(mix => deleteMixBox(mix))
   }
 }

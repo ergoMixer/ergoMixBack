@@ -1,25 +1,39 @@
 package models
 
 import config.MainConfigs
+import io.circe.{parser, Decoder}
 import io.circe.generic.auto._
 import io.circe.generic.semiauto.deriveDecoder
 import io.circe.syntax._
-import io.circe.{Decoder, parser}
 import models.Box.MixingBox
 import models.Models.CovertAsset
 import models.Status.MixStatus
 
 object Request {
 
-  case class MixRequest(id: String, groupId: String, amount: Long, numRounds: Int, mixStatus: MixStatus, createdTime: Long, withdrawAddress: String, depositAddress: String, depositCompleted: Boolean, neededAmount: Long, numToken: Int, withdrawStatus: String, mixingTokenAmount: Long, neededTokenAmount: Long, tokenId: String) {
-
+  case class MixRequest(
+    id: String,
+    groupId: String,
+    amount: Long,
+    numRounds: Int,
+    mixStatus: MixStatus,
+    createdTime: Long,
+    withdrawAddress: String,
+    depositAddress: String,
+    depositCompleted: Boolean,
+    neededAmount: Long,
+    numToken: Int,
+    withdrawStatus: String,
+    mixingTokenAmount: Long,
+    neededTokenAmount: Long,
+    tokenId: String
+  ) {
 
     def isErg: Boolean = tokenId.isEmpty
 
-    def getAmount: Long = {
+    def getAmount: Long =
       if (isErg) amount
       else mixingTokenAmount
-    }
 
     override def toString: String = this.asJson.toString
   }
@@ -49,23 +63,23 @@ object Request {
 
   // The only difference between this class and MixRequest is masterKey
   case class MixingRequest(
-                            id: String,
-                            groupId: String,
-                            amount: Long,
-                            numRounds: Int,
-                            mixStatus: MixStatus,
-                            createdTime: Long,
-                            withdrawAddress: String,
-                            depositAddress: String,
-                            depositCompleted: Boolean,
-                            neededAmount: Long,
-                            numToken: Int,
-                            withdrawStatus: String,
-                            mixingTokenAmount: Long,
-                            neededTokenAmount: Long,
-                            tokenId: String,
-                            masterKey: BigInt,
-                          ) {
+    id: String,
+    groupId: String,
+    amount: Long,
+    numRounds: Int,
+    mixStatus: MixStatus,
+    createdTime: Long,
+    withdrawAddress: String,
+    depositAddress: String,
+    depositCompleted: Boolean,
+    neededAmount: Long,
+    numToken: Int,
+    withdrawStatus: String,
+    mixingTokenAmount: Long,
+    neededTokenAmount: Long,
+    tokenId: String,
+    masterKey: BigInt,
+  ) {
 
     def toMixRequest: MixRequest = MixRequest(
       id,
@@ -111,34 +125,44 @@ object Request {
 
     implicit val mixingRequestDecoder: Decoder[MixingRequest] = deriveDecoder[MixingRequest]
 
-    def apply(jsonString: String): MixingRequest = {
+    def apply(jsonString: String): MixingRequest =
       parser.decode[MixingRequest](jsonString) match {
-        case Left(e) => throw new Exception(s"Error while parsing MixingRequest from Json: $e")
+        case Left(e)    => throw new Exception(s"Error while parsing MixingRequest from Json: $e")
         case Right(req) => req
       }
-    }
   }
 
-  case class MixCovertRequest(nameCovert: String = "", id: String, createdTime: Long, depositAddress: String, numRounds: Int, isManualCovert: Boolean, masterKey: BigInt) {
-
+  case class MixCovertRequest(
+    nameCovert: String = "",
+    id: String,
+    createdTime: Long,
+    depositAddress: String,
+    numRounds: Int,
+    isManualCovert: Boolean,
+    masterKey: BigInt
+  ) {
 
     def getMinNeeded(ergRing: Long, tokenRing: Long): (Long, Long) = { // returns what is needed to distribute
       val needed = MixingBox.getPrice(ergRing, tokenRing, numRounds)
       (needed._1 + MainConfigs.distributeFee, needed._2)
     }
 
-    def getMixingNeed(ergRing: Long, tokenRing: Long): (Long, Long) = { // returns what is needed for a single mix box
+    def getMixingNeed(ergRing: Long, tokenRing: Long): (Long, Long) = // returns what is needed for a single mix box
       MixingBox.getPrice(ergRing, tokenRing, numRounds)
-    }
 
-    def toJson(assets: Seq[CovertAsset], currentMixing: Map[String, Long] = Map.empty, runningMixing: Map[String, Long] = Map.empty): String = {
+    def toJson(
+      assets: Seq[CovertAsset],
+      currentMixing: Map[String, Long] = Map.empty,
+      runningMixing: Map[String, Long] = Map.empty
+    ): String = {
       val sortedAssets = assets.sortBy(_.lastActivity).reverse.sortBy(!_.isErg).sortBy(_.ring == 0)
-      val assetJsons = sortedAssets.map(asset => {
-        val curMixingAmount = currentMixing.getOrElse(asset.tokenId, 0L)
+      val assetJsons = sortedAssets.map { asset =>
+        val curMixingAmount     = currentMixing.getOrElse(asset.tokenId, 0L)
         val runningMixingAmount = runningMixing.getOrElse(asset.tokenId, 0L)
-        if (asset.isErg) asset.toJson(MixingBox.getPrice(asset.ring, 0, numRounds)._1, curMixingAmount, runningMixingAmount)
+        if (asset.isErg)
+          asset.toJson(MixingBox.getPrice(asset.ring, 0, numRounds)._1, curMixingAmount, runningMixingAmount)
         else asset.toJson(MixingBox.getTokenPrice(asset.ring), curMixingAmount, runningMixingAmount)
-      })
+      }
       s"""{
          |  "nameCovert": "$nameCovert",
          |  "id": "$id",
@@ -167,19 +191,30 @@ object Request {
 
     implicit val mixCovertDecoder: Decoder[MixCovertRequest] = deriveDecoder[MixCovertRequest]
 
-    def apply(jsonString: String): MixCovertRequest = {
+    def apply(jsonString: String): MixCovertRequest =
       parser.decode[MixCovertRequest](jsonString) match {
-        case Left(e) => throw new Exception(s"Error while parsing MixCovertRequest from Json: $e")
+        case Left(e)    => throw new Exception(s"Error while parsing MixCovertRequest from Json: $e")
         case Right(req) => req
       }
-    }
   }
 
-  //ixGroupIdCol, amountCol, mixStatusCol, createdTimeCol, depositAddressCol, depositCompletedCol
-  case class MixGroupRequest(id: String, neededAmount: Long, status: String, createdTime: Long, depositAddress: String, doneDeposit: Long, tokenDoneDeposit: Long, mixingAmount: Long, mixingTokenAmount: Long, neededTokenAmount: Long, tokenId: String, masterKey: BigInt) {
+  // ixGroupIdCol, amountCol, mixStatusCol, createdTimeCol, depositAddressCol, depositCompletedCol
+  case class MixGroupRequest(
+    id: String,
+    neededAmount: Long,
+    status: String,
+    createdTime: Long,
+    depositAddress: String,
+    doneDeposit: Long,
+    tokenDoneDeposit: Long,
+    mixingAmount: Long,
+    mixingTokenAmount: Long,
+    neededTokenAmount: Long,
+    tokenId: String,
+    masterKey: BigInt
+  ) {
 
-
-    def toJson(statJson: String = null): String = {
+    def toJson(statJson: String = null): String =
       s"""
          |{
          |  "id": "$id",
@@ -196,7 +231,6 @@ object Request {
          |  "groupStat": $statJson
          |}
          |""".stripMargin
-    }
   }
 
   object CreateMixGroupRequest {
@@ -220,12 +254,11 @@ object Request {
 
     implicit val mixGroupRequestDecoder: Decoder[MixGroupRequest] = deriveDecoder[MixGroupRequest]
 
-    def apply(jsonString: String): MixGroupRequest = {
+    def apply(jsonString: String): MixGroupRequest =
       parser.decode[MixGroupRequest](jsonString) match {
-        case Left(e) => throw new Exception(s"Error while parsing MixGroupRequest from Json: $e")
+        case Left(e)      => throw new Exception(s"Error while parsing MixGroupRequest from Json: $e")
         case Right(asset) => asset
       }
-    }
   }
 
 }

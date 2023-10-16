@@ -13,19 +13,18 @@ import org.scalatestplus.mockito.MockitoSugar.mock
 import play.api.db.slick.DatabaseConfigProvider
 import testHandlers.{TestSuite, WithdrawMixerDataset}
 
-class WithdrawMixerSpec
-  extends TestSuite {
+class WithdrawMixerSpec extends TestSuite {
 
   // Defining WithdrawMixer class parameters
-  val networkUtils = new MockedNetworkUtils
-  val blockExplorer = new MockedBlockExplorer
+  val networkUtils      = new MockedNetworkUtils
+  val blockExplorer     = new MockedBlockExplorer
   val blockchainContext = new MockedBlockchainContext
 
   val ergoMixerUtils = mock[ErgoMixerUtils]
   when(ergoMixerUtils.getStackTraceStr(any())).thenReturn("MockedErgoMixerUtils: getStackTrace requested!")
 
   val mockedDBConfigProvider = mock[DatabaseConfigProvider]
-  val daoUtils = new DAOUtils(mockedDBConfigProvider)
+  val daoUtils               = new DAOUtils(mockedDBConfigProvider)
 
   private val dataset = WithdrawMixerDataset
 
@@ -48,12 +47,14 @@ class WithdrawMixerSpec
    *    mixingRequestsDAO
    *    mixingGroupRequestDAO
    */
-  property("processWithdraw should set mixRequest as Withdrawn if withdraw transaction confirmed enough and set group as complete if group is done") {
+  property(
+    "processWithdraw should set mixRequest as Withdrawn if withdraw transaction confirmed enough and set group as complete if group is done"
+  ) {
     // get test data from dataset
-    val testSample = dataset.confirmedTx_dbData
-    val mixRequest: MixingRequest = testSample._1
+    val testSample                       = dataset.confirmedTx_dbData
+    val mixRequest: MixingRequest        = testSample._1
     val mixGroupRequest: MixGroupRequest = testSample._2
-    val withdrawTx: WithdrawTx = testSample._3
+    val withdrawTx: WithdrawTx           = testSample._3
 
     // make dependency tables ready before test
     daoContext.mixingRequestsDAO.clear
@@ -67,10 +68,12 @@ class WithdrawMixerSpec
     withdrawMixer.processWithdrawals()
 
     // verify change of data in database
-    val db_reqs: Seq[(String, MixStatus, String)] = daoUtils.awaitResult(daoContext.mixingRequestsDAO.all).map(req => (req.id, req.mixStatus, req.withdrawStatus))
-    db_reqs should contain ((mixRequest.id, MixStatus.Complete, "withdrawn"))
-    val db_groups: Seq[(String, String)] = daoUtils.awaitResult(daoContext.mixingGroupRequestDAO.all).map(req => (req.id, req.status))
-    db_groups should contain ((mixGroupRequest.id, "complete"))
+    val db_reqs: Seq[(String, MixStatus, String)] =
+      daoUtils.awaitResult(daoContext.mixingRequestsDAO.all).map(req => (req.id, req.mixStatus, req.withdrawStatus))
+    db_reqs should contain((mixRequest.id, MixStatus.Complete, "withdrawn"))
+    val db_groups: Seq[(String, String)] =
+      daoUtils.awaitResult(daoContext.mixingGroupRequestDAO.all).map(req => (req.id, req.status))
+    db_groups should contain((mixGroupRequest.id, "complete"))
   }
 
   /**
@@ -83,12 +86,14 @@ class WithdrawMixerSpec
    *    withdrawDAO
    *    mixingRequestsDAO
    */
-  property("processInitiateHops should set mixRequest as Complete and Withdrawn if withdraw transaction confirmed enough and also insert hopMix and delete the withdrawTx") {
+  property(
+    "processInitiateHops should set mixRequest as Complete and Withdrawn if withdraw transaction confirmed enough and also insert hopMix and delete the withdrawTx"
+  ) {
     // get test data from dataset
-    val testSample = dataset.confirmedTxInitiateHop_dbData
+    val testSample                = dataset.confirmedTxInitiateHop_dbData
     val mixRequest: MixingRequest = testSample._1
-    val withdrawTx: WithdrawTx = testSample._2
-    val hopMix: HopMix = testSample._3
+    val withdrawTx: WithdrawTx    = testSample._2
+    val hopMix: HopMix            = testSample._3
 
     // make dependency tables ready before test
     daoUtils.awaitResult(daoContext.hopMixDAO.clear)
@@ -97,19 +102,21 @@ class WithdrawMixerSpec
     daoUtils.awaitResult(daoContext.mixingRequestsDAO.insert(mixRequest))
     daoUtils.awaitResult(daoContext.withdrawDAO.insert(withdrawTx))
 
-    val withdrawMixer = createWithdrawMixerObject
+    val withdrawMixer             = createWithdrawMixerObject
     val processInitiateHopsMethod = PrivateMethod[Unit]('processInitiateHops)
-    networkUtils.getMocked.usingClient {implicit ctx =>
-      withdrawMixer invokePrivate processInitiateHopsMethod(withdrawTx, ctx)
+    networkUtils.getMocked.usingClient { implicit ctx =>
+      withdrawMixer.invokePrivate(processInitiateHopsMethod(withdrawTx, ctx))
     }
 
     // verify change of data in database
-    val db_reqs: Seq[(String, MixStatus, String)] = daoUtils.awaitResult(daoContext.mixingRequestsDAO.all).map(req => (req.id, req.mixStatus, req.withdrawStatus))
-    db_reqs should contain ((mixRequest.id, MixStatus.Complete, MixWithdrawStatus.UnderHop.value))
+    val db_reqs: Seq[(String, MixStatus, String)] =
+      daoUtils.awaitResult(daoContext.mixingRequestsDAO.all).map(req => (req.id, req.mixStatus, req.withdrawStatus))
+    db_reqs should contain((mixRequest.id, MixStatus.Complete, MixWithdrawStatus.UnderHop.value))
     val db_txs: Seq[String] = daoUtils.awaitResult(daoContext.withdrawDAO.all).map(_.mixId)
     db_txs shouldBe empty
-    val db_hops: Seq[(String, Int, String)] = daoUtils.awaitResult(daoContext.hopMixDAO.all).map(hop => (hop.mixId, hop.round, hop.boxId))
-    db_hops should contain ((hopMix.mixId, hopMix.round, hopMix.boxId))
+    val db_hops: Seq[(String, Int, String)] =
+      daoUtils.awaitResult(daoContext.hopMixDAO.all).map(hop => (hop.mixId, hop.round, hop.boxId))
+    db_hops should contain((hopMix.mixId, hopMix.round, hopMix.boxId))
   }
 
   /**
@@ -128,10 +135,10 @@ class WithdrawMixerSpec
     daoUtils.awaitResult(daoContext.withdrawDAO.clear)
     daoUtils.awaitResult(daoContext.withdrawDAO.insert(withdrawTx))
 
-    val withdrawMixer = createWithdrawMixerObject
+    val withdrawMixer             = createWithdrawMixerObject
     val processInitiateHopsMethod = PrivateMethod[Unit]('processInitiateHops)
-    implicit val ctx = blockchainContext.getMocked
-    withdrawMixer invokePrivate processInitiateHopsMethod(withdrawTx, ctx)
+    implicit val ctx              = blockchainContext.getMocked
+    withdrawMixer.invokePrivate(processInitiateHopsMethod(withdrawTx, ctx))
 
     // verify change of data in database
     val db_txs: Seq[String] = daoUtils.awaitResult(daoContext.withdrawDAO.all).map(_.mixId)

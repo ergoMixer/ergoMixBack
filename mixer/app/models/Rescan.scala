@@ -1,8 +1,8 @@
 package models
 
-import io.circe.generic.semiauto.deriveDecoder
-import io.circe.{Decoder, parser}
+import io.circe.{parser, Decoder}
 import io.circe.generic.auto._
+import io.circe.generic.semiauto.deriveDecoder
 import io.circe.syntax._
 
 object Rescan {
@@ -18,9 +18,9 @@ object Rescan {
         i.next().asInstanceOf[Int],
         i.next().asInstanceOf[Boolean],
         i.next().asInstanceOf[String],
-        try {
+        try
           Option(i.next().asInstanceOf[String])
-        } catch {
+        catch {
           case _: Throwable => Option.empty[String]
         }
       )
@@ -28,12 +28,11 @@ object Rescan {
 
     implicit val followedMixDecoder: Decoder[FollowedMix] = deriveDecoder[FollowedMix]
 
-    def apply(jsonString: String): FollowedMix = {
+    def apply(jsonString: String): FollowedMix =
       parser.decode[FollowedMix](jsonString) match {
-        case Left(e) => throw new Exception(s"Error while parsing FollowedMix from Json: $e")
+        case Left(e)      => throw new Exception(s"Error while parsing FollowedMix from Json: $e")
         case Right(asset) => asset
       }
-    }
   }
 
   case class FollowedHop(round: Int, hopMixBoxId: String) {
@@ -51,12 +50,11 @@ object Rescan {
 
     implicit val followedHopDecoder: Decoder[FollowedHop] = deriveDecoder[FollowedHop]
 
-    def apply(jsonString: String): FollowedHop = {
+    def apply(jsonString: String): FollowedHop =
       parser.decode[FollowedHop](jsonString) match {
-        case Left(e) => throw new Exception(s"Error while parsing FollowedHop from Json: $e")
+        case Left(e)      => throw new Exception(s"Error while parsing FollowedHop from Json: $e")
         case Right(asset) => asset
       }
-    }
   }
 
   case class FollowedWithdraw(txId: String, boxId: String) {
@@ -74,15 +72,21 @@ object Rescan {
 
     implicit val followedWithdrawDecoder: Decoder[FollowedWithdraw] = deriveDecoder[FollowedWithdraw]
 
-    def apply(jsonString: String): FollowedWithdraw = {
+    def apply(jsonString: String): FollowedWithdraw =
       parser.decode[FollowedWithdraw](jsonString) match {
-        case Left(e) => throw new Exception(s"Error while parsing FollowedWithdraw from Json: $e")
+        case Left(e)      => throw new Exception(s"Error while parsing FollowedWithdraw from Json: $e")
         case Right(asset) => asset
       }
-    }
   }
 
-  case class PendingRescan(mixId: String, time: Long, round: Int, goBackward: Boolean, boxType: String, mixBoxId: String) {
+  case class PendingRescan(
+    mixId: String,
+    time: Long,
+    round: Int,
+    goBackward: Boolean,
+    boxType: String,
+    mixBoxId: String
+  ) {
     override def toString: String = this.asJson.toString
   }
 

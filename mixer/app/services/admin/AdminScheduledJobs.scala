@@ -1,22 +1,26 @@
 package services.admin
 
+import javax.inject.Inject
+
+import scala.util.Try
+
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import mixer.{AdminCharger, AdminIncome, AdminParams, AdminStat}
 import network.NetworkUtils
 import play.api.Logger
 import services.admin.AdminScheduledJobs.{AdminChargerJob, AdminIncomeJob, AdminParamJob, RefreshAdminStatsJob}
 
-import javax.inject.Inject
-import scala.util.Try
-
-
-class AdminJobs @Inject()(val networkUtils: NetworkUtils, val adminStat: AdminStat, val adminParams: AdminParams,
-                          val adminIncome: AdminIncome, val adminCharger: AdminCharger)
+class AdminJobs @Inject() (
+  val networkUtils: NetworkUtils,
+  val adminStat: AdminStat,
+  val adminParams: AdminParams,
+  val adminIncome: AdminIncome,
+  val adminCharger: AdminCharger
+)
 
 class AdminScheduledJobs(mixerJobs: AdminJobs) extends Actor with ActorLogging {
   private val logger: Logger = Logger(this.getClass)
   import mixerJobs.networkUtils
-
 
   override def receive: Receive = {
     case RefreshAdminStatsJob =>
@@ -30,7 +34,7 @@ class AdminScheduledJobs(mixerJobs: AdminJobs) extends Actor with ActorLogging {
     case AdminParamJob =>
       logger.info("Admin Params: jobs started")
 
-      if(networkUtils.clientsAreOk) {
+      if (networkUtils.clientsAreOk) {
         mixerJobs.adminParams.handleParams()
       }
 
@@ -39,7 +43,7 @@ class AdminScheduledJobs(mixerJobs: AdminJobs) extends Actor with ActorLogging {
     case AdminChargerJob =>
       logger.info("Admin Charger: jobs started")
 
-      if(networkUtils.clientsAreOk) {
+      if (networkUtils.clientsAreOk) {
         mixerJobs.adminCharger.handleCharging()
       }
 
@@ -48,7 +52,7 @@ class AdminScheduledJobs(mixerJobs: AdminJobs) extends Actor with ActorLogging {
     case AdminIncomeJob =>
       logger.info("Admin Income: jobs started")
 
-      if(networkUtils.clientsAreOk) {
+      if (networkUtils.clientsAreOk) {
         mixerJobs.adminIncome.handleIncome()
       }
 

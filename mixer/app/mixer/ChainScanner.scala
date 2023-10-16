@@ -1,17 +1,18 @@
 package mixer
 
-import config.MainConfigs
-
 import javax.inject.Inject
+
+import scala.collection.mutable
+import scala.compat.Platform
+
+import config.MainConfigs
 import models.Box.OutBox
 import models.Models.EntityInfo
 import network.{BlockExplorer, NetworkUtils}
 import special.collection.Coll
 
-import scala.collection.mutable
-import scala.compat.Platform
+class ChainScanner @Inject() (networkUtils: NetworkUtils, explorer: BlockExplorer) {
 
-class ChainScanner @Inject()(networkUtils: NetworkUtils, explorer: BlockExplorer) {
   /**
    * scans blockchain to extract ring statistics, # of half-boxes, # of mixes in the last 24 h
    *
@@ -19,11 +20,8 @@ class ChainScanner @Inject()(networkUtils: NetworkUtils, explorer: BlockExplorer
    */
   def ringStats(): mutable.Map[String, mutable.Map[Long, mutable.Map[String, Long]]] = {
     val result = mutable.Map.empty[String, mutable.Map[Long, mutable.Map[String, Long]]]
-    // Limit for get transaction from explorer
-    val limitGetTransaction = MainConfigs.limitGetTransaction
-    val periodTime: Long = Platform.currentTime - MainConfigs.periodTimeRings
     // Get full Box address
-    val ergoMix = networkUtils.tokenErgoMix.get
+    val ergoMix        = networkUtils.tokenErgoMix.get
     val fullBoxAddress = ergoMix.fullMixAddress.toString
     val halfBoxAddress = ergoMix.halfMixAddress.toString
     // Get unspent halfMixBox boxes
@@ -40,45 +38,56 @@ class ChainScanner @Inject()(networkUtils: NetworkUtils, explorer: BlockExplorer
       else {
         if (!result(coin).contains(ring)) result(coin)(ring) = mutable.Map("unspentHalf" -> 0, "spentHalf" -> 0)
         val cur = result(coin)(ring)
-        result(coin).update(ring, mutable.Map(
-          "unspentHalf" -> (cur("unspentHalf") + 1),
-          "spentHalf" -> cur("spentHalf")
-        ))
+        result(coin).update(
+          ring,
+          mutable.Map(
+            "unspentHalf" -> (cur("unspentHalf") + 1),
+            "spentHalf"   -> cur("spentHalf")
+          )
+        )
       }
-      var i = 0
-      var timeFlag: Boolean = true
-      while (timeFlag) {
-        // get transactions for calculate number of spent halfBox in `periodTime`
-        val transactions = explorer.getTransactionsByAddress(fullBoxAddress, limitGetTransaction, i * limitGetTransaction)
-        if (transactions.isEmpty || transactions.length < limitGetTransaction) timeFlag = false
-        // Check time stamp of transactions that there is in periodTime also check address of boxes that equals to halfBoxAddress so add value of boxes to result
-        for (transaction <- transactions.reverse) {
-          val inputs = transaction.inboxes
-          val outs = transaction.outboxes
-          if (periodTime < transaction.timestamp) {
-            val output = outs.find(_.address == fullBoxAddress)
-            if (output.nonEmpty && inputs.exists(_.address == halfBoxAddress)) {
-              var coin = "erg"
-              var ring = output.get.amount
-              if (output.get.tokens.length > 1) {
-                coin = output.get.tokens.last.getId.toString
-                ring = output.get.getToken(coin)
-              }
-              if (!result.contains(coin)) result(coin) = mutable.Map(ring -> mutable.Map("unspentHalf" -> 0, "spentHalf" -> 1))
-              else {
-                if (!result(coin).contains(ring)) result(coin)(ring) = mutable.Map("unspentHalf" -> 0, "spentHalf" -> 0)
-                val cur = result(coin)(ring)
-                result(coin).update(ring, mutable.Map(
-                  "unspentHalf" -> cur("unspentHalf"),
-                  "spentHalf" -> (cur("spentHalf") + 1)
-                ))
-              }
+    }
+    // Limit for get transaction from explorer
+    val limitGetTransaction = MainConfigs.limitGetTransaction
+    val periodTime: Long    = Platform.currentTime - MainConfigs.periodTimeRings
+    var i                   = 0
+    // to fetching boxes in `periodTime (currentTime - periodTimeRings)`
+    var timeFlag: Boolean = true
+    while (timeFlag) {
+      // get transactions for calculate number of spent halfBox in `periodTime`
+      val transactions = explorer.getTransactionsByAddress(fullBoxAddress, limitGetTransaction, i * limitGetTransaction)
+      if (transactions.isEmpty || transactions.length < limitGetTransaction) timeFlag = false
+      // Check time stamp of transactions that there is in periodTime also check address of boxes that equals to halfBoxAddress so add value of boxes to result
+      for (transaction <- transactions.reverse) {
+        val inputs = transaction.inboxes
+        val outs   = transaction.outboxes
+        if (periodTime < transaction.timestamp) {
+          val output = outs.find(_.address == fullBoxAddress)
+          if (output.nonEmpty && inputs.exists(_.address == halfBoxAddress)) {
+            var coin = "erg"
+            var ring = output.get.amount
+            if (output.get.tokens.length > 1) {
+              coin = output.get.tokens.last.getId.toString
+              ring = output.get.getToken(coin)
             }
+            if (!result.contains(coin))
+              result(coin) = mutable.Map(ring -> mutable.Map("unspentHalf" -> 0, "spentHalf" -> 1))
+            else {
+              if (!result(coin).contains(ring)) result(coin)(ring) = mutable.Map("unspentHalf" -> 0, "spentHalf" -> 0)
+              val cur = result(coin)(ring)
+              result(coin).update(
+                ring,
+                mutable.Map(
+                  "unspentHalf" -> cur("unspentHalf"),
+                  "spentHalf"   -> (cur("spentHalf") + 1)
+                )
+              )
+            }
+          }
 
-          } else timeFlag = false
-        }
-        i = i + 1
+        } else timeFlag = false
       }
+      i = i + 1
     }
     result
   }
@@ -91,9 +100,9 @@ class ChainScanner @Inject()(networkUtils: NetworkUtils, explorer: BlockExplorer
   def scanTokens: (Map[Int, Long], Int) = {
     val tokenBoxes: List[OutBox] = networkUtils.getTokenEmissionBoxes()
     if (tokenBoxes.nonEmpty) {
-      val token = tokenBoxes.head
+      val token    = tokenBoxes.head
       val tokenBox = networkUtils.getUnspentBoxById(token.id)
-      var rate = 1000000
+      var rate     = 1000000
       if (tokenBox.getRegisters.size == 2) {
         rate = tokenBox.getRegisters.get(1).getValue.asInstanceOf[Int]
       }
@@ -107,7 +116,6 @@ class ChainScanner @Inject()(networkUtils: NetworkUtils, explorer: BlockExplorer
    *
    * @return list of supported entities
    */
-  def scanParams: Seq[EntityInfo] = {
+  def scanParams: Seq[EntityInfo] =
     networkUtils.getParamBoxes.map(EntityInfo(_))
-  }
 }

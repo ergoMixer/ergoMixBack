@@ -1,5 +1,10 @@
 package services.main
 
+import javax.inject.Inject
+
+import scala.collection.mutable
+import scala.util.Try
+
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import config.MainConfigs
 import config.MainConfigs.readKey
@@ -9,18 +14,22 @@ import mixer.ChainScanner
 import models.Models.EntityInfo
 import network.NetworkUtils
 import play.api.Logger
-import services.main.MainScheduledJobs.{CheckClients, RefreshPoolStats, UpdateRingStats}
+import services.main.MainScheduledJobs._
+import stealth.{FetchTokenInformation, StealthContract, StealthScanner}
 
-import javax.inject.Inject
-import scala.collection.mutable
-import scala.util.Try
-
-
-class MainJobs @Inject()(val prune: Prune, val statScanner: ChainScanner, val networkUtils: NetworkUtils, val trayUtils: TrayUtils)
-
+class MainJobs @Inject() (
+  val prune: Prune,
+  val statScanner: ChainScanner,
+  val networkUtils: NetworkUtils,
+  val trayUtils: TrayUtils,
+  val stealthContract: StealthContract,
+  val stealthScanner: StealthScanner,
+  val fetchTokenInformation: FetchTokenInformation
+)
 
 class MainScheduledJobs(mainJobs: MainJobs) extends Actor with ActorLogging {
   private val logger: Logger = Logger(this.getClass)
+
   import mainJobs.{networkUtils, trayUtils}
 
   override def receive: Receive = {
@@ -32,13 +41,19 @@ class MainScheduledJobs(mainJobs: MainJobs) extends Actor with ActorLogging {
       if (networkUtils.prunedClients.isEmpty) {
         logger.error("there is no node to connect to! will stop mixing until a node is available!")
         if (wasOk) {
-          trayUtils.showNotification("Can not connect to any node!", s"ErgoMixer can not connect to any specified nodes in the config. We stop mixing until the issue is resolved!")
+          trayUtils.showNotification(
+            "Can not connect to any node!",
+            s"ErgoMixer can not connect to any specified nodes in the config. We stop mixing until the issue is resolved!"
+          )
         }
 
       } else {
         if (!wasOk) {
           logger.error("Issue with nodes is resolved, will continue mixing.")
-          trayUtils.showNotification(s"Issue with node connectivity is resolved!", s"ErgoMixer can connect to ${networkUtils.prunedClients.size} nodes, will continue mixing!")
+          trayUtils.showNotification(
+            s"Issue with node connectivity is resolved!",
+            s"ErgoMixer can connect to ${networkUtils.prunedClients.size} nodes, will continue mixing!"
+          )
         }
       }
       logger.info("Check Clients: jobs finished")
@@ -61,7 +76,7 @@ class MainScheduledJobs(mainJobs: MainJobs) extends Actor with ActorLogging {
       val idToParam = mutable.Map.empty[String, EntityInfo]
       mainJobs.statScanner.scanParams.foreach(param => idToParam(param.id) = param)
       MainConfigs.dynamicFeeRate = idToParam.head._2.dynamicFeeRate
-      MainConfigs.params = idToParam
+      MainConfigs.params         = idToParam
 
       logger.info("pruneDB: " + Try(mainJobs.prune.processPrune()))
 
@@ -73,6 +88,34 @@ class MainScheduledJobs(mainJobs: MainJobs) extends Actor with ActorLogging {
       MainConfigs.ringStats = mainJobs.statScanner.ringStats()
 
       logger.info("Updating ring stats: jobs finished")
+
+    case InitBestBlock =>
+      logger.info("Initial best block for scanner of stealth: jobs started")
+
+      Try(mainJobs.stealthScanner.storeBlock())
+
+      logger.info("Initial best block for scanner of stealth: jobs finished")
+
+    case StealthScanner =>
+      logger.info("Scanner of stealth: jobs started")
+
+      Try(mainJobs.stealthScanner.start())
+
+      logger.info("Scanner of stealth: jobs finished")
+
+    case FetchTokenInformation =>
+      logger.info("Fetch Token Information: jobs started")
+
+      Try(mainJobs.fetchTokenInformation.fetchTokenInformation())
+
+      logger.info("Fetch Token Information: jobs finished")
+
+    case SpendStealth =>
+      logger.info("Spending stealth boxes: jobs started")
+
+      networkUtils.usingClient(implicit ctx => Try(mainJobs.stealthContract.spendStealthBoxes()))
+
+      logger.info("Spending stealth boxes: jobs finished")
   }
 }
 
@@ -86,5 +129,13 @@ object MainScheduledJobs {
   case object RefreshPoolStats
 
   case object UpdateRingStats
+
+  case object InitBestBlock
+
+  case object StealthScanner
+
+  case object FetchTokenInformation
+
+  case object SpendStealth
 
 }

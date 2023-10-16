@@ -61,7 +61,7 @@ public class FileMockedErgoClient implements MockedErgoClient {
             node.start();
             explorer.start();
         } catch (IOException e) {
-            throw new ErgoClientException("Cannot start server " + node.toString(), e);
+            throw new ErgoClientException("Cannot start server " + node, e);
         }
 
         HttpUrl baseUrl = node.url("/");
@@ -80,7 +80,7 @@ public class FileMockedErgoClient implements MockedErgoClient {
             explorer.shutdown();
             node.shutdown();
         } catch (IOException e) {
-            throw new ErgoClientException("Cannot shutdown server " + node.toString(), e);
+            throw new ErgoClientException("Cannot shutdown server " + node, e);
         }
         return res;
     }

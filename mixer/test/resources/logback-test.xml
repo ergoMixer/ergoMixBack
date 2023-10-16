@@ -1,6 +1,6 @@
 <configuration>
 
-    <conversionRule conversionWord="coloredLevel" converterClass="play.api.libs.logback.ColoredLevel" />
+    <conversionRule conversionWord="coloredLevel" converterClass="play.api.libs.logback.ColoredLevel"/>
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
@@ -16,25 +16,25 @@
     </appender>
 
     <appender name="ASYNCFILE" class="ch.qos.logback.classic.AsyncAppender">
-        <appender-ref ref="FILE" />
+        <appender-ref ref="FILE"/>
     </appender>
 
     <appender name="ASYNCSTDOUT" class="ch.qos.logback.classic.AsyncAppender">
-        <appender-ref ref="STDOUT" />
+        <appender-ref ref="STDOUT"/>
     </appender>
 
-    <logger name="play" level="OFF" />
-    <logger name="application" level="OFF" />
+    <logger name="play" level="OFF"/>
+    <logger name="application" level="OFF"/>
 
-    <logger name="com.zaxxer.hikari.pool.HikariPool" level="OFF" />
-    <logger name="com.zaxxer.hikari.pool.PoolBase" level="OFF" />
-    <logger name="akka" level="OFF" />
+    <logger name="com.zaxxer.hikari.pool.HikariPool" level="OFF"/>
+    <logger name="com.zaxxer.hikari.pool.PoolBase" level="OFF"/>
+    <logger name="akka" level="OFF"/>
 
-    <logger name="slick" level="OFF" />
+    <logger name="slick" level="OFF"/>
 
     <root level="OFF">
-        <appender-ref ref="ASYNCFILE" />
-        <appender-ref ref="ASYNCSTDOUT" />
+        <appender-ref ref="ASYNCFILE"/>
+        <appender-ref ref="ASYNCSTDOUT"/>
     </root>
 
 </configuration>

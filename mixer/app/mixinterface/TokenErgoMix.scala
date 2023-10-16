@@ -1,16 +1,17 @@
 package mixinterface
 
-import org.ergoplatform.ErgoAddress
 import org.ergoplatform.appkit._
+import org.ergoplatform.ErgoAddress
 import scorex.crypto.hash.Digest32
 import sigmastate.Values.ErgoTree
-import wallet.WalletHelper.{getAddress, getHash}
+import wallet.WalletHelper.{getErgoAddress, getHash}
 
 object TokenErgoMix {
-  val paramAddress: Address = Address.create("9hUjrNWLTXBU4qkGSA6ssCG8Fe7WpPKT5HW4E5zUr3YJ1HSo1rB")
-  val mixerOwner: Address = Address.create("9hoR2npAUVwRGWEa6z1wpeiUAmpCnegCwPVVGZEnZ6Q8w8eeZJb")
-  val mixerIncome: Address = Address.create("9f4bRuh6yjhz4wWuz75ihSJwXHrtGXsZiQWUaHSDRf3Da16dMuf")
-  val tokenId: String = "1a6a8c16e4b1cc9d73d03183565cfb8e79dd84198cb66beeed7d3463e0da2b98"
+  val paramAddress: Address  = Address.create("9hUjrNWLTXBU4qkGSA6ssCG8Fe7WpPKT5HW4E5zUr3YJ1HSo1rB")
+  val mixerOwner: Address    = Address.create("9hoR2npAUVwRGWEa6z1wpeiUAmpCnegCwPVVGZEnZ6Q8w8eeZJb")
+  val mixerIncome: Address   = Address.create("9f4bRuh6yjhz4wWuz75ihSJwXHrtGXsZiQWUaHSDRf3Da16dMuf")
+  val stealthIncome: Address = Address.create("9fDoTdtZ8YaM8wdQCMjtKaVWGJqAE2WPrGYZqe1VV6JHyd3ymBj")
+  val tokenId: String        = "1a6a8c16e4b1cc9d73d03183565cfb8e79dd84198cb66beeed7d3463e0da2b98"
 }
 
 class TokenErgoMix(ctx: BlockchainContext) {
@@ -68,7 +69,6 @@ class TokenErgoMix(ctx: BlockchainContext) {
       |}
       |""".stripMargin
 
-
   val tokenEmissionScript: String =
     """
       |{
@@ -96,6 +96,7 @@ class TokenErgoMix(ctx: BlockchainContext) {
       |  sigmaProp(aliceBuying || bobBuying) || mixerOwner
       |}
       |""".stripMargin
+
   val feeEmissionScript: String =
     """
       |{
@@ -127,45 +128,49 @@ class TokenErgoMix(ctx: BlockchainContext) {
       |""".stripMargin
 
   val feeEmissionContract: ErgoContract = ctx.compileContract(
-    ConstantsBuilder.create()
+    ConstantsBuilder
+      .create()
       .item("mixerOwner", TokenErgoMix.mixerOwner.getPublicKey)
       .item("tokenId", ErgoId.create(TokenErgoMix.tokenId).getBytes)
       .build(),
     feeEmissionScript
   )
-  val feeEmissionAddress: ErgoAddress = getAddress(feeEmissionContract.getErgoTree)
-  val feeEmissionErgoTree: ErgoTree = feeEmissionContract.getErgoTree
-  val feeScriptHash: Digest32 = getHash(feeEmissionErgoTree.bytes)
+  val feeEmissionAddress: ErgoAddress = getErgoAddress(feeEmissionContract.getErgoTree)
+  val feeEmissionErgoTree: ErgoTree   = feeEmissionContract.getErgoTree
+  val feeScriptHash: Digest32         = getHash(feeEmissionErgoTree.bytes)
 
   val fullMixScriptContract: ErgoContract = ctx.compileContract(
-    ConstantsBuilder.create()
+    ConstantsBuilder
+      .create()
       .item("tokenId", ErgoId.create(TokenErgoMix.tokenId).getBytes)
       .item("feeEmissionScriptHash", feeScriptHash)
       .build(),
     fullMixScript
   )
   val fullMixScriptErgoTree: ErgoTree = fullMixScriptContract.getErgoTree
-  val fullMixAddress: ErgoAddress = getAddress(fullMixScriptErgoTree)
-  val fullMixScriptHash: Digest32 = getHash(fullMixScriptErgoTree.bytes)
+  val fullMixAddress: ErgoAddress     = getErgoAddress(fullMixScriptErgoTree)
+  val fullMixScriptHash: Digest32     = getHash(fullMixScriptErgoTree.bytes)
 
   val halfMixContract: ErgoContract = ctx.compileContract(
-    ConstantsBuilder.create()
+    ConstantsBuilder
+      .create()
       .item("tokenId", ErgoId.create(TokenErgoMix.tokenId).getBytes)
       .item("fullMixScriptHash", fullMixScriptHash)
       .build(),
     halfMixScript
   )
   val halfMixScriptHash: Digest32 = getHash(halfMixContract.getErgoTree.bytes)
-  val halfMixAddress: ErgoAddress = getAddress(halfMixContract.getErgoTree)
+  val halfMixAddress: ErgoAddress = getErgoAddress(halfMixContract.getErgoTree)
 
   val income: ErgoContract = ctx.newContract(TokenErgoMix.mixerIncome.getErgoAddress.script)
   val tokenEmissionContract: ErgoContract = ctx.compileContract(
-    ConstantsBuilder.create()
+    ConstantsBuilder
+      .create()
       .item("halfMixScriptHash", halfMixScriptHash)
       .item("mixerOwner", TokenErgoMix.mixerOwner.getPublicKey)
       .item("mixerIncome", getHash(income.getErgoTree.bytes))
       .build(),
     tokenEmissionScript
   )
-  val tokenEmissionAddress: ErgoAddress = getAddress(tokenEmissionContract.getErgoTree)
+  val tokenEmissionAddress: ErgoAddress = getErgoAddress(tokenEmissionContract.getErgoTree)
 }

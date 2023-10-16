@@ -2,6 +2,8 @@ package mixinterface
 
 import java.math.BigInteger
 
+import scala.collection.JavaConverters._
+
 import mixinterface.ErgoMixBase._
 import models.Box.{EndBox, FullMixBox}
 import models.Transaction.HalfMixTx
@@ -10,8 +12,6 @@ import sigmastate.eval._
 import special.collection.Coll
 import special.sigma.GroupElement
 import wallet.WalletHelper._
-
-import scala.collection.JavaConverters._
 
 class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit ctx: BlockchainContext) extends Alice {
   val gX: GroupElement = g.exp(x)
@@ -30,15 +30,26 @@ class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit
    * @param additionalDHTuples    dh tuples
    * @return tx spending full-box as alice
    */
-  def spendFullMixBox(f: FullMixBox, endBoxes: Seq[EndBox], feeAmount: Long, otherInputBoxes: Array[InputBox], changeAddress: String, changeBoxRegs: Seq[ErgoValue[_]], burnTokens: Seq[ErgoToken], additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT]): SignedTransaction = {
-    val (gY, gXY) = (f.r4, f.r5)
+  def spendFullMixBox(
+    f: FullMixBox,
+    endBoxes: Seq[EndBox],
+    feeAmount: Long,
+    otherInputBoxes: Array[InputBox],
+    changeAddress: String,
+    changeBoxRegs: Seq[ErgoValue[_]],
+    burnTokens: Seq[ErgoToken],
+    additionalDlogSecrets: Array[BigInteger],
+    additionalDHTuples: Array[DHT]
+  ): SignedTransaction = {
+    val (gY, gXY)                       = (f.r4, f.r5)
     val txB: UnsignedTransactionBuilder = ctx.newTxBuilder
 
     val outBoxes: Seq[OutBox] = endBoxes.map { endBox =>
       var outBoxBuilder = txB.outBoxBuilder().value(endBox.value).contract(ctx.newContract(endBox.receiverBoxScript))
       if (endBox.tokens.nonEmpty)
         outBoxBuilder = outBoxBuilder.tokens(endBox.tokens: _*)
-      (if (endBox.receiverBoxRegs.isEmpty) outBoxBuilder else outBoxBuilder.registers(endBox.receiverBoxRegs: _*)).build()
+      (if (endBox.receiverBoxRegs.isEmpty) outBoxBuilder else outBoxBuilder.registers(endBox.receiverBoxRegs: _*))
+        .build()
     }
 
     val inputs = new java.util.ArrayList[InputBox]()
@@ -50,21 +61,20 @@ class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit
       inputs.add(0, f.inputBox)
     }
 
-    val preTxB = txB.addInputs(inputs.asScala: _*)
+    val preTxB = txB
+      .addInputs(inputs.asScala: _*)
       .addOutputs(outBoxes: _*)
       .fee(feeAmount)
       .sendChangeTo(Address.create(changeAddress))
     val txToSign = if (burnTokens.nonEmpty) preTxB.tokensToBurn(burnTokens: _*).build() else preTxB.build()
 
-    val alice: ErgoProver = additionalDHTuples.foldLeft(
-      additionalDlogSecrets.foldLeft(
-        ctx.newProverBuilder().withDHTData(g, gY, gX, gXY, x)
-      )(
-        (ergoProverBuilder, bigInteger) => ergoProverBuilder.withDLogSecret(bigInteger)
-      )
-    )(
-      (ergoProverBuilder, dh) => ergoProverBuilder.withDHTData(dh.gv, dh.hv, dh.uv, dh.vv, dh.x)
-    ).build()
+    val alice: ErgoProver = additionalDHTuples
+      .foldLeft(
+        additionalDlogSecrets.foldLeft(
+          ctx.newProverBuilder().withDHTData(g, gY, gX, gXY, x)
+        )((ergoProverBuilder, bigInteger) => ergoProverBuilder.withDLogSecret(bigInteger))
+      )((ergoProverBuilder, dh) => ergoProverBuilder.withDHTData(dh.gv, dh.hv, dh.uv, dh.vv, dh.x))
+      .build()
 
     alice.sign(txToSign)
   }
@@ -83,89 +93,99 @@ class AliceImpl(x: BigInteger, implicit val tokenErgoMix: TokenErgoMix)(implicit
    * @param mixingTokenAmount     token ring
    * @return
    */
-  def createHalfMixBox(inputBoxes: Array[InputBox], feeAmount: Long, changeAddress: String,
-                       additionalDlogSecrets: Array[BigInteger], additionalDHTuples: Array[DHT],
-                       poolAmount: Long, numToken: Int = 0, mixingTokenId: String, mixingTokenAmount: Long): HalfMixTx = {
+  def createHalfMixBox(
+    inputBoxes: Array[InputBox],
+    feeAmount: Long,
+    changeAddress: String,
+    additionalDlogSecrets: Array[BigInteger],
+    additionalDHTuples: Array[DHT],
+    poolAmount: Long,
+    numToken: Int = 0,
+    mixingTokenId: String,
+    mixingTokenAmount: Long
+  ): HalfMixTx = {
     val txB: UnsignedTransactionBuilder = ctx.newTxBuilder
 
     var tokens = Seq(new ErgoToken(TokenErgoMix.tokenId, numToken))
     if (mixingTokenId.nonEmpty) tokens = tokens :+ new ErgoToken(mixingTokenId, mixingTokenAmount)
-    val newBox = txB.outBoxBuilder()
+    val newBox = txB
+      .outBoxBuilder()
       .value(poolAmount)
       .registers(ErgoValue.of(gX))
       .contract(tokenErgoMix.halfMixContract)
       .tokens(tokens: _*)
       .build()
 
-    val tokenBox = inputBoxes.last
+    val tokenBox   = inputBoxes.last
     var batchPrice = 0L
-    val batches = tokenBox.getRegisters.get(0).getValue.asInstanceOf[Coll[(Int, Long)]]
-    batches.toArray.foreach(batch => {
-      if (batch._1 == numToken) batchPrice = batch._2
-    })
+    val batches    = tokenBox.getRegisters.get(0).getValue.asInstanceOf[Coll[(Int, Long)]]
+    batches.toArray.foreach(batch => if (batch._1 == numToken) batchPrice = batch._2)
     if (batchPrice == 0) throw new Exception(s"Could not find appropriate batch for $numToken, batches: $batches")
-    var ergCommission = 0L
+    var ergCommission              = 0L
     var tokenCommission: ErgoToken = null
     if (tokenBox.getRegisters.size() == 2) {
       val rate: Int = tokenBox.getRegisters.get(1).getValue.asInstanceOf[Int]
       ergCommission = poolAmount / rate
 
       if (mixingTokenId.nonEmpty) {
-        val inputTokens = inputBoxes.map(_.getTokens.asScala.filter(_.getId.toString == mixingTokenId).map(_.getValue).sum).sum
+        val inputTokens =
+          inputBoxes.map(_.getTokens.asScala.filter(_.getId.toString == mixingTokenId).map(_.getValue).sum).sum
         tokenCommission = new ErgoToken(mixingTokenId, inputTokens - mixingTokenAmount)
         assert(tokenCommission.getValue >= mixingTokenAmount / rate)
       }
     }
     val excessErg = inputBoxes.map(_.getValue).sum - feeAmount - poolAmount - tokenBox.getValue
     assert(excessErg >= ergCommission + batchPrice)
-    val copy = ctx.newTxBuilder().outBoxBuilder
+    val copy = ctx
+      .newTxBuilder()
+      .outBoxBuilder
       .value(tokenBox.getValue)
       .tokens(new ErgoToken(TokenErgoMix.tokenId, tokenBox.getTokens.get(0).getValue - numToken))
       .registers(tokenBox.getRegisters.asScala: _*)
       .contract(tokenErgoMix.tokenEmissionContract)
       .build()
 
-    val payBoxB = ctx.newTxBuilder().outBoxBuilder
+    val payBoxB = ctx
+      .newTxBuilder()
+      .outBoxBuilder
       .value(excessErg)
       .contract(tokenErgoMix.income)
-    val payBox = if (tokenCommission != null && tokenCommission.getValue > 0) payBoxB.tokens(tokenCommission).build()
-    else payBoxB.build()
+    val payBox =
+      if (tokenCommission != null && tokenCommission.getValue > 0) payBoxB.tokens(tokenCommission).build()
+      else payBoxB.build()
 
     val inputs = new java.util.ArrayList[InputBox]()
     inputs.addAll(inputBoxes.toList.asJava)
 
-    val txToSign = txB.addInputs(inputs.asScala: _*)
+    val txToSign = txB
+      .addInputs(inputs.asScala: _*)
       .addOutputs(newBox, payBox, copy)
       .fee(feeAmount)
       .sendChangeTo(Address.create(changeAddress))
       .build()
 
-    val alice: ErgoProver = additionalDHTuples.foldLeft(
-      additionalDlogSecrets.foldLeft(
-        ctx.newProverBuilder()
-      )(
-        (ergoProverBuilder, bigInteger) => ergoProverBuilder.withDLogSecret(bigInteger)
-      )
-    )(
-      (ergoProverBuilder, dh) => ergoProverBuilder.withDHTData(dh.gv, dh.hv, dh.uv, dh.vv, dh.x)
-    ).build()
+    val alice: ErgoProver = additionalDHTuples
+      .foldLeft(
+        additionalDlogSecrets.foldLeft(
+          ctx.newProverBuilder()
+        )((ergoProverBuilder, bigInteger) => ergoProverBuilder.withDLogSecret(bigInteger))
+      )((ergoProverBuilder, dh) => ergoProverBuilder.withDHTData(dh.gv, dh.hv, dh.uv, dh.vv, dh.x))
+      .build()
 
     HalfMixTx(alice.sign(txToSign))
   }
 
   override def getProver(f: FullMixBox): ErgoProver = {
-    val additionalDHTuples: Array[DHT] = Seq().toArray
+    val additionalDHTuples: Array[DHT]           = Seq().toArray
     val additionalDlogSecrets: Array[BigInteger] = Seq().toArray
-    val (gY, gXY) = (f.r4, f.r5)
+    val (gY, gXY)                                = (f.r4, f.r5)
 
-    additionalDHTuples.foldLeft(
-      additionalDlogSecrets.foldLeft(
-        ctx.newProverBuilder().withDHTData(g, gY, gX, gXY, x)
-      )(
-        (ergoProverBuilder, bigInteger) => ergoProverBuilder.withDLogSecret(bigInteger)
-      )
-    )(
-      (ergoProverBuilder, dh) => ergoProverBuilder.withDHTData(dh.gv, dh.hv, dh.uv, dh.vv, dh.x)
-    ).build()
+    additionalDHTuples
+      .foldLeft(
+        additionalDlogSecrets.foldLeft(
+          ctx.newProverBuilder().withDHTData(g, gY, gX, gXY, x)
+        )((ergoProverBuilder, bigInteger) => ergoProverBuilder.withDLogSecret(bigInteger))
+      )((ergoProverBuilder, dh) => ergoProverBuilder.withDHTData(dh.gv, dh.hv, dh.uv, dh.vv, dh.x))
+      .build()
   }
 }

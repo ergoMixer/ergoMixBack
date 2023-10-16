@@ -1,33 +1,42 @@
 package models
 
+import scala.collection.mutable
+import scala.collection.JavaConverters._
+
 import config.MainConfigs
-import mixinterface.TokenErgoMix
-import wallet.WalletHelper
-import org.ergoplatform.appkit.{Address, ErgoToken, ErgoValue, InputBox, Iso}
-import sigmastate.Values.{ErgoTree, EvaluatedValue}
-import special.sigma.GroupElement
+import io.circe.{parser, Decoder}
 import io.circe.generic.semiauto.deriveDecoder
-import io.circe.{Decoder, parser}
+import mixinterface.TokenErgoMix
+import org.ergoplatform.appkit._
+import org.ergoplatform.settings.ErgoAlgos
 import org.ergoplatform.ErgoBox
 import org.ergoplatform.ErgoBox.NonMandatoryRegisterId
-import org.ergoplatform.settings.ErgoAlgos
-import play.api.libs.json.{JsArray, JsResult, JsSuccess, JsValue, Reads}
-import sigmastate.SType
+import play.api.libs.json._
 import sigmastate.serialization.ValueSerializer
-
-import scala.collection.JavaConverters._
-import scala.collection.mutable
+import sigmastate.SType
+import sigmastate.Values.{ErgoTree, EvaluatedValue}
+import special.sigma.GroupElement
+import wallet.WalletHelper
 
 object Box {
 
   case class InBox(id: String, address: String, createdTxId: String, value: Long)
 
-  case class OutBox(id: String, amount: Long, registers: Map[String, String], ergoTree: String, tokens: Seq[ErgoToken], creationHeight: Int, address: String, spendingTxId: Option[String]) {
+  case class OutBox(
+    id: String,
+    amount: Long,
+    registers: Map[String, String],
+    ergoTree: String,
+    tokens: Seq[ErgoToken],
+    creationHeight: Int,
+    address: String,
+    spendingTxId: Option[String]
+  ) {
 
     def getRegs: Seq[ErgoValue[_]] = {
       val menRegs = registers.map { r =>
         val id = ErgoBox.registerByName(r._1).asInstanceOf[NonMandatoryRegisterId]
-        val v = ValueSerializer.deserialize(ErgoAlgos.decodeUnsafe(r._2))
+        val v  = ValueSerializer.deserialize(ErgoAlgos.decodeUnsafe(r._2))
         (id, Iso.isoErgoValueToSValue.from(v.asInstanceOf[EvaluatedValue[_ <: SType]]))
       }
       menRegs.toSeq.sortBy(_._1.number).map(_._2)
@@ -35,11 +44,10 @@ object Box {
 
     def ge(regId: String): GroupElement = WalletHelper.hexToGroupElement(registers(regId).drop(2))
 
-    def getToken(tokenId: String): Long = {
+    def getToken(tokenId: String): Long =
       tokens.filter(_.getId.toString.equals(tokenId)).map(_.getValue.longValue()).sum
-    }
 
-    def mixBox(tokenErgoMix: TokenErgoMix): Option[Either[HBox, FBox]] = {
+    def mixBox(tokenErgoMix: TokenErgoMix): Option[Either[HBox, FBox]] =
       try {
         val fullMixBoxErgoTree = tokenErgoMix.fullMixScriptErgoTree.bytesHex
         val halfMixBoxErgoTree = tokenErgoMix.halfMixContract.getErgoTree.bytesHex
@@ -55,11 +63,10 @@ object Box {
         case _: Throwable =>
           None
       }
-    }
 
     def getFBox(tokenErgoMix: TokenErgoMix): Option[FBox] = mixBox(tokenErgoMix).flatMap {
       case Right(fBox) => Some(fBox)
-      case _ => None
+      case _           => None
     }
 
     def isAddressEqualTo(address: String): Boolean = {
@@ -74,9 +81,8 @@ object Box {
   case class HBox(id: String, r4: GroupElement)
 
   case class MixingBox(withdraw: String, amount: Long, token: Int, mixingTokenAmount: Long, mixingTokenId: String) {
-    def price: (Long, Long) = {
+    def price: (Long, Long) =
       MixingBox.getPrice(amount, mixingTokenAmount, token)
-    }
   }
 
   object MixingBox {
@@ -100,7 +106,7 @@ object Box {
      * @return (erg needed, token needed)
      */
     def getPrice(ergRing: Long, tokenRing: Long, mixRounds: Int): (Long, Long) = {
-      val rate: Int = MainConfigs.entranceFee.getOrElse(1000000)
+      val rate: Int        = MainConfigs.entranceFee.getOrElse(1000000)
       val tokenPrice: Long = MainConfigs.tokenPrices.get.getOrElse(mixRounds, -1)
       assert(tokenPrice != -1)
       val ergVal = if (rate > 0 && rate < 1000000) ergRing / rate else 0
@@ -109,32 +115,35 @@ object Box {
 
     implicit val mixingBoxDecoder: Decoder[MixingBox] = deriveDecoder[MixingBox]
 
-    def apply(jsonString: String): MixingBox = {
+    def apply(jsonString: String): MixingBox =
       parser.decode[MixingBox](jsonString) match {
-        case Left(e) => throw new Exception(s"Error while parsing MixingBox from Json: $e")
+        case Left(e)      => throw new Exception(s"Error while parsing MixingBox from Json: $e")
         case Right(asset) => asset
       }
-    }
   }
 
   case class MixBoxList(items: Iterable[MixingBox])
 
   object MixBoxList {
     implicit val ReadsMixBoxList: Reads[MixBoxList] = new Reads[MixBoxList] {
-      override def reads(json: JsValue): JsResult[MixBoxList] = {
-        JsSuccess(MixBoxList(json.as[JsArray].value.map(item => {
-          val withdraw = (item \ "withdraw").as[String]
-          val amount = (item \ "amount").as[Long]
-          val token = (item \ "token").as[Int]
-          val mixingTokenId = (item \ "mixingTokenId").as[String]
+      override def reads(json: JsValue): JsResult[MixBoxList] =
+        JsSuccess(MixBoxList(json.as[JsArray].value.map { item =>
+          val withdraw          = (item \ "withdraw").as[String]
+          val amount            = (item \ "amount").as[Long]
+          val token             = (item \ "token").as[Int]
+          val mixingTokenId     = (item \ "mixingTokenId").as[String]
           val mixingTokenAmount = (item \ "mixingTokenAmount").as[Long]
           MixingBox(withdraw, amount, token, mixingTokenAmount, mixingTokenId)
-        })))
-      }
+        }))
     }
   }
 
-  case class EndBox(receiverBoxScript: ErgoTree, receiverBoxRegs: Seq[ErgoValue[_]] = Nil, value: Long, tokens: Seq[ErgoToken] = Nil) // box spending full mix box
+  case class EndBox(
+    receiverBoxScript: ErgoTree,
+    receiverBoxRegs: Seq[ErgoValue[_]] = Nil,
+    value: Long,
+    tokens: Seq[ErgoToken] = Nil
+  ) // box spending full mix box
 
   abstract class MixBox(inputBox: InputBox) {
     def getRegs: mutable.Seq[ErgoValue[_]] = inputBox.getRegisters.asScala
@@ -151,7 +160,7 @@ object Box {
 
     val gX: GroupElement = getR4.getValue match {
       case g: GroupElement => g
-      case any => throw new Exception(s"Invalid value in R4: $any of type ${any.getClass}")
+      case any             => throw new Exception(s"Invalid value in R4: $any of type ${any.getClass}")
     }
   }
 
@@ -159,7 +168,8 @@ object Box {
     def id: String = inputBox.getId.toString
 
     val (r4, r5, r6) = (getR4.getValue, getR5.getValue, getR6.getValue) match {
-      case (c1: GroupElement, c2: GroupElement, gX: GroupElement) => (c1, c2, gX) //Values.GroupElementConstant(c1), Values.GroupElementConstant(c2)) => (c1, c2)
+      case (c1: GroupElement, c2: GroupElement, gX: GroupElement) =>
+        (c1, c2, gX) // Values.GroupElementConstant(c1), Values.GroupElementConstant(c2)) => (c1, c2)
       case (r4, r5, r6) => throw new Exception(s"Invalid registers R4:$r4, R5:$r5, R6:$r6")
     }
   }

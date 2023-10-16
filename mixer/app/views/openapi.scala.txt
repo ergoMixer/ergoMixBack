@@ -2,7 +2,7 @@
 openapi: "3.0.2"
 
 info:
-  version: "4.3.0"
+  version: "4.4.0"
   title: Ergo Mixer API
   description: API docs for Ergo mixer.
 
@@ -785,6 +785,335 @@ paths:
                    "a3faf2cb326571cbf0458d91b9f2e9021bb6c046afbefbe2824aaafe9252b4f",
                    "4d612894187117f139929f0cab093f5b62e1bc7709f88949285d043c5c4dd15"
                ],
+               "withdrawAddress": "9g1p6UU8XoAeU4yGPLpbTHYiG8aBHwfCFzQqJZrfzuLnmF3zb7P"
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiSuccess'
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+
+  /stealth/list:
+   get:
+     summary: returns list of stealth addresses
+     operationId: stealthList
+     tags:
+       - stealth
+     responses:
+       '200':
+         description: list stealth info to be shown, includes total Assets (Erg, number of assets in boxes)
+         content:
+           application/json:
+             schema:
+               items:
+                 example: [
+                   {
+                     "stealthId" : "9eb01117-3e5b-4f42-9d78-7eabe2d118b9",
+                     "stealthName" : "test1",
+                     "pk" : "stealthm466sAxUG1ZFKymiRJXBXQE69Qk9qRAcfD7y5DBn88Vh",
+                     "value" : 40000000000,
+                     "assetsSize" : 0
+                   }
+                 ]
+  /stealth/info:
+   get:
+     summary: get stealth Info
+     operationId: stealthInfo
+     tags:
+       - stealth
+     responses:
+       '200':
+         description: get stealth Info
+         content:
+           application/json:
+             schema:
+                type: object
+                 example: {
+                    "currentNetworkHeight": 234567,
+                    "lastProcessedBlock": 1234
+                 }
+  /stealth:
+   post:
+     summary: Create stealth
+     operationId: stealthRequest
+     tags:
+       - stealth
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: Create stealth
+             type: object
+             required:
+               - name
+             example: {
+               "name": "test1",
+               "secret": "c56152644952cb843af5ec508d05a21a2ec39b373b5afc63c7388eaf30c848fe",
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               type: object
+               example: {
+                 "stealthId": "9eb01117-3e5b-4f42-9d78-7eabe2d118b9",
+                 "stealthName": "test1",
+                 "pk": "stealthm466sAxUG1ZFKymiRJXBXQE69Qk9qRAcfD7y5DBn88Vh",
+                 }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /stealth/{stealthId}/box:
+   get:
+     summary: returns list of a stealth's boxes
+     operationId: stealthBoxList
+     tags:
+       - stealth
+     parameters:
+       - in: path
+         name: stealthId
+         required: true
+         description: ID of wanted stealth
+         schema:
+           type: string
+       - in: query
+         name: status
+         description: 'status of boxes all or unspent (default: all)'
+         schema:
+           type: string
+     responses:
+       '200':
+         description: list of a stealth's box
+         content:
+           application/json:
+             schema:
+               type: object
+               example: [
+                          {
+                            "assets": [
+                              {
+                                "id": "50eab1afc495420c17c0df5154584cf09d9167263fffc99c25e3e0ae4b26fe00",
+                                "name": "tSPF",
+                                "decimals": 6
+                              },
+                              {
+                                "id": "706fb118782c421b0b00e01e5403efb64b68e31e01048dc398f3a143eaa05b26",
+                                "name": "tERG",
+                                "decimals": 8
+                              },
+                              {
+                                "id": "c07bde48465708577d0e0b401300245987d297de2a6004116c825ba09dd26b7d",
+                                "name": "tSigRSV",
+                                "decimals": 0
+                              },
+                              {
+                                "id": "f3ad0c625e63a784f42355edbee61344b012caaeab478142aa9a87e147c9533e",
+                                "name": "tSigUSD",
+                                "decimals": 2
+                              }
+                            ],
+                            "withdrawAddress": "",
+                            "withdrawTxId": "",
+                            "withdrawFailedReason": "",
+                            "boxId": "94b0da3fc0cf7f150d4a924c00dbdcc759d12e8228a6b1d2a5a9ecd06f6197ae",
+                            "value": 122400,
+                            "ergoTree": "10040e2102be36e9707f63a2cf103dacffcb94f71906b7ab6048c9b99d7ab2ed9e110a3fb10e2103982a8e8ba907d0511b5d5ad0c45f640adfe65b4d34316681d8bbd6703add04e40e21032721a5904cac77f9720d8a2a8c347d950df7c8bfa4eb8a25a5d59563ff4f223e0e21034498afa262c36c5ea067b831af98863d46f7dc568f23737830f145531c6e1f03ceee7300ee7301ee7302ee7303",
+                            "creationHeight": 1091392,
+                            "additionalRegisters": {},
+                            "transactionId": "4c25964f8b9eaa9c67895bb3bf2c6c9b92e3a61099186068ff0c51bba6ce2851",
+                            "index": 1
+                          },
+                          {
+                            "assets": [
+                              {
+                                "id": "30974274078845f263b4f21787e33cc99e9ec19a17ad85a5bc6da2cca91c5a2e",
+                                "name": "WT_ADA",
+                                "decimals": 8
+                              },
+                              {
+                                "id": "e91cbc48016eb390f8f872aa2962772863e2e840708517d1ab85e57451f91bed",
+                                "name": "Ergold",
+                                "decimals": 0
+                              },
+                              {
+                                "id": "ef802b475c06189fdbf844153cdc1d449a5ba87cce13d11bb47b5a539f27f12b",
+                                "name": "WT_ERG",
+                                "decimals": 9
+                              },
+                              {
+                                "id": "fbbaac7337d051c10fc3da0ccb864f4d32d40027551e1c3ea3ce361f39b91e40",
+                                "name": "kushti",
+                                "decimals": 0
+                              }
+                            ],
+                            "withdrawAddress": "",
+                            "withdrawTxId": "",
+                            "withdrawFailedReason": "",
+                            "boxId": "291c4ab0c373ee5fff31b996c9cbc169ff5bb6cc471e8334acc6fb7d0916274d",
+                            "value": 122400,
+                            "ergoTree": "10040e2103a61135dd122ff3b7a9a2529644f196cf22533ebe8b8e664fb9b84d9f003eccad0e2102def407e179e0b4550dd94ea38d7f6cf63d8a7f726f73d49b24d21bb4aa772b590e2103f78cf1f2e10b0ef224e88a84146a0646a5ca12f1aec79e5dc370549f91704da90e21022ed401b62c61706e2f96c2d2bba52b367b874981dc0f9ee1c7218dec755a40b9ceee7300ee7301ee7302ee7303",
+                            "creationHeight": 1091392,
+                            "additionalRegisters": {},
+                            "transactionId": "0d3dc7ab70e7e75d4c192c26e8036209ac04380c626e9431e70918176ce8d8ec",
+                            "index": 1
+                          }
+                        ]
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /stealth/address/{address}:
+   get:
+     summary: generate a stealth payment address by given stealth address
+     operationId: stealthAddressGenerate
+     tags:
+       - stealth
+     parameters:
+       - in: path
+         name: address
+         required: true
+         description: stealth address
+         schema:
+           type: string
+     responses:
+       '200':
+         description: generate stealth payment address
+         content:
+           application/json:
+             schema:
+               type: object
+               example: {
+                 "address": "6QBPS6hCbwKB25DcZWWmENq1MZLpGWhWtwDX4MQvTe38HAqbiryGxf7wyd594A7A5uXK1uwzb8YEcnWJwLQynKY7FpHY9ngVQYnD57KqFhdDkGhdLwrrkJ4kdG3uC3WCfgf2u6NNEKa4ozVHCjcPqosSUix3rQfGoStTm772GZMRXCvvrkTmQRxqBZTKFZDDqtJCcUY6uj5K8mQ2U442AB3kjL"
+               }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /stealth/export:
+   get:
+     summary: downloads a file containing name, address and private key of all stealth
+     operationId: stealthKeys
+     tags:
+       - stealth
+     responses:
+       '200':
+         description: download the key of stealth
+         content:
+           text/csv:
+             schema:
+               type: string
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /stealth/{stealthId}/name:
+   post:
+     summary: Update name of a stealth
+     operationId: stealthChangeName
+     tags:
+       - stealth
+     parameters:
+       - in: path
+         name: stealthId
+         required: true
+         description: ID of wanted stealth
+         schema:
+           type: string
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: update stealth name
+             type: object
+             required:
+               - name
+             example: {
+               "name": "test1"
+             }
+     responses:
+       '200':
+         description: Status of operation
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiSuccess'
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /stealth/{stealthId}:
+   get:
+     summary: returns the stealth address, stealthName and private key of a stealth
+     operationId: getStealthPrivateKey
+     tags:
+       - stealth
+     parameters:
+       - in: path
+         name: stealthId
+         required: true
+         description: ID of wanted stealth
+         schema:
+           type: string
+     responses:
+       '200':
+         description: the stealth address, name and private key of corresponding stealth
+         content:
+           application/json:
+             schema:
+               items:
+                 example: {
+                   "pk": "stealthm466sAxUG1ZFKymiRJXBXQE69Qk9qRAcfD7y5DBn88Vh",
+                   "stealthName": "test1",
+                   "stealthId": "9eb01117-3e5b-4f42-9d78-7eabe2d118b9",
+                   "secret": "c56152644952cb843af5ec508d05a21a2ec39b373b5afc63c7388eaf30c848fe"
+                 }
+       default:
+         description: Error
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ApiError'
+  /stealth/withdraw:
+   post:
+     summary: set withdrawAddress for stealth's box and withdraw that
+     operationId: withdrawStealthBox
+     tags:
+       - stealth
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             description: withdraw request for stealth's box
+             type: object
+             required:
+               - boxId
+               - withdrawAddress
+             example: {
+               "boxId": "eae5d9403f766761cbb46f719298301c7551ec1d9bfa0264721ca9d496451fe3",
                "withdrawAddress": "9g1p6UU8XoAeU4yGPLpbTHYiG8aBHwfCFzQqJZrfzuLnmF3zb7P"
              }
      responses:

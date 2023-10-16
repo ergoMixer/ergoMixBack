@@ -3,71 +3,82 @@
 # ~~~~
 
 # Home page
-GET         /                                  controllers.ApiController.index
+GET         /                                       controllers.ApiController.index
 
 # Route for swagger
-GET         /swagger.conf                      controllers.ApiController.swagger
-GET         /swagger                           controllers.ApiController.redirectDocs
-GET         /docs/*file                        controllers.Assets.at(path:String="/public/lib/swagger-ui", file: String)
+GET         /swagger.conf                           controllers.ApiController.swagger
+GET         /swagger                                controllers.ApiController.redirectDocs
+GET         /docs/*file                             controllers.Assets.at(path:String="/public/lib/swagger-ui", file: String)
 
 
 # Map static resources from the /public folder to the /assets URL path
-GET         /assets/*file                      controllers.Assets.versioned(path="/public", file: Asset)
+GET         /assets/*file                           controllers.Assets.versioned(path="/public", file: Asset)
 
 # Get addresses from node
 +nocsrf
-POST        /address/generate/from_node        controllers.ApiController.generateAddress
-GET         /blocks                            controllers.ApiController.getBlocks(offset: Long ?= 0, limit: Long ?= 100)
-GET         /rings                             controllers.ApiController.rings
+POST        /address/generate/from_node             controllers.ApiController.generateAddress
+GET         /blocks                                 controllers.ApiController.getBlocks(offset: Long ?= 0, limit: Long ?= 100)
+GET         /rings                                  controllers.ApiController.rings
 
 # Add withdraw to database
 +nocsrf
-POST        /mix/withdraw                      controllers.MixController.withdraw
+POST        /mix/withdraw                           controllers.MixController.withdraw
 
 # New mixing backend with tokens
-POST        /mix/request                       controllers.MixController.mixRequest
-GET         /mix/request/list                  controllers.MixController.mixGroupRequestList
-GET         /mix/request/activeList            controllers.MixController.mixGroupRequestActiveList
-GET         /mix/request/completeList          controllers.MixController.mixGroupRequestCompleteList
-GET         /mix/request/:id/list              controllers.MixController.mixRequestList(id: String, status ?= "all")
-GET         /mix/:mixId/box                    controllers.MixController.getMixBox(mixId: String)
-GET         /mix/fee                           controllers.MixController.mixingFee
-GET         /mix/supported                     controllers.MixController.supported
+POST        /mix/request                            controllers.MixController.mixRequest
+GET         /mix/request/list                       controllers.MixController.mixGroupRequestList
+GET         /mix/request/activeList                 controllers.MixController.mixGroupRequestActiveList
+GET         /mix/request/completeList               controllers.MixController.mixGroupRequestCompleteList
+GET         /mix/request/:id/list                   controllers.MixController.mixRequestList(id: String, status ?= "all")
+GET         /mix/:mixId/box                         controllers.MixController.getMixBox(mixId: String)
+GET         /mix/fee                                controllers.MixController.mixingFee
+GET         /mix/supported                          controllers.MixController.supported
 
-POST        /covert                            controllers.CovertController.covertRequest
-POST        /covert/:covertId/asset            controllers.CovertController.covertAddOrUpdate(covertId: String)
-POST        /covert/:covertId/name             controllers.CovertController.covertChangeName(covertId: String)
-GET         /covert/list                       controllers.CovertController.covertList
-GET         /covert/:covertId/asset            controllers.CovertController.covertAssetList(covertId: String)
-POST        /covert/:covertId/address          controllers.CovertController.setCovertAddresses(covertId: String)
-GET         /covert/:covertId/address          controllers.CovertController.getCovertAddresses(covertId: String)
-GET         /covert/keys                       controllers.CovertController.covertKeys
-GET         /covert/:covertId/key              controllers.CovertController.getCovertPrivateKey(covertId: String)
-POST        /covert/:covertId/withdraw         controllers.CovertController.withdrawCovertAsset(covertId: String)
+POST        /covert                                 controllers.CovertController.covertRequest
+POST        /covert/:covertId/asset                 controllers.CovertController.covertAddOrUpdate(covertId: String)
+POST        /covert/:covertId/name                  controllers.CovertController.covertChangeName(covertId: String)
+GET         /covert/list                            controllers.CovertController.covertList
+GET         /covert/:covertId/asset                 controllers.CovertController.covertAssetList(covertId: String)
+POST        /covert/:covertId/address               controllers.CovertController.setCovertAddresses(covertId: String)
+GET         /covert/:covertId/address               controllers.CovertController.getCovertAddresses(covertId: String)
+GET         /covert/keys                            controllers.CovertController.covertKeys
+GET         /covert/:covertId/key                   controllers.CovertController.getCovertPrivateKey(covertId: String)
+POST        /covert/:covertId/withdraw              controllers.CovertController.withdrawCovertAsset(covertId: String)
 
-GET         /ageusd/height                     controllers.AgeUSDController.currentHeight()
-GET         /ageusd/fee                        controllers.AgeUSDController.ageusdFee()
-POST        /ageusd/mint                       controllers.AgeUSDController.mint()
-GET         /ageusd/oracle/:tokenId            controllers.AgeUSDController.oracleBox(tokenId: String)
-GET         /ageusd/bank/:tokenId              controllers.AgeUSDController.bankBox(tokenId: String)
+# stealth endpoints
+POST        /stealth                                controllers.StealthController.createStealthAddress
+GET         /stealth/list                           controllers.StealthController.stealthList
+GET         /stealth/info                           controllers.StealthController.stealthInfo
+GET         /stealth/:stealthId/box                 controllers.StealthController.getStealthBoxes(stealthId: String, status ?= "all")
+GET         /stealth/address/:stealthAddress        controllers.StealthController.generatePaymentAddress(stealthAddress: String)
+GET         /stealth/export                         controllers.StealthController.exportAllStealth
+GET         /stealth/:stealthId                     controllers.StealthController.getStealthPrivateKey(stealthId: String)
+POST        /stealth/:stealthId/name                controllers.StealthController.changeStealthName(stealthId: String)
+POST        /stealth/withdraw                       controllers.StealthController.withdraw
+
+GET         /ageusd/height                          controllers.AgeUSDController.currentHeight()
+GET         /ageusd/fee                             controllers.AgeUSDController.ageusdFee()
+POST        /ageusd/mint                            controllers.AgeUSDController.mint()
+GET         /ageusd/oracle/:tokenId                 controllers.AgeUSDController.oracleBox(tokenId: String)
+GET         /ageusd/bank/:tokenId                   controllers.AgeUSDController.bankBox(tokenId: String)
 
 
-GET         /dashboard                         controllers.ApiController.dashboard
-GET         /dashboard/*file                   controllers.ApiController.assetOrDefault(file)
+GET         /dashboard                              controllers.ApiController.dashboard
+GET         /dashboard/*file                        controllers.ApiController.assetOrDefault(file)
 
 # admin endpoints
 # TODO: split routes (#86) (maybe this url could be help https://www.playframework.com/documentation/2.8.x/ScalaCompileTimeDependencyInjection)
-GET         /admin/income                      controllers.AdminController.income(start: Long ?= 0, end: Long ?= 0)
-GET         /admin/incomeParams                controllers.AdminController.getIncomeParams
-POST        /admin/incomeParams                controllers.AdminController.setIncomeParams
-GET         /admin/feeParams                   controllers.AdminController.getFeeParams
-POST        /admin/feeParams                   controllers.AdminController.setFeeParams
-GET         /admin/getSupport                  controllers.AdminController.getSupport
-POST        /admin/removeSupport               controllers.AdminController.removeSupport
-POST        /admin/addSupport                  controllers.AdminController.addSupport
+GET         /admin/income                           controllers.AdminController.income(start: Long ?= 0, end: Long ?= 0)
+GET         /admin/incomeParams                     controllers.AdminController.getIncomeParams
+POST        /admin/incomeParams                     controllers.AdminController.setIncomeParams
+GET         /admin/feeParams                        controllers.AdminController.getFeeParams
+POST        /admin/feeParams                        controllers.AdminController.setFeeParams
+GET         /admin/getSupport                       controllers.AdminController.getSupport
+POST        /admin/removeSupport                    controllers.AdminController.removeSupport
+POST        /admin/addSupport                       controllers.AdminController.addSupport
 
 # Return Info of Mixer
-GET         /info                              controllers.ApiController.getInfo
-POST        /exit                              controllers.ApiController.exit
-GET         /backup                            controllers.ApiController.backup
-POST        /restore                           controllers.ApiController.restore
+GET         /info                                   controllers.ApiController.getInfo
+POST        /exit                                   controllers.ApiController.exit
+GET         /backup                                 controllers.ApiController.backup
+POST        /restore                                controllers.ApiController.restore

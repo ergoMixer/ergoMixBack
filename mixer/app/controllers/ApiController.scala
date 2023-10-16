@@ -1,28 +1,35 @@
 package controllers
 
-import config.MainConfigs
-import dao.DAOUtils
-import helpers.ErgoMixerUtils
-import helpers.TrayUtils
-import info.BuildInfo
-import io.circe.Json
-import io.circe.syntax._
-import network.{BlockExplorer, NetworkUtils}
-import org.apache.commons.lang3._
-import play.api.Logger
-import play.api.libs.Files
-import play.api.mvc._
-
 import java.nio.file.Paths
 import javax.inject._
+
 import scala.concurrent.ExecutionContext
+
+import config.MainConfigs
+import dao.DAOUtils
+import helpers.{ErgoMixerUtils, TrayUtils}
+import info.BuildInfo
+import io.circe.syntax._
+import io.circe.Json
+import network.{BlockExplorer, NetworkUtils}
+import org.apache.commons.lang3._
+import play.api.libs.Files
+import play.api.mvc._
+import play.api.Logger
 
 /**
  * A controller inside of Mixer controller.
  */
-class ApiController @Inject()(assets: Assets, controllerComponents: ControllerComponents, ergoMixerUtils: ErgoMixerUtils,
-                              networkUtils: NetworkUtils, daoUtils: DAOUtils, explorer: BlockExplorer, trayUtils: TrayUtils
-                             )(implicit ec: ExecutionContext) extends AbstractController(controllerComponents) {
+class ApiController @Inject() (
+  assets: Assets,
+  controllerComponents: ControllerComponents,
+  ergoMixerUtils: ErgoMixerUtils,
+  networkUtils: NetworkUtils,
+  daoUtils: DAOUtils,
+  explorer: BlockExplorer,
+  trayUtils: TrayUtils
+)(implicit ec: ExecutionContext)
+  extends AbstractController(controllerComponents) {
 
   import networkUtils._
 
@@ -53,9 +60,9 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    * api '/wallet/deriveNextKey' from ergo node.
    */
   def generateAddress: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
-    val js = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
-    val apiKey = js.hcursor.downField("apiKey").as[String].getOrElse(null)
-    val nodeAddress = js.hcursor.downField("nodeAddress").as[String].getOrElse(null)
+    val js                = io.circe.parser.parse(request.body.asJson.get.toString()).getOrElse(Json.Null)
+    val apiKey            = js.hcursor.downField("apiKey").as[String].getOrElse(null)
+    val nodeAddress       = js.hcursor.downField("nodeAddress").as[String].getOrElse(null)
     val countAddress: Int = js.hcursor.downField("countAddress").as[Int].getOrElse(0)
     // Validate input
     if (nodeAddress == null || countAddress == 0 || apiKey == null) {
@@ -71,7 +78,7 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
       var addresses: Array[String] = Array()
       try {
         for (_ <- 1 to countAddress) {
-          val res = deriveNextAddress(nodeAddress, apiKey)
+          val res           = deriveNextAddress(nodeAddress, apiKey)
           val resJson: Json = io.circe.parser.parse(res).getOrElse(Json.Null)
           addresses :+= resJson.hcursor.downField("address").as[String].getOrElse(null)
         }
@@ -118,7 +125,10 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    * A post get endpoint to exit the app
    */
   def exit: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
-    trayUtils.showNotification("Shutdown", "Please wait, may take a few seconds for ErgoMixer to peacefully shutdown...")
+    trayUtils.showNotification(
+      "Shutdown",
+      "Please wait, may take a few seconds for ErgoMixer to peacefully shutdown..."
+    )
     daoUtils.shutdown(true)
     Ok(
       s"""
@@ -150,12 +160,14 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
   def restore: Action[MultipartFormData[Files.TemporaryFile]] = Action(parse.multipartFormData) { request =>
     try {
       val (_, baseDbUrl) = daoUtils.getDbUrl
-      request.body.file("myFile").map { backup =>
-        daoUtils.shutdown(true)
-        backup.ref.copyTo(Paths.get(s"${baseDbUrl}ergoMixerRestore.zip"), replace = true)
-        ergoMixerUtils.restore()
-        Ok("Backup restored")
-      }
+      request.body
+        .file("myFile")
+        .map { backup =>
+          daoUtils.shutdown(true)
+          backup.ref.copyTo(Paths.get(s"${baseDbUrl}ergoMixerRestore.zip"), replace = true)
+          ergoMixerUtils.restore()
+          Ok("Backup restored")
+        }
         .getOrElse {
           BadRequest(s"""{"success": false, "message": "No uploaded backup found."}""").as("application/json")
         }
@@ -177,11 +189,10 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
    *         }
    */
   def getInfo: Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
-    val nodes = MainConfigs.nodes.map(url =>
-      s"""{
-         |  "url": "$url",
-         |  "canConnect": ${prunedClients.contains(url)}
-         |}""".stripMargin)
+    val nodes = MainConfigs.nodes.map(url => s"""{
+                                                |  "url": "$url",
+                                                |  "canConnect": ${prunedClients.contains(url)}
+                                                |}""".stripMargin)
     Ok(
       s"""
          |{
@@ -201,9 +212,8 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
 
   def dashboard: Action[AnyContent] = assets.at("index.html")
 
-  def assetOrDefault(resource: String): Action[AnyContent] = {
+  def assetOrDefault(resource: String): Action[AnyContent] =
     if (resource.contains(".")) assets.at(resource) else dashboard
-  }
 
   /**
    * fetch blocks from blockchain
@@ -226,4 +236,3 @@ class ApiController @Inject()(assets: Assets, controllerComponents: ControllerCo
   }
 
 }
-

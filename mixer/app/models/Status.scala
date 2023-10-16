@@ -20,11 +20,10 @@ object Status {
 
     def fromString(s: String): MixStatus = all.find(_.value == s).getOrElse(throw new Exception(s"Invalid status $s"))
 
-    implicit val decodeMixStatus: Decoder[MixStatus] = (c: HCursor) => for {
-      status <- c.as[String]
-    } yield {
-      MixStatus.fromString(status)
-    }
+    implicit val decodeMixStatus: Decoder[MixStatus] = (c: HCursor) =>
+      for {
+        status <- c.as[String]
+      } yield MixStatus.fromString(status)
   }
 
   sealed abstract class GroupMixStatus(val value: String)
@@ -41,7 +40,8 @@ object Status {
 
     private def all = Seq(Queued, Running, Complete)
 
-    def fromString(s: String): GroupMixStatus = all.find(_.value == s).getOrElse(throw new Exception(s"Invalid status $s"))
+    def fromString(s: String): GroupMixStatus =
+      all.find(_.value == s).getOrElse(throw new Exception(s"Invalid status $s"))
   }
 
   sealed abstract class MixWithdrawStatus(val value: String)
@@ -62,7 +62,8 @@ object Status {
 
     private def all = Seq(NoWithdrawYet, WithdrawRequested, Withdrawn)
 
-    def fromString(s: String): MixWithdrawStatus = all.find(_.value == s).getOrElse(throw new Exception(s"Invalid status $s"))
+    def fromString(s: String): MixWithdrawStatus =
+      all.find(_.value == s).getOrElse(throw new Exception(s"Invalid status $s"))
   }
 
   sealed abstract class CovertAssetWithdrawStatus(val value: String)
@@ -77,7 +78,8 @@ object Status {
 
     private def all = Seq(NoWithdrawYet, Requested, Complete)
 
-    def fromString(s: String): CovertAssetWithdrawStatus = all.find(_.value == s).getOrElse(throw new Exception(s"Invalid status $s"))
+    def fromString(s: String): CovertAssetWithdrawStatus =
+      all.find(_.value == s).getOrElse(throw new Exception(s"Invalid status $s"))
   }
 
 }

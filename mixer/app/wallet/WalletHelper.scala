@@ -1,15 +1,16 @@
 package wallet
 
-import config.MainConfigs
-
 import java.math.BigInteger
+
+import config.MainConfigs
 import org.ergoplatform.{ErgoAddress, ErgoAddressEncoder}
 import org.ergoplatform.appkit.{Address, JavaHelpers}
 import scorex.crypto.hash.Digest32
-import sigmastate.Values.ErgoTree
+import scorex.util.encode.Base16
 import sigmastate.basics.DLogProtocol.DLogProverInput
 import sigmastate.eval._
 import sigmastate.interpreter.CryptoConstants
+import sigmastate.Values.ErgoTree
 import special.sigma.GroupElement
 
 object WalletHelper {
@@ -23,9 +24,8 @@ object WalletHelper {
 
   def now: Long = System.currentTimeMillis()
 
-  def hash(bytes: Array[Byte]): Array[Byte] = {
+  def hash(bytes: Array[Byte]): Array[Byte] =
     java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
-  }
 
   def getHash(bytes: Array[Byte]): Digest32 = scorex.crypto.hash.Blake2b256(bytes)
 
@@ -33,12 +33,15 @@ object WalletHelper {
 
   val poisonousHalfs: Seq[GroupElement] = Seq(g.exp(BigInt(1).bigInteger), g.exp(BigInt(-1).bigInteger))
 
-  def hexToGroupElement(hex: String): GroupElement = {
+  def hexToGroupElement(hex: String): GroupElement =
     JavaHelpers.decodeStringToGE(hex)
-  }
 
-  def getAddressOfSecret(secret: BigInt): String = new Address(JavaHelpers.createP2PKAddress(
-    DLogProverInput(secret.bigInteger).publicImage, addressEncoder.networkPrefix)).toString
+  def getDHTDataInBase16(base: GroupElement, power: BigInt): String =
+    Base16.encode(base.exp(power.bigInteger).getEncoded.toArray)
+
+  def getAddressOfSecret(secret: BigInt): String = new Address(
+    JavaHelpers.createP2PKAddress(DLogProverInput(secret.bigInteger).publicImage, addressEncoder.networkPrefix)
+  ).toString
 
   /**
    * @param masterSecret mix request master secret key
@@ -52,15 +55,17 @@ object WalletHelper {
 
   val addressEncoder = new ErgoAddressEncoder(MainConfigs.networkType.networkPrefix)
 
-  def getAddress(address: String): ErgoAddress = addressEncoder.fromString(address).get
+  def getErgoAddress(address: String): ErgoAddress = addressEncoder.fromString(address).get
 
-  def getAddress(address: ErgoTree): ErgoAddress = addressEncoder.fromProposition(address).get
+  def getErgoAddress(ergoTree: ErgoTree): ErgoAddress = addressEncoder.fromProposition(ergoTree).get
 
-  def okAddresses(addresses: Seq[String]): Unit = {
-    addresses.foreach(address => {
-      try getAddress(address).script catch {
+  def getAddress(address: String): Address = Address.create(address)
+
+  def okAddresses(addresses: Seq[String]): Unit =
+    addresses.foreach { address =>
+      try getErgoAddress(address).script
+      catch {
         case _: Throwable => throw new Exception("Invalid withdraw address")
       }
-    })
-  }
+    }
 }

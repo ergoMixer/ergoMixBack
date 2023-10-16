@@ -1,27 +1,29 @@
 package testHandlers
 
+import java.util
+
+import scala.collection.JavaConverters._
+
 import models.Box.{InBox, OutBox}
+import org.ergoplatform.appkit.{ErgoId, InputBox, JavaHelpers, OutBox => AOUTBOX, SignedInput, SignedTransaction}
 import org.ergoplatform.appkit.impl.OutBoxImpl
-import org.ergoplatform.appkit.{ErgoId, InputBox, JavaHelpers, SignedInput, SignedTransaction, OutBox => AOUTBOX}
 import org.mockito.Mockito.when
 import org.scalatestplus.mockito.MockitoSugar
 import scorex.util.bytesToId
 
-import java.util
-import scala.collection.JavaConverters._
+case class TestSignedTransaction(id: String, inBoxes: Seq[InBox], outBoxes: Seq[OutBox])
+  extends SignedTransaction
+  with MockitoSugar {
 
-
-case class TestSignedTransaction(id: String, inBoxes: Seq[InBox], outBoxes: Seq[OutBox]) extends SignedTransaction with MockitoSugar {
-
-  val seqMockedInputBox: Seq[InputBox] = outBoxes.map(outbox => {
+  val seqMockedInputBox: Seq[InputBox] = outBoxes.map { outbox =>
     val mockedObj = mock[InputBox]
     when(mockedObj.getId).thenReturn(ErgoId.create(outbox.id))
 
     mockedObj
-  })
+  }
 
   var inputs: util.List[SignedInput] = seqAsJavaList(Seq.empty[SignedInput])
-  var outputs: util.List[InputBox] = seqAsJavaList(seqMockedInputBox)
+  var outputs: util.List[InputBox]   = seqAsJavaList(seqMockedInputBox)
 
   /**
    * returns transaction id
@@ -68,11 +70,21 @@ case class TestSignedTransaction(id: String, inBoxes: Seq[InBox], outBoxes: Seq[
    */
   def getOutputs: util.List[AOUTBOX] = {
     var ind = 0
-    val outs = outputs.asScala.map(out => {
-      val bodx = new OutBoxImpl(JavaHelpers.createBoxCandidate(out.getValue, out.getErgoTree, out.getTokens.asScala, out.getRegisters.asScala, out.getCreationHeight).toBox(bytesToId(this.id.getBytes), ind.toShort))
+    val outs = outputs.asScala.map { out =>
+      val bodx = new OutBoxImpl(
+        JavaHelpers
+          .createBoxCandidate(
+            out.getValue,
+            out.getErgoTree,
+            out.getTokens.asScala,
+            out.getRegisters.asScala,
+            out.getCreationHeight
+          )
+          .toBox(bytesToId(this.id.getBytes), ind.toShort)
+      )
       ind += 1
       bodx.asInstanceOf[AOUTBOX]
-    }).asJava
+    }.asJava
     outs
   }
 }

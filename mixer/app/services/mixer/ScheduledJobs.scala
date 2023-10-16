@@ -1,24 +1,31 @@
 package services.mixer
 
+import javax.inject.Inject
+
+import scala.util.Try
+
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import mixer._
 import network.NetworkUtils
 import play.api.Logger
 import services.mixer.ScheduledJobs.RefreshMixingStats
 
-import javax.inject.Inject
-import scala.util.Try
-
-
-class ErgoMixerJobs @Inject()(val covertMixer: CovertMixer, val groupMixer: GroupMixer,
-                              val rescan: Rescan, val halfMixer: HalfMixer, val fullMixer: FullMixer, val newMixer: NewMixer,
-                              val withdrawMixer: WithdrawMixer, val deposits: Deposits, val networkUtils: NetworkUtils,
-                              val hopMixer: HopMixer)
+class ErgoMixerJobs @Inject() (
+  val covertMixer: CovertMixer,
+  val groupMixer: GroupMixer,
+  val rescan: Rescan,
+  val halfMixer: HalfMixer,
+  val fullMixer: FullMixer,
+  val newMixer: NewMixer,
+  val withdrawMixer: WithdrawMixer,
+  val deposits: Deposits,
+  val networkUtils: NetworkUtils,
+  val hopMixer: HopMixer
+)
 
 class ScheduledJobs(mixerJobs: ErgoMixerJobs) extends Actor with ActorLogging {
   private val logger: Logger = Logger(this.getClass)
   import mixerJobs.networkUtils
-
 
   override def receive: Receive = {
     case RefreshMixingStats =>

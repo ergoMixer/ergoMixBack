@@ -7,14 +7,13 @@ import org.mockito.Mockito.when
 import org.scalatestplus.mockito.MockitoSugar.mock
 import testHandlers.{MixScannerDataset, TestSuite}
 
-class MixScannerSpec
-  extends TestSuite {
+class MixScannerSpec extends TestSuite {
 
   // Defining MixScanner class parameters
-  val networkUtils = new MockedNetworkUtils
+  val networkUtils  = new MockedNetworkUtils
   val blockExplorer = new MockedBlockExplorer
 
-  val ergoMixerUtils = mock[ErgoMixerUtils]
+  val ergoMixerUtils: ErgoMixerUtils = mock[ErgoMixerUtils]
   when(ergoMixerUtils.getStackTraceStr(any())).thenReturn("MockedErgoMixerUtils: getStackTrace requested!")
 
   private val dataset = MixScannerDataset
@@ -32,17 +31,17 @@ class MixScannerSpec
    */
   property("followFullMix and followHalfMix should be able to recover lost mix rounds") {
     // get test data from dataset
-    val testSample = dataset.followMix_specData
-    val spentBoxId = testSample._1
-    val round = testSample._2
+    val testSample   = dataset.followMix_specData
+    val spentBoxId   = testSample._1
+    val round        = testSample._2
     val masterSecret = testSample._3
-    val result = testSample._4
+    val result       = testSample._4
 
     val mixScanner = createMixScannerObject
-    val res = mixScanner.followFullMix(spentBoxId, round, masterSecret)
+    val res        = mixScanner.followFullMix(spentBoxId, round, masterSecret)
 
     // verify return value
-    res should equal (result)
+    res should equal(result)
   }
 
   /**
@@ -53,18 +52,18 @@ class MixScannerSpec
    */
   property("followWithdrawal should be able to recover lost hop rounds and withdraw tx") {
     // get test data from dataset
-    val testSample = dataset.scanHopMix_specData
-    val boxId = testSample._1
-    val masterSecret = testSample._2
-    val followedHops = testSample._3
+    val testSample       = dataset.scanHopMix_specData
+    val boxId            = testSample._1
+    val masterSecret     = testSample._2
+    val followedHops     = testSample._3
     val followedWithdraw = testSample._4
 
     val mixScanner = createMixScannerObject
-    val res = mixScanner.followWithdrawal(boxId, masterSecret)
+    val res        = mixScanner.followWithdrawal(boxId, masterSecret)
 
     // verify return value
-    res._1 should equal (followedHops)
-    res._2 should equal (followedWithdraw)
+    res._1 should equal(followedHops)
+    res._2 should equal(followedWithdraw)
   }
 
   /**
@@ -75,16 +74,16 @@ class MixScannerSpec
    */
   property("followWithdrawal should return withdraw tx and spent boxIds when there is a withdraw") {
     // get test data from dataset
-    val testSample = dataset.getWithdrawal_specData
-    val lastBoxId = testSample._1
+    val testSample   = dataset.getWithdrawal_specData
+    val lastBoxId    = testSample._1
     val masterSecret = testSample._2
-    val result = (testSample._3, testSample._4)
+    val result       = (testSample._3, testSample._4)
 
     val mixScanner = createMixScannerObject
-    val res = mixScanner.followWithdrawal(lastBoxId, masterSecret)
+    val res        = mixScanner.followWithdrawal(lastBoxId, masterSecret)
 
     // verify return value
-    res should equal (result)
+    res should equal(result)
   }
 
 }
