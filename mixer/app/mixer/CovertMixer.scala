@@ -219,7 +219,7 @@ class CovertMixer @Inject() (
         deposit(endBoxes.last.tokens.last.getId.toString) += endBoxes.last.tokens.last.getValue
       }
       val addr = WalletHelper.getErgoAddress(endBoxes.last.receiverBoxScript).toString
-      mixingRequestsDAO.deleteByWithdrawAddress(addr)
+      mixingRequestsDAO.deleteByDepositAddress(addr)
       endBoxes = endBoxes.dropRight(1)
       if (endBoxes.isEmpty) {
         logger.info("  no other box to mix.")

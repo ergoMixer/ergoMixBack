@@ -361,6 +361,14 @@ class MixingRequestsDAO @Inject() (protected val dbConfigProvider: DatabaseConfi
     db.run(mixingRequests.filter(req => req.withdrawAddress === address).delete).map(_ => ())
 
   /**
+   * deletes request by depositAddress
+   *
+   * @param address String
+   */
+  def deleteByDepositAddress(address: String): Future[Unit] =
+    db.run(mixingRequests.filter(req => req.depositAddress === address).delete).map(_ => ())
+
+  /**
    * deletes request by mixId
    *
    * @param mixId String
