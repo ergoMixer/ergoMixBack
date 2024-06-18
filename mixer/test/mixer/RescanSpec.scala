@@ -248,6 +248,8 @@ class RescanSpec extends TestSuite {
     daoUtils.awaitResult(daoContext.fullMixDAO.clear)
     daoUtils.awaitResult(daoContext.halfMixDAO.clear)
     daoUtils.awaitResult(daoContext.mixingRequestsDAO.insert(testSample_dbData._1))
+    implicit val insertReason: String = "FullMixer.processFullMix"
+    testSample_dbData._4.foreach(data => daoUtils.awaitResult(daoContext.mixStateHistoryDAO.insertMixHistory(data)))
     testSample_dbData._2.foreach(full => daoUtils.awaitResult(daoContext.fullMixDAO.insert(full)))
     testSample_dbData._3.foreach(half => daoUtils.awaitResult(daoContext.halfMixDAO.insert(half)))
 

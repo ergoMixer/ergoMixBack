@@ -80,7 +80,12 @@ class Rescan @Inject() (
       }
       boxType match {
         case "half" =>
-          clearFutureRounds(mixId, round - 1)
+          val mixStateHistory = daoUtils
+            .awaitResult(mixStateHistoryDAO.getStateHistoryByIdAndRounds(mixId, round - 1))
+            .getOrElse(
+              throw new Exception(s"Unable to retrieve mix state history for mixId: $mixId and round: ${round - 1}")
+            )
+          clearFutureRounds(mixId, round - 1, Some(mixStateHistory.isAlice))
           val previousFullBox = daoUtils
             .awaitResult(fullMixDAO.getMixBoxIdByRound(mixId, round - 1))
             .getOrElse(throw new Exception("Unable to retrieve previous full box"))
@@ -97,7 +102,12 @@ class Rescan @Inject() (
             val followedMixes: Seq[FollowedMix] = mixScanner.followHalfMix(previousHalfBox.get, round, masterSecret)
             applyMixes(mixId, followedMixes)
           } else {
-            clearFutureRounds(mixId, round - 1)
+            val mixStateHistory = daoUtils
+              .awaitResult(mixStateHistoryDAO.getStateHistoryByIdAndRounds(mixId, round - 1))
+              .getOrElse(
+                throw new Exception(s"Unable to retrieve mix state history for mixId: $mixId and round: ${round - 1}")
+              )
+            clearFutureRounds(mixId, round - 1, Some(mixStateHistory.isAlice))
             val previousFullBox = daoUtils
               .awaitResult(fullMixDAO.getMixBoxIdByRound(mixId, round - 1))
               .getOrElse(throw new Exception("Unable to retrieve previous full box"))
@@ -182,15 +192,17 @@ class Rescan @Inject() (
       case _ => throw new Exception("this case should never happen")
     }
 
-  private def clearFutureRounds(mixId: String, round: Int): Unit = {
+  private def clearFutureRounds(mixId: String, round: Int, isAliceOption: Option[Boolean]): Unit = {
     daoUtils.awaitResult(mixStateHistoryDAO.deleteFutureRounds(mixId, round))
     daoUtils.awaitResult(halfMixDAO.deleteFutureRounds(mixId, round))
     daoUtils.awaitResult(fullMixDAO.deleteFutureRounds(mixId, round))
+    if (isAliceOption.isDefined)
+      daoUtils.awaitResult(mixStateDAO.updateInRescan(MixState(mixId, round, isAliceOption.get)))
   }
 
   private def applyMixes(mixId: String, followedMixes: Seq[FollowedMix]) = {
     followedMixes.foreach(applyMix(mixId, _))
-    followedMixes.lastOption.map(lastMix => clearFutureRounds(mixId, lastMix.round))
+    followedMixes.lastOption.map(lastMix => clearFutureRounds(mixId, lastMix.round, Option.empty))
   }
 
   private def applyHopMixes(mixId: String, followedHopMixes: Seq[FollowedHop]) = {

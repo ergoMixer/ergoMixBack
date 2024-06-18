@@ -103,6 +103,10 @@ object MixScannerDataset extends DatasetSuite {
   private val sample17_MixingRequest: MixingRequest = CreateMixingRequest(
     readJsonFile("./test/dataset/Sample17_MixRequest.json")
   )
+  private val sample17_mixStateHistoryList = jsonToObjectList[MixHistory](
+    readJsonFile("./test/dataset/Sample17_MixStateHistoryList.json"),
+    CreateMixHistory.apply
+  )
   private val sample17_mixId = sample17_MixingRequest.id
   private val sample17_fullMixList =
     jsonToObjectList[FullMix](readJsonFile("./test/dataset/Sample17_FullMixList.json"), CreateFullMix.apply)
@@ -214,8 +218,8 @@ object MixScannerDataset extends DatasetSuite {
   def backwardRescanHalf_specData: (String, Int, Boolean, String, String) =
     (sample17_mixId, sample17_halfRound, true, "half", sample17_HalfBox)
 
-  def backwardRescanMix_dbData: (MixingRequest, Seq[FullMix], Seq[HalfMix]) =
-    (sample17_MixingRequest, sample17_fullMixList, sample17_halfMixList)
+  def backwardRescanMix_dbData: (MixingRequest, Seq[FullMix], Seq[HalfMix], Seq[MixHistory]) =
+    (sample17_MixingRequest, sample17_fullMixList, sample17_halfMixList, sample17_mixStateHistoryList)
 
   def backwardRescanHop_dbData: (MixingRequest, Seq[HopMix]) = (sample17_MixingRequest, sample17_hopMixList)
 

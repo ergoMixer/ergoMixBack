@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "id": "9d791ee1-7b40-4a7b-9a71-7b61af3cde37",
+      "round": 0,
+      "isAlice": true,
+      "time": 0
+    },
+    {
+      "id": "9d791ee1-7b40-4a7b-9a71-7b61af3cde37",
+      "round": 1,
+      "isAlice": false,
+      "time": 0
+    },
+    {
+      "id": "9d791ee1-7b40-4a7b-9a71-7b61af3cde37",
+      "round": 2,
+      "isAlice": false,
+      "time": 0
+    }
+  ]
+}
+

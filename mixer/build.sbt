@@ -8,7 +8,7 @@ libraryDependencies += filters
 
 lazy val commonSettings = Seq(
   organization := "ergoMixer",
-  version := "4.4.1",
+  version := "4.4.2",
   scalaVersion := "2.12.10",
   resolvers ++= Seq(
     Resolver.sonatypeRepo("public"),

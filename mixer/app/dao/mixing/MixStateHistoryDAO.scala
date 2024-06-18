@@ -74,6 +74,15 @@ class MixStateHistoryDAO @Inject() (protected val dbConfigProvider: DatabaseConf
     db.run(mixHistories.filter(mix => mix.mixId === mixID && mix.round > round).delete).map(_ => ())
 
   /**
+   * get by mixID and round
+   *
+   * @param mixID String
+   * @param round Int
+   */
+  def getStateHistoryByIdAndRounds(mixID: String, round: Int): Future[Option[MixHistory]] =
+    db.run(mixHistories.filter(mix => mix.mixId === mixID && mix.round === round).result.headOption)
+
+  /**
    * updates mix state history by mixID
    *
    * @param mixHistory MixHistory
